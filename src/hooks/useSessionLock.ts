@@ -1,4 +1,5 @@
 // src/hooks/useSessionLock.ts
+import { useCallback, useMemo } from 'react';
 import { useCashSessionStore } from '../stores/useCashSessionStore';
 import { supabase } from '../lib/supabase/client';
 
@@ -13,36 +14,69 @@ export const getSessionLockedMessage = (action: string = 'perform this action'):
 };
 
 export const useSessionLock = () => {
-  const { isSessionOpen, activeSessionId, isInitializing, wasSuspendedByOffline } =
-    useCashSessionStore();
+  const {
+    isSessionOpen,
+    activeSessionId,
+    isInitializing,
+    wasSuspendedByOffline,
+    canProcessOfflineTransactions,
+  } = useCashSessionStore();
 
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-  const isLocked = !isSessionOpen || isOffline;
+  const canOffline = canProcessOfflineTransactions ? canProcessOfflineTransactions() : false;
+  const effectiveSessionOpen = isSessionOpen || canOffline;
+  const isLocked = !effectiveSessionOpen;
 
-  return {
-    isSessionOpen,
-    isLocked,
-    isInitializing,
-    activeSessionId,
-    wasSuspendedByOffline,
-    lockReason: isOffline
-      ? 'No internet connection. Cash session is closed until internet is restored.'
-      : SESSION_LOCKED_REASON,
-    getLockReason: getSessionLockedMessage,
-  };
+  const getLockReason = useCallback(
+    (action: string = 'perform this action') => {
+      if (isLocked) {
+        if (isOffline) {
+          return 'No internet connection and no active cash session. Open a session online first.';
+        }
+        return `Cash session is closed. Open a cash session in Cash Management to ${action}.`;
+      }
+      return '';
+    },
+    [isLocked, isOffline]
+  );
+
+  return useMemo(
+    () => ({
+      isSessionOpen: effectiveSessionOpen,
+      isLocked,
+      isInitializing,
+      activeSessionId,
+      wasSuspendedByOffline,
+      lockReason: isLocked
+        ? isOffline
+          ? 'No internet connection and no open cash session. Cash drawer must be opened online first.'
+          : SESSION_LOCKED_REASON
+        : '',
+      getLockReason,
+    }),
+    [effectiveSessionOpen, isLocked, isInitializing, activeSessionId, wasSuspendedByOffline, isOffline, getLockReason]
+  );
 };
 
 /**
- * Backend / Service layer guard to prevent transactions when cash session is closed or offline.
+ * Backend / Service layer guard to prevent transactions when cash session is closed or offline without an active session.
  */
 export const assertActiveCashSession = async (actionDesc: string = 'process transaction'): Promise<string> => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  const storeState = useCashSessionStore.getState();
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+  if (isOffline) {
+    if (storeState.isSessionOpen || storeState.canProcessOfflineTransactions()) {
+      const sessionId = storeState.getLastKnownSessionId() || storeState.activeSessionId;
+      if (sessionId) {
+        return sessionId;
+      }
+    }
     throw new Error(
-      `Transaction restricted: No internet connection. Cash session is closed until connection is restored.`
+      `Transaction restricted: No active cash drawer session found for offline operations. Please connect to internet to open a drawer session.`
     );
   }
 
-  const storeState = useCashSessionStore.getState();
   if (!storeState.isSessionOpen) {
     throw new Error(
       `Transaction restricted: Cash session is closed. Please open a cash session in Cash Management to ${actionDesc}.`

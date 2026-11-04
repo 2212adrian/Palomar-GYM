@@ -259,9 +259,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ]);
 
   const allowedMenu = useMemo(() => {
+    const effectiveRole = isAdmin ? 'admin' : (profile?.role || 'staff');
     return navigationMenu
       .filter(
-        (item) => !item.roles || (profile && item.roles.includes(profile.role))
+        (item) => !item.roles || item.roles.includes(effectiveRole)
       )
       .map((item) => {
         if (item.children) {
@@ -269,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ...item,
             children: item.children.filter(
               (child) =>
-                !child.roles || (profile && child.roles.includes(profile.role))
+                !child.roles || child.roles.includes(effectiveRole)
             ),
           };
         }
@@ -278,7 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       .filter(
         (item) => item.path || (item.children && item.children.length > 0)
       );
-  }, [navigationMenu, profile]);
+  }, [navigationMenu, profile, isAdmin]);
 
   const isPathActive = (childPath: string) => {
     const current = location.pathname.toLowerCase().replace(/\/$/, '');

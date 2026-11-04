@@ -28,12 +28,16 @@ export const CashSessionClosedBanner: React.FC = () => {
     }
   }, [user]);
 
+  const canProcessOffline = useCashSessionStore((state) =>
+    state.canProcessOfflineTransactions()
+  );
+
   // Do not show if:
   // 1. Not logged in
   // 2. Cash store is still initializing
-  // 3. Cash drawer session is currently OPEN
+  // 3. Cash drawer session is currently OPEN or can process offline transactions
   // 4. Banner was already dismissed via X during this login session
-  if (!user || isInitializing || isSessionOpen || dismissed) {
+  if (!user || isInitializing || isSessionOpen || canProcessOffline || dismissed) {
     return null;
   }
 

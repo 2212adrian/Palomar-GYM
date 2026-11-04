@@ -59,6 +59,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     markIncidentRead,
     dismissAlert,
     markAllAsRead,
+    markBadgeSeen,
   } = useNotificationStore();
 
   const totalNotifications =
@@ -71,8 +72,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   useEffect(() => {
     if (isOpen) {
       checkBrowserPermission();
+      markBadgeSeen();
     }
-  }, [isOpen, checkBrowserPermission]);
+  }, [isOpen, checkBrowserPermission, markBadgeSeen]);
 
   // Compute anchor position for desktop screens
   useEffect(() => {

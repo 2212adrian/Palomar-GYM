@@ -20,6 +20,8 @@ import { HeaderActionsContext } from '../../routes';
 import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
 import { useNotificationStore } from '../../stores/useNotificationStore';
 import { IndicationGuideBanner } from '../../components/guide/IndicationGuideBanner';
+import { stagePendingTransaction } from '../../lib/offlineVault';
+import { memberService } from '../members/memberService';
 import {
   Activity,
   Trash2,
@@ -214,13 +216,7 @@ export const IncidentReports: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-const openCreateModal = useCallback(() => {
-    if (isOffline) {
-      toast.error(
-        'Cannot draft report: No internet connection. Incident filing is restricted.'
-      );
-      return;
-    }
+  const openCreateModal = useCallback(() => {
     if (isAdmin) {
       toast.info(
         'Only staff personnel are authorized to submit incident reports.'
@@ -233,23 +229,18 @@ const openCreateModal = useCallback(() => {
     setFormPriority('Medium');
     setFormTags([]);
     setShowModal(true);
-  }, [isAdmin, isOffline]);
+  }, [isAdmin]);
 
-  // Load members for emergency lookup
+  // Load members for emergency lookup and member selection (powered by IndexedDB cache)
   const fetchMembersForLookup = async () => {
     try {
       setLoadingMembers(true);
-      const { data, error } = await supabase
-        .from('members')
-        .select('*')
-        .is('deleted_at', null)
-        .order('full_name', { ascending: true });
-      if (error) throw error;
+      const data = await memberService.getAll();
       if (isMountedRef.current) {
-        setAllMembers((data as Member[]) || []);
+        setAllMembers(data || []);
       }
     } catch (err) {
-      console.error('Failed to load members for emergency lookup:', err);
+      console.warn('Failed to load members for lookup:', err);
     } finally {
       if (isMountedRef.current) {
         setLoadingMembers(false);
@@ -303,7 +294,7 @@ const openCreateModal = useCallback(() => {
       <div className="flex items-center gap-2">
         <button
           onClick={() => openEmergencyHub('members')}
-          title="Emergency Hub: Member ICE dossier & Palomar Owner Escalation (Protected under R.A. 10173)"
+          title="Emergency Hub: List of Member & Palomar Owner Escalation (Protected under R.A. 10173)"
           aria-label="Emergency Hub"
           className="hidden sm:inline-flex px-3.5 py-2.5 bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/20 dark:hover:bg-rose-500/30 text-rose-700 dark:text-rose-300 rounded-xl transition-all active:scale-95 cursor-pointer items-center gap-2 shrink-0 font-heading text-xs uppercase tracking-wider font-bold shadow-xs"
         >
@@ -311,15 +302,10 @@ const openCreateModal = useCallback(() => {
           <span>Emergency Hub</span>
         </button>
 
-{!isAdmin && (
+        {!isAdmin && (
           <button
             onClick={openCreateModal}
-            disabled={isOffline}
-            className={`hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading tracking-widest uppercase shadow-md transition-all shrink-0 font-bold ${
-              isOffline
-                ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
-                : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white hover:scale-[1.02] active:scale-95 cursor-pointer'
-            }`}
+            className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading tracking-widest uppercase shadow-md transition-all shrink-0 font-bold bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white hover:scale-[1.02] active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             New Report
@@ -328,7 +314,7 @@ const openCreateModal = useCallback(() => {
       </div>
     );
     return () => setActions(null);
-  }, [isAdmin, setActions, openCreateModal, isOffline]);
+  }, [isAdmin, setActions, openCreateModal]);
 
   useEffect(() => {
     if (location.state?.openIncidentId && reports.length > 0) {
@@ -376,7 +362,8 @@ const openCreateModal = useCallback(() => {
       const cacheKey = `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`;
 
       if (!silent) {
-        const cached = sessionStorage.getItem(cacheKey);
+        const cached =
+          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
         if (cached) {
           try {
             const parsed = JSON.parse(cached);
@@ -394,7 +381,8 @@ const openCreateModal = useCallback(() => {
         if (
           isMountedRef.current &&
           !silent &&
-          !sessionStorage.getItem(cacheKey)
+          !sessionStorage.getItem(cacheKey) &&
+          !localStorage.getItem(cacheKey)
         ) {
           setLoading(true);
         }
@@ -409,17 +397,28 @@ const openCreateModal = useCallback(() => {
 
         if (data && isMountedRef.current) {
           const typedData = data as IncidentReport[];
-          const cachedRaw = sessionStorage.getItem(cacheKey);
+          const cachedRaw =
+            sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
           if (cachedRaw !== JSON.stringify(typedData)) {
             setReports(typedData);
             sessionStorage.setItem(cacheKey, JSON.stringify(typedData));
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify(typedData));
+            } catch {}
           }
         }
       } catch {
         if (isMountedRef.current) {
-          console.warn(
-            'INTERNET_ERR: Could not load incident files. Please check connection.'
-          );
+          const offlineCached =
+            localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+          if (offlineCached) {
+            try {
+              const parsed = JSON.parse(offlineCached);
+              if (Array.isArray(parsed)) {
+                setReports(parsed);
+              }
+            } catch {}
+          }
         }
       } finally {
         if (isMountedRef.current && !silent) {
@@ -593,12 +592,8 @@ const openCreateModal = useCallback(() => {
     setShowModal(true);
   };
 
-const handleSaveReport = async (e: React.FormEvent) => {
+  const handleSaveReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isOffline) {
-      toast.error('Cannot submit report: No internet connection.');
-      return;
-    }
 
     const titleClean = formTitle.trim();
     const descClean = formDescription.trim();
@@ -609,6 +604,86 @@ const handleSaveReport = async (e: React.FormEvent) => {
     }
     if (!descClean || descClean.length > 3000) {
       toast.error('Description is required and must be under 3000 characters.');
+      return;
+    }
+
+    const staffName =
+      user?.user_metadata?.full_name ||
+      user?.email?.split('@')[0] ||
+      'Staff Personnel';
+    const cacheKey = `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`;
+
+    if (isOffline) {
+      try {
+        setSaving(true);
+        if (isEditing && selectedReport) {
+          const updatedReport: IncidentReport = {
+            ...selectedReport,
+            title: titleClean,
+            description: descClean,
+            priority: formPriority,
+            tags: formTags,
+            updated_at: new Date().toISOString(),
+          };
+
+          stagePendingTransaction({
+            type: 'incident_update',
+            payload: {
+              id: selectedReport.id,
+              title: titleClean,
+              description: descClean,
+              priority: formPriority,
+              tags: formTags,
+              updated_at: updatedReport.updated_at,
+            },
+          });
+
+          const updatedList = reports.map((r) =>
+            r.id === selectedReport.id ? updatedReport : r
+          );
+          setReports(updatedList);
+          setSelectedReport(updatedReport);
+          sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+
+          toast.success('Report updated offline (queued for sync).');
+        } else {
+          const offlineId = `offline-inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          const newReport: IncidentReport = {
+            id: offlineId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            created_by: user?.id || 'offline-user',
+            staff_name: staffName,
+            title: titleClean,
+            description: descClean,
+            tags: formTags,
+            status: 'Unread',
+            priority: formPriority,
+            is_archived: false,
+            read_at: null,
+            read_by: null,
+          };
+
+          stagePendingTransaction({
+            type: 'incident_create',
+            payload: newReport,
+          });
+
+          const updatedList = [newReport, ...reports];
+          setReports(updatedList);
+          sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+
+          toast.success('Incident report saved offline (queued for sync).');
+        }
+
+        setShowModal(false);
+      } catch {
+        toast.error('Failed to stage offline incident report.');
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -650,10 +725,6 @@ const handleSaveReport = async (e: React.FormEvent) => {
           `Updated incident report "${titleClean}"${diffStr}.`
         );
       } else {
-        const staffName =
-          user?.user_metadata?.full_name ||
-          user?.email?.split('@')[0] ||
-          'Staff Personnel';
         const { data, error } = await supabase
           .from('incident_reports')
           .insert({
@@ -681,25 +752,108 @@ const handleSaveReport = async (e: React.FormEvent) => {
       }
 
       setShowModal(false);
-      sessionStorage.removeItem(
-        `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`
-      );
+      sessionStorage.removeItem(cacheKey);
       fetchIncidentReports();
       useNotificationStore
         .getState()
         .fetchNotifications(user?.email, roleString, true);
     } catch {
-      toast.error('Submission failed. Please verify your data.');
+      // Graceful offline fallback if network drops during submission
+      try {
+        const offlineId = `offline-inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const newReport: IncidentReport = {
+          id: offlineId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          created_by: user?.id || 'offline-user',
+          staff_name: staffName,
+          title: titleClean,
+          description: descClean,
+          tags: formTags,
+          status: 'Unread',
+          priority: formPriority,
+          is_archived: false,
+          read_at: null,
+          read_by: null,
+        };
+
+        stagePendingTransaction({
+          type: 'incident_create',
+          payload: newReport,
+        });
+
+        const updatedList = [newReport, ...reports];
+        setReports(updatedList);
+        sessionStorage.setItem(cacheKey, JSON.stringify(updatedList));
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(updatedList));
+        } catch {}
+
+        toast.success('Incident report saved offline (queued for sync).');
+        setShowModal(false);
+      } catch {
+        toast.error('Submission failed. Please verify your data.');
+      }
     } finally {
       setSaving(false);
     }
   };
 
-const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
+  const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
+    const cacheKey = `incident_reports_sanitized_${isAdmin ? 'admin' : user?.id || 'staff'}`;
+    const now = new Date().toISOString();
+
     if (isOffline) {
-      toast.error('Cannot update status: No internet connection.');
+      try {
+        stagePendingTransaction({
+          type: 'incident_update',
+          payload: {
+            id,
+            status,
+            read_at: status === 'Read' ? now : null,
+            read_by: status === 'Read' ? (user?.id || null) : null,
+          },
+        });
+
+        const updatedReports = reports.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                status,
+                read_at: status === 'Read' ? now : null,
+                read_by: status === 'Read' ? (user?.id || null) : null,
+              }
+            : r
+        );
+
+        setReports(updatedReports);
+        sessionStorage.setItem(cacheKey, JSON.stringify(updatedReports));
+        localStorage.setItem(cacheKey, JSON.stringify(updatedReports));
+
+        if (selectedReport?.id === id) {
+          setSelectedReport((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status,
+                  read_at: status === 'Read' ? now : null,
+                  read_by: status === 'Read' ? (user?.id || null) : null,
+                }
+              : null
+          );
+        }
+
+        toast.success(
+          status === 'Read'
+            ? 'Incident marked as reviewed (pending sync).'
+            : 'Incident marked as unread (pending sync).'
+        );
+      } catch {
+        toast.error('Failed to change status attributes offline.');
+      }
       return;
     }
+
     try {
       const target = reports.find((r) => r.id === id);
       const { error } = await supabase
@@ -742,7 +896,56 @@ const updateStatus = async (id: string, status: 'Unread' | 'Read') => {
         )
       );
     } catch {
-      toast.error('Failed to change status attributes.');
+      // Fallback: If network failed during status change, stage offline
+      try {
+        stagePendingTransaction({
+          type: 'incident_update',
+          payload: {
+            id,
+            status,
+            read_at: status === 'Read' ? now : null,
+            read_by: status === 'Read' ? (user?.id || null) : null,
+          },
+        });
+
+        const updatedReports = reports.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                status,
+                read_at: status === 'Read' ? now : null,
+                read_by: status === 'Read' ? (user?.id || null) : null,
+              }
+            : r
+        );
+
+        setReports(updatedReports);
+        sessionStorage.setItem(cacheKey, JSON.stringify(updatedReports));
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(updatedReports));
+        } catch {}
+
+        if (selectedReport?.id === id) {
+          setSelectedReport((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status,
+                  read_at: status === 'Read' ? now : null,
+                  read_by: status === 'Read' ? (user?.id || null) : null,
+                }
+              : null
+          );
+        }
+
+        toast.info(
+          status === 'Read'
+            ? 'Incident marked as reviewed (offline pending sync).'
+            : 'Incident marked as unread (offline pending sync).'
+        );
+      } catch {
+        toast.error('Failed to change status attributes.');
+      }
     }
   };
 
@@ -1780,7 +1983,7 @@ const handleBulkAction = async (
                       Emergency Operations & Directory
                     </h3>
                     <p className="text-[10px] sm:text-[11px] text-slate-400 truncate max-w-[210px] sm:max-w-none">
-                      Palomar Gym Owner hotlines & Member ICE dossiers
+                      Palomar Gym Owner hotlines & List of Member
                     </p>
                   </div>
                 </div>
@@ -1869,7 +2072,7 @@ const handleBulkAction = async (
                     }`}
                   >
                     <UserSearch className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Member ICE Dossier</span>
+                    <span className="truncate">List of Member</span>
                   </button>
 
                   <button
@@ -2368,7 +2571,7 @@ const handleBulkAction = async (
                       </li>
                       <li>
                         <strong>Member ICE Contact:</strong> Switch to the{' '}
-                        <em>Member ICE Dossier</em> tab to reach the member's
+                        <em>List of Member</em> tab to reach the member's
                         emergency contact.
                       </li>
                       <li>

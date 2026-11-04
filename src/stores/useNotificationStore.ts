@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase/client';
 import { isCapacitorApp } from '../lib/platform';
 
 const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
+const DISPATCHED_NOTIF_IDS_KEY = 'palomar_dispatched_notification_ids';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
 const DISMISSED_MEMBER_KEY = 'palomar_dismissed_member_alerts';
 
@@ -182,8 +183,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     ];
 
     const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
-    activeIds.forEach((id) => seenSet.add(id));
+    const dispatchedSet = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
+    activeIds.forEach((id) => {
+      seenSet.add(id);
+      dispatchedSet.add(id);
+    });
     saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
+    saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedSet));
 
     set({ unreadBadgeCount: 0 });
   },
@@ -262,11 +268,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   fetchNotifications: async (
     _userEmail?: string | null,
     _userRole?: string | null,
-    isRealtimeEvent = false
+    _isRealtimeEvent = false
   ) => {
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+    const dispatchedIdsSet = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
+    let hasNewDispatches = false;
 
     // 1. INCIDENT REPORTS
     let incidentCount = 0;
@@ -292,15 +300,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           staff_name: d.staff_name || 'Staff',
         }));
 
-        if (isRealtimeEvent) {
-          unreadList.forEach((inc) => {
-            if (!seenIdsSet.has(`incident_${inc.id}`)) {
-              triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
-                body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
-              });
-            }
-          });
-        }
+        unreadList.forEach((inc) => {
+          const key = `incident_${inc.id}`;
+          if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+            triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
+              body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
+            });
+            dispatchedIdsSet.add(key);
+            hasNewDispatches = true;
+          }
+        });
       }
     } catch (err) {
       console.warn('Failed to load incident reports for notification:', err);
@@ -342,8 +351,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               isLowStock: isLow,
             });
 
-            // Trigger desktop alert if new item
-            if (isRealtimeEvent && !seenIdsSet.has(`stock_${p.id}`)) {
+            const key = `stock_${p.id}`;
+            if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
               triggerBrowserNotification(
                 isOut
                   ? `⛔ Out of Stock: ${p.product_name}`
@@ -354,6 +363,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
                     : `Only ${p.stock_quantity} left in stock (Alert threshold: ${p.low_stock_alert}).`,
                 }
               );
+              dispatchedIdsSet.add(key);
+              hasNewDispatches = true;
             }
           }
         });
@@ -420,12 +431,25 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
                 end_date: s.end_date,
                 daysRemaining: diffDays,
               });
+
+              const key = `member_${s.id}`;
+              if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+                triggerBrowserNotification(`⏳ Subscription Expiring: ${fullName}`, {
+                  body: `${planName} expires in ${diffDays} day(s). Action required.`,
+                });
+                dispatchedIdsSet.add(key);
+                hasNewDispatches = true;
+              }
             }
           }
         });
       }
     } catch (err) {
       console.warn('Failed to load expiring subscriptions:', err);
+    }
+
+    if (hasNewDispatches) {
+      saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedIdsSet));
     }
 
     // Compute unseen count using individual item keys

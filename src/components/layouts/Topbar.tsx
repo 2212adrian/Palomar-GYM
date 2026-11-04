@@ -46,6 +46,9 @@ import { useGuideStore, type GuideTopicId } from '../../stores/useGuideStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { SyncStatusButton } from '../common/SyncStatusButton';
+import { useActionQueueStore } from '../../stores/useActionQueueStore';
+import { ActionQueueDrawer } from './ActionQueueDrawer';
 import type { CashTransactionType } from '../../types/cash';
 
 interface TopbarProps {
@@ -310,6 +313,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   );
   const cashContainerRef = useRef<HTMLDivElement>(null);
   const syncContainerRef = useRef<HTMLDivElement>(null);
+  const { queueCount, toggleDrawer: toggleActionQueueDrawer } = useActionQueueStore();
 
   // Logbook Telemetry (Active Session Only)
   const [logbookKpiData, setLogbookKpiData] = useState<LogbookKpiData>({
@@ -547,6 +551,7 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   useEffect(() => {
     const syncWithServer = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
         const clientStartTime = Date.now();
         const { data, error } = await supabase.rpc('get_server_time');
@@ -693,11 +698,17 @@ export const Topbar: React.FC<TopbarProps> = ({
     });
   };
 
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const canOffline = useCashSessionStore((state) => state.canProcessOfflineTransactions());
+  const isEffectivelyOpen = isSessionOpen || canOffline;
+  const isOfflineActive = isOffline && isEffectivelyOpen;
+
   // If we are initializing OR an open session has not yet loaded its drawer balance, stay in loading mode
   const isCashChecking =
-    isInitializing ||
-    (isSessionOpen && currentDrawerCash === null) ||
-    (isCashLoading && !activeSession);
+    !isOffline &&
+    (isInitializing ||
+      (isSessionOpen && currentDrawerCash === null) ||
+      (isCashLoading && !activeSession));
 
   return (
     <header
@@ -807,7 +818,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       <span>CHECKING DRAWER</span>
                     </div>
-                  ) : !isSessionOpen ? (
+                  ) : !isEffectivelyOpen ? (
                     <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                       <span>SESSION CLOSED</span>
@@ -844,7 +855,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>CHECKING DRAWER</span>
                   </div>
-                ) : !isSessionOpen ? (
+                ) : !isEffectivelyOpen ? (
                   <div className="flex items-center gap-1.5 text-rose-500 text-xs font-bold uppercase tracking-wider">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                     <span>SESSION CLOSED</span>
@@ -1101,6 +1112,9 @@ export const Topbar: React.FC<TopbarProps> = ({
       {/* 2. RIGHT SECTION: CASH PILL, GUIDE TRIGGER, NOTIFICATIONS & HAMBURGER */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
 
+        {/* OFFLINE SYNC & CONFLICT STATUS BUTTON */}
+        <SyncStatusButton />
+
         {/* LIVE CASH DRAWER CAPSULE */}
         <div ref={cashContainerRef} className="relative shrink-0">
           <button
@@ -1109,20 +1123,28 @@ export const Topbar: React.FC<TopbarProps> = ({
             className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl border transition-all text-xs active:scale-95 shadow-xs cursor-pointer select-none shrink-0 ${
               isCashChecking
                 ? 'border-slate-200 dark:border-zinc-700/80 bg-slate-100/80 dark:bg-zinc-800/80 text-slate-500'
-                : isSessionOpen
-                  ? 'border-emerald-500/30 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30'
-                  : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700'
+                : isOfflineActive
+                  ? 'border-amber-500/30 bg-amber-50/60 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-900/30'
+                  : isSessionOpen
+                    ? 'border-emerald-500/30 bg-emerald-50/50 hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30'
+                    : 'border-slate-200 dark:border-zinc-700/80 bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700'
             }`}
-            title="Cash Register Drawer Status"
+            title={
+              isOfflineActive
+                ? 'Cash Register: Offline Active (Transactions Queued Locally)'
+                : 'Cash Register Drawer Status'
+            }
           >
             {isCashChecking ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
             ) : (
               <Wallet
                 className={`w-3.5 h-3.5 ${
-                  isSessionOpen
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-500'
+                  isOfflineActive
+                    ? 'text-amber-500'
+                    : isSessionOpen
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-500'
                 }`}
               />
             )}
@@ -1131,6 +1153,17 @@ export const Topbar: React.FC<TopbarProps> = ({
                 <span className="text-[10px] text-slate-500 tracking-wider">
                   LOADING...
                 </span>
+              ) : isOfflineActive ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-amber-700 dark:text-amber-300 font-extrabold text-[11px] sm:text-xs">
+                    {currentDrawerCash !== null
+                      ? `₱${currentDrawerCash.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                        })} (OFFLINE)`
+                      : 'OFFLINE ACTIVE'}
+                  </span>
+                </>
               ) : (
                 <>
                   <span
@@ -1308,6 +1341,30 @@ export const Topbar: React.FC<TopbarProps> = ({
           <span className="inline md:hidden">Guide</span>
         </button>
 
+        {/* OFFLINE ACTION QUEUE TRIGGER BUTTON */}
+        <button
+          type="button"
+          id="btn-topbar-action-queue"
+          onClick={toggleActionQueueDrawer}
+          aria-label="Toggle Action Queue"
+          title={`Action Queue: ${queueCount} pending offline action(s)`}
+          className={`relative h-9 px-2.5 sm:px-3 rounded-xl border transition-all duration-200 flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 ${
+            queueCount > 0
+              ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-500/40'
+              : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          <span className="hidden sm:inline text-xs font-bold font-heading">
+            Queue
+          </span>
+          {queueCount > 0 && (
+            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-900 text-[9px] font-bold font-mono flex items-center justify-center shadow-xs">
+              {queueCount}
+            </span>
+          )}
+        </button>
+
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (
           <div className="relative hidden md:flex shrink-0">
@@ -1354,6 +1411,9 @@ export const Topbar: React.FC<TopbarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
       </div>
+
+      {/* ACTION QUEUE SLIDE-OVER DRAWER */}
+      <ActionQueueDrawer />
 
       {/* QUICK CASH TRANSACTION MODAL TRIGGERED DIRECTLY FROM TOPBAR */}
       {activeSession && activeTxType && (

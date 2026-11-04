@@ -62,7 +62,7 @@ import {
   subscriptionService,
   cardService,
   settingsService,
-  DEFAULT_SETTINGS,
+  getSynchronousInitialSettings,
 } from './memberService';
 
 // Import Modals & Views
@@ -105,6 +105,21 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   const { isSessionOpen } = useCashSessionStore();
 
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const isPlansPath = useMemo(() => {
     return location.pathname.includes('/plans');
   }, [location.pathname]);
@@ -116,7 +131,7 @@ export const MembersList: React.FC<MembersListProps> = ({
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [cards, setCards] = useState<MemberCard[]>([]);
   const [settings, setSettings] =
-    useState<MembershipSettings>(DEFAULT_SETTINGS);
+    useState<MembershipSettings>(getSynchronousInitialSettings);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChip, setActiveChip] = useState<FilterChip>('all');
@@ -199,6 +214,14 @@ export const MembersList: React.FC<MembersListProps> = ({
     (item: Member, hasSub: boolean, e: React.MouseEvent) => {
       e.stopPropagation();
 
+      if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        toast.error(
+          `Cannot ${hasSub ? 'renew' : 'subscribe'}: Internet connection is required. Subscriptions cannot be created or renewed while offline.`,
+          { toastId: 'offline-subscribe-block' }
+        );
+        return;
+      }
+
       if (item.status === 'Suspended') {
         toast.error(
           `Cannot ${hasSub ? 'renew' : 'subscribe'}: Member "${item.full_name}" is currently suspended. Activate member to proceed.`,
@@ -218,7 +241,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       setWizardPrefillMember(item);
       setIsWizardOpen(true);
     },
-    [isSessionOpen]
+    [isSessionOpen, isOffline]
   );
 
   // Break down selected members into Unpaid (New) and Already Paid (Replacements)
@@ -275,12 +298,17 @@ export const MembersList: React.FC<MembersListProps> = ({
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          if (parsed && Array.isArray(parsed.members)) {
-            setMembers(parsed.members);
-            if (Array.isArray(parsed.subscriptions))
+          const memList = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.members)
+              ? parsed.members
+              : [];
+          if (memList.length > 0) {
+            setMembers(memList);
+            if (Array.isArray(parsed?.subscriptions))
               setSubscriptions(parsed.subscriptions);
-            if (Array.isArray(parsed.cards)) setCards(parsed.cards);
-            if (parsed.settings) setSettings(parsed.settings);
+            if (Array.isArray(parsed?.cards)) setCards(parsed.cards);
+            if (parsed?.settings) setSettings(parsed.settings);
             setLoading(false);
           }
         } catch {
@@ -302,14 +330,14 @@ export const MembersList: React.FC<MembersListProps> = ({
           memberService.getAll(),
           subscriptionService.getAll(),
           cardService.getAll(),
-          settingsService.load().catch(() => DEFAULT_SETTINGS),
+          settingsService.load().catch(() => getSynchronousInitialSettings()),
         ]);
 
       const newPayload = {
         members: membersData,
         subscriptions: subsData,
         cards: cardsData,
-        settings: settingsData || DEFAULT_SETTINGS,
+        settings: settingsData || getSynchronousInitialSettings(),
       };
 
       const cachedRaw =
@@ -335,12 +363,17 @@ export const MembersList: React.FC<MembersListProps> = ({
       if (offlineCached) {
         try {
           const parsed = JSON.parse(offlineCached);
-          if (parsed && Array.isArray(parsed.members)) {
-            setMembers(parsed.members);
-            if (Array.isArray(parsed.subscriptions))
+          const memList = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.members)
+              ? parsed.members
+              : [];
+          if (memList.length > 0) {
+            setMembers(memList);
+            if (Array.isArray(parsed?.subscriptions))
               setSubscriptions(parsed.subscriptions);
-            if (Array.isArray(parsed.cards)) setCards(parsed.cards);
-            if (parsed.settings) setSettings(parsed.settings);
+            if (Array.isArray(parsed?.cards)) setCards(parsed.cards);
+            if (parsed?.settings) setSettings(parsed.settings);
             toast.info(
               'Showing cached member directory while offline/unstable.',
               { toastId: 'members-offline-cache-loaded' }
@@ -536,6 +569,14 @@ export const MembersList: React.FC<MembersListProps> = ({
         hasTriggeredRenewRef.current = true;
         setSearchQuery(targetMember.full_name || targetMember.member_id);
 
+        if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          toast.error(
+            `Cannot renew: Internet connection is required. Subscriptions cannot be created or renewed while offline.`
+          );
+          navigate('/members/list', { replace: true, state: {} });
+          return;
+        }
+
         if (targetMember.status === 'Suspended') {
           toast.error(
             `Cannot renew: ${targetMember.full_name} is suspended. Activate member first.`
@@ -582,6 +623,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     location.state,
     navigate,
     isSessionOpen,
+    isOffline,
   ]);
 
   const getActiveSubscription = useCallback(
@@ -1202,7 +1244,7 @@ export const MembersList: React.FC<MembersListProps> = ({
         const subInfo = getSubscriptionDetails(item.member_id);
         const isMenuOpen = openActionMenuId === item.id;
         const isSuspended = item.status === 'Suspended';
-        const isActionDisabled = !isSessionOpen || isSuspended;
+        const isActionDisabled = !isSessionOpen || isSuspended || isOffline;
 
         return (
           <div
@@ -1216,17 +1258,20 @@ export const MembersList: React.FC<MembersListProps> = ({
             {subInfo.canRenew && (
               <button
                 type="button"
+                disabled={isActionDisabled}
                 onClick={(e) =>
                   handleTableRenewOrSubscribe(item, subInfo.hasSub, e)
                 }
                 title={
-                  isSuspended
-                    ? 'Member account is suspended. Activate member first.'
-                    : !isSessionOpen
-                      ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
-                      : subInfo.hasSub
-                        ? 'Renew Subscription'
-                        : 'Subscribe Plan'
+                  isOffline
+                    ? 'Subscriptions locked: Internet connection required.'
+                    : isSuspended
+                      ? 'Member account is suspended. Activate member first.'
+                      : !isSessionOpen
+                        ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                        : subInfo.hasSub
+                          ? 'Renew Subscription'
+                          : 'Subscribe Plan'
                 }
                 className={`px-2.5 py-1 rounded-lg inline-flex items-center gap-1 text-[10px] font-heading tracking-wider uppercase font-extrabold transition-all shadow-xs ${
                   isActionDisabled
@@ -1239,7 +1284,13 @@ export const MembersList: React.FC<MembersListProps> = ({
                 ) : (
                   <CreditCard className="w-3 h-3" />
                 )}
-                <span>{subInfo.hasSub ? 'Renew' : 'Subscribe'}</span>
+                <span>
+                  {isOffline
+                    ? 'Locked'
+                    : subInfo.hasSub
+                      ? 'Renew'
+                      : 'Subscribe'}
+                </span>
               </button>
             )}
 
@@ -1846,7 +1897,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                           );
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
-                        const isActionDisabled = !isSessionOpen || isSuspended;
+                        const isActionDisabled = !isSessionOpen || isSuspended || isOffline;
 
                         return (
                           <div
@@ -1999,6 +2050,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                               {subInfo.canRenew && (
                                 <button
                                   type="button"
+                                  disabled={isActionDisabled}
                                   onClick={(e) =>
                                     handleTableRenewOrSubscribe(
                                       member,
@@ -2007,13 +2059,15 @@ export const MembersList: React.FC<MembersListProps> = ({
                                     )
                                   }
                                   title={
-                                    isSuspended
-                                      ? 'Member account is suspended. Activate member first.'
-                                      : !isSessionOpen
-                                        ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
-                                        : subInfo.hasSub
-                                          ? 'Renew Subscription'
-                                          : 'Subscribe Plan'
+                                    isOffline
+                                      ? 'Subscriptions locked: Internet connection required.'
+                                      : isSuspended
+                                        ? 'Member account is suspended. Activate member first.'
+                                        : !isSessionOpen
+                                          ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                                          : subInfo.hasSub
+                                            ? 'Renew Subscription'
+                                            : 'Subscribe Plan'
                                   }
                                   className={`flex-1 min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
                                     isActionDisabled
@@ -2027,7 +2081,11 @@ export const MembersList: React.FC<MembersListProps> = ({
                                     <CreditCard className="w-3.5 h-3.5" />
                                   )}
                                   <span>
-                                    {subInfo.hasSub ? 'Renew' : 'Subscribe'}
+                                    {isOffline
+                                      ? 'Locked'
+                                      : subInfo.hasSub
+                                        ? 'Renew'
+                                        : 'Subscribe'}
                                   </span>
                                 </button>
                               )}
@@ -2382,29 +2440,47 @@ export const MembersList: React.FC<MembersListProps> = ({
                     );
                   })()}
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      const target = mobileActionSheetMember;
-                      setMobileActionSheetMember(null);
-                      const subInfo = getSubscriptionDetails(target.member_id);
-                      handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
-                    }}
-                    className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
+                  {(() => {
+                    const isActionDisabled =
                       !isSessionOpen ||
-                      mobileActionSheetMember.status === 'Suspended'
-                        ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
-                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    }`}
-                  >
-                    {!isSessionOpen ||
-                    mobileActionSheetMember.status === 'Suspended' ? (
-                      <Lock className="w-4 h-4" />
-                    ) : (
-                      <CreditCard className="w-4 h-4" />
-                    )}
-                    <span>Enroll or Renew Subscription</span>
-                  </button>
+                      mobileActionSheetMember.status === 'Suspended' ||
+                      isOffline;
+
+                    return (
+                      <button
+                        type="button"
+                        disabled={isActionDisabled}
+                        onClick={(e) => {
+                          if (isActionDisabled) return;
+                          const target = mobileActionSheetMember;
+                          setMobileActionSheetMember(null);
+                          const subInfo = getSubscriptionDetails(target.member_id);
+                          handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
+                        }}
+                        title={
+                          isOffline
+                            ? 'Subscriptions locked: Internet connection required.'
+                            : undefined
+                        }
+                        className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
+                          isActionDisabled
+                            ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 cursor-pointer'
+                        }`}
+                      >
+                        {isActionDisabled ? (
+                          <Lock className="w-4 h-4" />
+                        ) : (
+                          <CreditCard className="w-4 h-4" />
+                        )}
+                        <span>
+                          {isOffline
+                            ? 'Enroll/Renew Locked (Offline)'
+                            : 'Enroll or Renew Subscription'}
+                        </span>
+                      </button>
+                    );
+                  })()}
 
                   <button
                     type="button"

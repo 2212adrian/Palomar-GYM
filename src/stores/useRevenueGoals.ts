@@ -54,7 +54,7 @@ export function useRevenueGoals() {
 
   // Fetch Goals Configuration from Supabase (Exclusive for Admin/Superadmin)
   const fetchGoalsConfig = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
 
     try {
       const { data, error } = await supabase
@@ -80,7 +80,9 @@ export function useRevenueGoals() {
         });
       }
     } catch (err) {
-      console.error('Error fetching revenue goals config from Supabase:', err);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        console.error('Error fetching revenue goals config from Supabase:', err);
+      }
     }
   }, [isAdmin]);
 
@@ -221,7 +223,9 @@ export function useRevenueGoals() {
       }
       prevTotalRef.current = calculatedTotal;
     } catch (err) {
-      console.error('Error fetching revenue goals data:', err);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        console.error('Error fetching revenue goals data:', err);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -235,7 +239,7 @@ export function useRevenueGoals() {
 
   // Realtime live subscription to sales, attendance, subscriptions, and revenue_goals
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
 
     // Generate an isolated channel name to prevent subscribe() collisions across instances
     const channelId = `revenue-goals-sync-${Math.random().toString(36).substring(2, 9)}`;

@@ -63,7 +63,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           importScripts: ['/sw-sync.js'],
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,

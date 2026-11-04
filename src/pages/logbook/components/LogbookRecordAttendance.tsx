@@ -43,6 +43,11 @@ import { logAudit } from '../../../lib/supabase/audit';
 import { getServerNow } from '../../../lib/serverTime';
 import { createPortal } from 'react-dom';
 import beepSoundUrl from '../../../assets/beep-scanner.mp3';
+import {
+  stagePendingTransaction,
+  getCachedMembersFromIndexedDB,
+} from '../../../lib/offlineVault';
+import { triggerHapticFormSuccess } from '../../../lib/hapticsService';
 
 // Dynamic Members Engine Integration
 import {
@@ -51,6 +56,7 @@ import {
   cardService,
   settingsService,
 } from '../../members/memberService';
+import { getEffectiveRates } from '../../../lib/ratesService';
 import type { Member, Subscription, MemberCard } from '../../../types/members';
 
 interface LogbookRecordAttendanceProps {
@@ -232,6 +238,88 @@ const generateUniqueWalkInName = (
   return `${cleanBase} (${nextNumber})`;
 };
 
+const getInitialCachedMemberProfiles = (): MemberProfile[] => {
+  try {
+    const cachedRaw =
+      (typeof sessionStorage !== 'undefined'
+        ? sessionStorage.getItem('members_sanitized_cache')
+        : null) ||
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('members_sanitized_cache')
+        : null);
+    if (!cachedRaw) return [];
+    const parsed = JSON.parse(cachedRaw);
+    const mList: Member[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.members)
+        ? parsed.members
+        : [];
+    const sList: Subscription[] = Array.isArray(parsed?.subscriptions)
+      ? parsed.subscriptions
+      : [];
+    const cList: MemberCard[] = Array.isArray(parsed?.cards)
+      ? parsed.cards
+      : [];
+
+    if (mList.length === 0) return [];
+
+    const now = new Date();
+    return mList.map((m) => {
+      const activeSub = sList.find(
+        (s) => s.member_id === m.member_id && s.status === 'Active'
+      );
+      let membershipName = activeSub ? activeSub.plan_name : 'No Active Plan';
+      let expDateStr = activeSub
+        ? new Date(activeSub.end_date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : 'N/A';
+      let calculatedStatus: MemberProfile['status'] = 'Expired';
+      if (m.status === 'Suspended') {
+        calculatedStatus = 'Suspended';
+      } else if (activeSub) {
+        const diffDays = Math.ceil(
+          (new Date(activeSub.end_date).getTime() - now.getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
+        if (diffDays <= 0) calculatedStatus = 'Expired';
+        else if (diffDays <= 7) calculatedStatus = 'Expires Soon';
+        else calculatedStatus = 'Active';
+      }
+      const memberCards = cList
+        .filter((c) => c.member_id === m.member_id)
+        .map((c) => c.card_number);
+
+      return {
+        id: m.id,
+        name: m.full_name,
+        memberId: m.member_id,
+        membership: membershipName,
+        status: calculatedStatus,
+        phone: m.phone || '',
+        email: m.email || '',
+        address: m.address || '',
+        regDate: m.created_at
+          ? new Date(m.created_at).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : 'N/A',
+        expDate: expDateStr,
+        lastVisit: 'Recent',
+        todayVisits: 0,
+        cardNumbers: memberCards,
+        avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 export const LogbookRecordAttendance: React.FC<
   LogbookRecordAttendanceProps
 > = ({ isOpen, initialSearch = '', onClose, onCheckInSuccess }) => {
@@ -246,10 +334,14 @@ export const LogbookRecordAttendance: React.FC<
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>([]);
+  const [dynamicMembers, setDynamicMembers] = useState<MemberProfile[]>(
+    getInitialCachedMemberProfiles
+  );
   const [todayLogs, setTodayLogs] = useState<any[]>([]);
 
-  const dynamicMembersRef = useRef<MemberProfile[]>([]);
+  const dynamicMembersRef = useRef<MemberProfile[]>(
+    getInitialCachedMemberProfiles()
+  );
   const walkinRegularFeeRef = useRef<number | null>(null);
 
   const [memberSearch, setMemberSearch] = useState('');
@@ -348,13 +440,7 @@ export const LogbookRecordAttendance: React.FC<
     setRatesError(null);
 
     try {
-      const { data: ratesData, error } = await supabase
-        .from('rates_config')
-        .select('*')
-        .eq('id', 1)
-        .maybeSingle();
-
-      if (error) throw error;
+      const ratesData = await getEffectiveRates();
 
       if (
         ratesData &&
@@ -368,9 +454,9 @@ export const LogbookRecordAttendance: React.FC<
         setWalkinRegularFee(regFee);
         setWalkinStudentFee(Number(ratesData.student_walk_in));
         setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
-        setGcashFeeRate(Number(ratesData.gcash_fee ?? 0));
+        setGcashFeeRate(Number(ratesData.gcash_fee ?? 10));
       } else {
-        const activeSettings = await settingsService.load();
+        const activeSettings = await settingsService.load().catch(() => null);
         if (
           activeSettings?.regular_walkin_fee == null ||
           activeSettings?.student_walkin_fee == null
@@ -385,19 +471,15 @@ export const LogbookRecordAttendance: React.FC<
         setYearlyMemberFee(
           Number(activeSettings.yearly_member_checkin_fee ?? 0)
         );
-        setGcashFeeRate(Number(activeSettings.gcash_fee ?? 0));
+        setGcashFeeRate(Number(activeSettings.gcash_fee ?? 10));
       }
     } catch (err: any) {
-      console.error('Failed to load rates configuration:', err);
       walkinRegularFeeRef.current = null;
       setWalkinRegularFee(null);
       setWalkinStudentFee(null);
       setYearlyMemberFee(null);
       setGcashFeeRate(null);
-      setRatesError(
-        'Unable to fetch live pricing from the server. Please verify your internet connection, close this window, and reopen it.'
-      );
-      toast.error('Failed to load live pricing rates from Supabase.');
+      setRatesError('Unable to Retrieve Rates');
     } finally {
       setIsRatesLoading(false);
     }
@@ -405,20 +487,32 @@ export const LogbookRecordAttendance: React.FC<
 
   const loadDynamicMembers = useCallback(async () => {
     try {
-      const [members, subscriptions, cards, { data: dbAttendance }] =
+      const [members, subscriptions, cards, attendanceList] =
         await Promise.all([
-          memberService.getAll(),
-          subscriptionService.getAll(),
-          cardService.getAll(),
-          supabase
-            .from('attendance')
-            .select('id, member_id, check_in_time')
-            .is('deleted_at', null)
-            .order('check_in_time', { ascending: false })
-            .limit(2000),
+          memberService.getAll().catch(() => []),
+          subscriptionService.getAll().catch(() => []),
+          cardService.getAll().catch(() => []),
+          (async () => {
+            const isOff = typeof navigator !== 'undefined' && !navigator.onLine;
+            if (isOff) return [];
+            try {
+              const timeoutPromise = new Promise<any[]>((resolve) =>
+                setTimeout(() => resolve([]), 1500)
+              );
+              const queryPromise = supabase
+                .from('attendance')
+                .select('id, member_id, check_in_time')
+                .is('deleted_at', null)
+                .order('check_in_time', { ascending: false })
+                .limit(2000)
+                .then((res) => res.data || []);
+              return await Promise.race([queryPromise, timeoutPromise]);
+            } catch {
+              return [];
+            }
+          })(),
         ]);
 
-      const attendanceList = dbAttendance || [];
       const now = getServerNow();
 
       const mappedProfiles: MemberProfile[] = members.map((m: Member) => {
@@ -743,6 +837,37 @@ export const LogbookRecordAttendance: React.FC<
 
   useEffect(() => {
     if (isOpen) {
+      // Fast synchronous cache hydration
+      const cached = getInitialCachedMemberProfiles();
+      if (cached.length > 0 && dynamicMembersRef.current.length === 0) {
+        setDynamicMembers(cached);
+        dynamicMembersRef.current = cached;
+      }
+
+      // Also query IndexedDB immediately to ensure offline access
+      getCachedMembersFromIndexedDB().then((idbList) => {
+        if (Array.isArray(idbList) && idbList.length > 0 && dynamicMembersRef.current.length === 0) {
+          const mapped: MemberProfile[] = idbList.map((m: any) => ({
+            id: m.id,
+            name: m.full_name,
+            memberId: m.member_id,
+            membership: 'Member',
+            status: (m.status === 'Suspended' ? 'Suspended' : 'Active') as MemberProfile['status'],
+            phone: m.phone || '',
+            email: m.email || '',
+            address: m.address || '',
+            regDate: 'N/A',
+            expDate: 'N/A',
+            lastVisit: 'Recent',
+            todayVisits: 0,
+            cardNumbers: [],
+            avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
+          }));
+          setDynamicMembers(mapped);
+          dynamicMembersRef.current = mapped;
+        }
+      }).catch(() => {});
+
       const nowMs = Date.now();
       const shouldSkipHeavyPoll =
         isBatterySaver &&
@@ -916,7 +1041,17 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
     const query = val.toLowerCase().trim();
-    const filtered = dynamicMembers.filter(
+    let currentList = dynamicMembers;
+
+    if (currentList.length === 0) {
+      currentList = getInitialCachedMemberProfiles();
+      if (currentList.length > 0) {
+        setDynamicMembers(currentList);
+        dynamicMembersRef.current = currentList;
+      }
+    }
+
+    const filtered = currentList.filter(
       (m) =>
         m.name.toLowerCase().includes(query) ||
         m.memberId.toLowerCase().includes(query) ||
@@ -925,7 +1060,46 @@ export const LogbookRecordAttendance: React.FC<
     );
     setSuggestions(filtered);
 
-    const exactMatch = dynamicMembers.find(
+    // If still empty, search IndexedDB directly as fallback
+    if (filtered.length === 0) {
+      getCachedMembersFromIndexedDB().then((idbList) => {
+        if (Array.isArray(idbList) && idbList.length > 0) {
+          const idbMatched = idbList
+            .filter((m: any) => {
+              const name = (m.full_name || '').toLowerCase();
+              const memId = (m.member_id || '').toLowerCase();
+              const phone = (m.phone || '').toLowerCase();
+              return (
+                name.includes(query) ||
+                memId.includes(query) ||
+                phone.includes(query)
+              );
+            })
+            .map((m: any) => ({
+              id: m.id,
+              name: m.full_name,
+              memberId: m.member_id,
+              membership: 'Member',
+              status: (m.status === 'Suspended' ? 'Suspended' : 'Active') as MemberProfile['status'],
+              phone: m.phone || '',
+              email: m.email || '',
+              address: m.address || '',
+              regDate: 'N/A',
+              expDate: 'N/A',
+              lastVisit: 'Recent',
+              todayVisits: 0,
+              cardNumbers: [],
+              avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
+            }));
+
+          if (idbMatched.length > 0) {
+            setSuggestions(idbMatched);
+          }
+        }
+      }).catch(() => {});
+    }
+
+    const exactMatch = currentList.find(
       (m) =>
         m.memberId.toLowerCase() === query ||
         m.phone === query ||
@@ -1084,20 +1258,13 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
 
-    if (isLocked || !isSessionOpen) {
+    const canOperateSession = isSessionOpen || useCashSessionStore.getState().canProcessOfflineTransactions();
+    const sessionId = activeSession?.id || useCashSessionStore.getState().getLastKnownSessionId();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+    if (isLocked || !canOperateSession) {
       toast.error(
         'Cannot record check-in: Cash drawer session is closed. Please open a cash session first in Cash Management.'
-      );
-      return;
-    }
-
-    if (
-      derivedBilling.totalDue > 0 &&
-      paymentMethod === 'Cash' &&
-      !isSessionOpen
-    ) {
-      toast.error(
-        'Cannot accept Cash: No active cash drawer session is open. Please open a cash session first in Cash Management.'
       );
       return;
     }
@@ -1141,10 +1308,68 @@ export const LogbookRecordAttendance: React.FC<
       gcash_ref_no: gcashRefVal || null,
       payment_method: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
       staff_name: user?.email || 'Counter Staff',
-      cash_session_id: activeSession?.id || null,
+      cash_session_id: sessionId || null,
     };
 
     const auditDescription = `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Promo/Free'}.`;
+
+    if (!isOnline) {
+      try {
+        const vaultId = await stagePendingTransaction({
+          type: 'attendance',
+          cashSessionId: sessionId || '',
+          userId: user?.id || 'staff',
+          userName: user?.email || 'Reception',
+          payload: insertPayload,
+        });
+
+        const checkInRecord = {
+          id: vaultId,
+          timestamp: new Date().toISOString(),
+          memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
+          customerName: finalCustomerName,
+          customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+          categoryOrPlan: derivedBilling.title,
+          paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+          amountPaid: derivedBilling.totalDue,
+          basePrice: derivedBilling.subtotal,
+          gcashFee: gcashFeeVal,
+          cardFee: 0,
+          gcashRefNo: gcashRefVal,
+          referenceNumber: gcashRefVal,
+          paymentRef: gcashRefVal,
+          paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+          status: selectedClient.isWalkIn
+            ? 'Active'
+            : selectedClient.status || 'Active',
+          cash_session_id: sessionId || null,
+          sync_status: 'pending',
+        };
+
+        setIsSuccess(true);
+        triggerHapticFormSuccess();
+        stopAllCameraTracks();
+
+        setTimeout(
+          () => {
+            onCheckInSuccess(checkInRecord);
+            setIsSuccess(false);
+            isSubmittingRef.current = false;
+            setIsSubmitting(false);
+            onClose();
+          },
+          isBatterySaver ? 600 : 1500
+        );
+
+        toast.info('Attendance check-in held in encrypted offline vault (pending sync).');
+        return;
+      } catch (vaultErr: any) {
+        toast.error(`Offline vault storage failed: ${vaultErr.message}`);
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     try {
       const { data: inserted, error } = await supabase
@@ -1180,10 +1405,12 @@ export const LogbookRecordAttendance: React.FC<
         status: selectedClient.isWalkIn
           ? 'Active'
           : selectedClient.status || 'Active',
-        cash_session_id: inserted.cash_session_id || activeSession?.id || null,
+        cash_session_id: inserted.cash_session_id || sessionId || null,
+        sync_status: 'synced',
       };
 
       setIsSuccess(true);
+      triggerHapticFormSuccess();
       stopAllCameraTracks();
 
       setTimeout(
@@ -1197,6 +1424,59 @@ export const LogbookRecordAttendance: React.FC<
         isBatterySaver ? 600 : 1500
       );
     } catch (err: any) {
+      if (canOperateSession && sessionId) {
+        try {
+          const vaultId = await stagePendingTransaction({
+            type: 'attendance',
+            cashSessionId: sessionId || '',
+            userId: user?.id || 'staff',
+            userName: user?.email || 'Reception',
+            payload: insertPayload,
+          });
+
+          const checkInRecord = {
+            id: vaultId,
+            timestamp: new Date().toISOString(),
+            memberId: selectedClient.isWalkIn ? null : selectedClient.memberId,
+            customerName: finalCustomerName,
+            customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
+            categoryOrPlan: derivedBilling.title,
+            paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+            amountPaid: derivedBilling.totalDue,
+            basePrice: derivedBilling.subtotal,
+            gcashFee: gcashFeeVal,
+            cardFee: 0,
+            gcashRefNo: gcashRefVal,
+            referenceNumber: gcashRefVal,
+            paymentRef: gcashRefVal,
+            paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+            status: selectedClient.isWalkIn
+              ? 'Active'
+              : selectedClient.status || 'Active',
+            cash_session_id: sessionId || null,
+            sync_status: 'pending',
+          };
+
+          setIsSuccess(true);
+          triggerHapticFormSuccess();
+          stopAllCameraTracks();
+          setTimeout(
+            () => {
+              onCheckInSuccess(checkInRecord);
+              setIsSuccess(false);
+              isSubmittingRef.current = false;
+              setIsSubmitting(false);
+              onClose();
+            },
+            isBatterySaver ? 600 : 1500
+          );
+          toast.info('Connection interrupted. Check-in held in encrypted offline vault.');
+          return;
+        } catch {
+          // fallback to error
+        }
+      }
+
       console.error('Check-in error:', err);
       toast.error(err.message || 'Failed to complete check-in.');
       isSubmittingRef.current = false;
@@ -1205,7 +1485,8 @@ export const LogbookRecordAttendance: React.FC<
   };
 
   const isFormValid = useMemo(() => {
-    if (!isSessionOpen || isLocked) return false;
+    const canOperate = isSessionOpen || useCashSessionStore.getState().canProcessOfflineTransactions();
+    if (!canOperate || isLocked) return false;
     if (ratesError || walkinRegularFee === null || walkinStudentFee === null) {
       return false;
     }
@@ -1349,12 +1630,9 @@ export const LogbookRecordAttendance: React.FC<
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="py-16 flex flex-col items-center justify-center space-y-3"
+            className="py-16 flex flex-col items-center justify-center space-y-2"
           >
             <Loader2 className="w-8 h-8 text-(--color-primary) animate-spin" />
-            <p className="text-xs font-bold uppercase tracking-wider text-(--color-text)/60">
-              Fetching pricing rates from the Database...
-            </p>
           </motion.div>
         ) : !isSuccess ? (
           /* CASE 3: STANDARD ATTENDANCE FORM */
@@ -2261,22 +2539,22 @@ export const LogbookRecordAttendance: React.FC<
                           isSubmitting ||
                           isLockedByDuplicate ||
                           isLocked ||
-                          !isSessionOpen
+                          (!isSessionOpen && !useCashSessionStore.getState().canProcessOfflineTransactions())
                         }
                         title={
-                          isLocked || !isSessionOpen
+                          isLocked || (!isSessionOpen && !useCashSessionStore.getState().canProcessOfflineTransactions())
                             ? getLockReason('record check-ins')
                             : undefined
                         }
                         className={`w-full py-3.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg transition-all duration-200 disabled:opacity-50 ${
-                          isLocked || !isSessionOpen
+                          isLocked || (!isSessionOpen && !useCashSessionStore.getState().canProcessOfflineTransactions())
                             ? 'cursor-not-allowed opacity-50'
                             : 'cursor-pointer'
                         }`}
                       >
                         {isSubmitting
                           ? 'RECORDING CHECK-IN...'
-                          : isLocked || !isSessionOpen
+                          : isLocked || (!isSessionOpen && !useCashSessionStore.getState().canProcessOfflineTransactions())
                             ? 'SESSION CLOSED (LOCKED)'
                             : 'COMPLETE CHECK-IN'}
                       </Button>

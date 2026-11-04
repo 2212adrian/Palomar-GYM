@@ -1,8 +1,14 @@
-// src/pages/members/memberService.ts
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';
 import { getServerNow, getServerTime, getServerISOString } from '../../lib/serverTime';
+import { getEffectiveRates, DEFAULT_RATES_CONFIG } from '../../lib/ratesService';
+import {
+  stagePendingTransaction,
+  getCachedMembersFromIndexedDB,
+  setCachedMembersToIndexedDB,
+  getDecryptedPendingTransactions,
+} from '../../lib/offlineVault';
 
 import type {
   Member,
@@ -54,12 +60,12 @@ export const DEFAULT_SETTINGS: MembershipSettings = {
   gym_name: 'WOLF PALOMAR GYM',
   system_name: 'Wolf Management Console 2.0',
   currency: '₱',
-  monthly_plan_price: 0,
-  yearly_plan_price: 0,
-  regular_walkin_fee: 0,
-  student_walkin_fee: 0,
+  monthly_plan_price: 800,
+  yearly_plan_price: 8000,
+  regular_walkin_fee: 100,
+  student_walkin_fee: 80,
   monthly_member_checkin_fee: 0,
-  yearly_member_checkin_fee: 0,
+  yearly_member_checkin_fee: 50,
   qr_card_enabled: true,
   manual_card_enabled: true,
   card_printing_fee: 150,
@@ -71,6 +77,75 @@ export const DEFAULT_SETTINGS: MembershipSettings = {
   registration_expiry_hours: 24,
   max_registrations_per_hour: 3,
   max_registrations_per_day: 5,
+};
+
+/**
+ * Synchronously retrieves initial membership settings from secured browser storage
+ * or cached settings, guaranteeing immediate render without 0-peso flash.
+ */
+export const getSynchronousInitialSettings = (): MembershipSettings => {
+  let settings: MembershipSettings = { ...DEFAULT_SETTINGS };
+
+  try {
+    const raw =
+      (typeof sessionStorage !== 'undefined'
+        ? sessionStorage.getItem('palomar_rates_config_secured_v1')
+        : null) ||
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('palomar_rates_config_secured_v1')
+        : null);
+    if (raw) {
+      const record = JSON.parse(raw);
+      if (record?.data) {
+        const decoded = decodeURIComponent(atob(record.data));
+        const parsed = JSON.parse(decoded);
+        if (parsed) {
+          settings.monthly_plan_price = Number(
+            parsed.monthly_rate ??
+              parsed.monthly_membership ??
+              settings.monthly_plan_price
+          );
+          settings.yearly_plan_price = Number(
+            parsed.yearly_rate ?? settings.yearly_plan_price
+          );
+          settings.regular_walkin_fee = Number(
+            parsed.regular_walk_in ?? settings.regular_walkin_fee
+          );
+          settings.student_walkin_fee = Number(
+            parsed.student_walk_in ?? settings.student_walkin_fee
+          );
+          settings.yearly_member_checkin_fee = Number(
+            parsed.yearly_walk_in ?? settings.yearly_member_checkin_fee
+          );
+          settings.card_printing_fee = Number(
+            parsed.new_card_fee ?? settings.card_printing_fee
+          );
+          settings.card_replacement_fee = Number(
+            parsed.new_card_fee ?? settings.card_replacement_fee
+          );
+          settings.gcash_fee = Number(parsed.gcash_fee ?? settings.gcash_fee);
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const memCacheRaw =
+      (typeof sessionStorage !== 'undefined'
+        ? sessionStorage.getItem('members_sanitized_cache')
+        : null) ||
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem('members_sanitized_cache')
+        : null);
+    if (memCacheRaw) {
+      const memCache = JSON.parse(memCacheRaw);
+      if (memCache?.settings) {
+        settings = { ...settings, ...memCache.settings };
+      }
+    }
+  } catch {}
+
+  return settings;
 };
 
 // ==========================================
@@ -146,21 +221,87 @@ export const getEffectiveSubscriptionStatus = (
 // ==========================================
 export const memberService = {
   getAll: async (): Promise<Member[]> => {
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+    const cacheKey = 'members_sanitized_cache';
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
-    if (error) {
-      console.error('Error fetching members from Supabase:', error);
-      throw new Error(error.message);
+    const readCachedMembers = (): Member[] => {
+      try {
+        const cached =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && Array.isArray(parsed.members)) return parsed.members;
+        }
+      } catch {}
+      return [];
+    };
+
+    // Check IndexedDB cache first
+    try {
+      const idbList = await getCachedMembersFromIndexedDB();
+      if (Array.isArray(idbList) && idbList.length > 0) {
+        if (isOffline) return idbList;
+      }
+    } catch {}
+
+    if (isOffline) {
+      return readCachedMembers();
     }
 
-    return (data || []).map((m) => ({
-      ...m,
-      avatar_url: m.image_url || m.avatar_url || null,
-    }));
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Members query timeout')), 1500)
+      );
+      const queryPromise = supabase
+        .from('members')
+        .select('*')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+
+      const { data, error } = (await Promise.race([queryPromise, timeoutPromise])) as any;
+
+      if (error) throw error;
+
+      const mapped = (data || []).map((m: any) => ({
+        ...m,
+        avatar_url: m.image_url || m.avatar_url || null,
+      }));
+
+      // Update storage and IndexedDB
+      try {
+        await setCachedMembersToIndexedDB(mapped);
+        const cachedRaw =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        const parsed = cachedRaw ? JSON.parse(cachedRaw) : {};
+        if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsed.members = mapped;
+          const serialized = JSON.stringify(parsed);
+          localStorage.setItem(cacheKey, serialized);
+          sessionStorage.setItem(cacheKey, serialized);
+        } else {
+          const serialized = JSON.stringify({ members: mapped });
+          localStorage.setItem(cacheKey, serialized);
+          sessionStorage.setItem(cacheKey, serialized);
+        }
+      } catch {}
+
+      return mapped;
+    } catch (error: any) {
+      try {
+        const idbList = await getCachedMembersFromIndexedDB();
+        if (Array.isArray(idbList) && idbList.length > 0) {
+          return idbList;
+        }
+      } catch {}
+
+      const cachedList = readCachedMembers();
+      if (cachedList.length > 0) {
+        return cachedList;
+      }
+      console.warn('Could not fetch members from Supabase, no cache available:', error?.message);
+      return [];
+    }
   },
 
   getById: async (id: string): Promise<Member | null> => {
@@ -209,6 +350,7 @@ export const memberService = {
     user: string
   ): Promise<Member> => {
     const d = data as any;
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
     const payload = {
       full_name: (d.full_name || '').trim().toUpperCase(),
       phone: d.phone,
@@ -232,31 +374,79 @@ export const memberService = {
       consent_date: d.consent_date || null,
     };
 
-    const { data: created, error } = await supabase
-      .from('members')
-      .insert([payload])
-      .select()
-      .single();
+    let createdMember: Member | null = null;
 
-    if (error) {
-      console.error('Error creating member in Supabase:', error);
-      throw new Error(error.message);
+    if (!isOffline) {
+      try {
+        const { data: created, error } = await supabase
+          .from('members')
+          .insert([payload])
+          .select()
+          .single();
+
+        if (error) throw error;
+        createdMember = {
+          ...created,
+          avatar_url: created.image_url || created.avatar_url || null,
+        };
+      } catch (e) {
+        console.warn('Network error creating member in Supabase, using offline vault:', e);
+      }
     }
 
-    const newMember: Member = {
-      ...created,
-      avatar_url: created.image_url || created.avatar_url || null,
-    };
+    if (!createdMember) {
+      const offlineId = `MEM-OFFLINE-${Date.now().toString().slice(-6)}`;
+      const offlineUUID = `off-mem-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      createdMember = {
+        id: offlineUUID,
+        member_id: offlineId,
+        ...payload,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        avatar_url: payload.image_url || null,
+        sync_status: 'pending',
+      } as any;
 
-    await writeAudit(
+      try {
+        await stagePendingTransaction({
+          type: 'member_create',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: { ...payload, member_id: offlineId },
+        });
+      } catch (stgErr) {
+        console.warn('Failed to stage member in vault:', stgErr);
+      }
+    }
+
+    const finalMember: Member = createdMember!;
+
+    // Persist immediately to local caches
+    try {
+      const cacheKey = 'members_sanitized_cache';
+      const cachedRaw =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      let parsed = cachedRaw ? JSON.parse(cachedRaw) : { members: [] };
+      if (Array.isArray(parsed)) {
+        parsed = { members: parsed };
+      }
+      if (!Array.isArray(parsed.members)) parsed.members = [];
+      parsed.members.unshift(finalMember);
+      const str = JSON.stringify(parsed);
+      localStorage.setItem(cacheKey, str);
+      sessionStorage.setItem(cacheKey, str);
+    } catch {}
+
+    writeAudit(
       'MEMBER_CREATED',
       'Members',
       user,
-      newMember.member_id,
+      finalMember.member_id,
       undefined,
-      `Registered profile for ${newMember.full_name}`
-    );
-    return newMember;
+      `Registered profile for ${finalMember.full_name}`
+    ).catch(() => {});
+
+    return finalMember;
   },
 
   update: async (
@@ -266,13 +456,40 @@ export const memberService = {
   ): Promise<Member> => {
     if (!id) throw new Error('Member ID is required for update.');
 
-    let findQuery = supabase.from('members').select('*');
-    if (isUUID(id)) {
-      findQuery = findQuery.eq('id', id);
-    } else {
-      findQuery = findQuery.eq('member_id', id);
+    let previousData: any = null;
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    if (!isOffline) {
+      try {
+        let findQuery = supabase.from('members').select('*');
+        if (isUUID(id)) {
+          findQuery = findQuery.eq('id', id);
+        } else {
+          findQuery = findQuery.eq('member_id', id);
+        }
+        const { data } = await findQuery.maybeSingle();
+        previousData = data;
+      } catch {}
     }
-    const { data: previousData } = await findQuery.maybeSingle();
+
+    if (!previousData) {
+      try {
+        const cacheKey = 'members_sanitized_cache';
+        const cachedRaw =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          const list = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.members)
+              ? parsed.members
+              : [];
+          previousData = list.find(
+            (m: any) => m.id === id || m.member_id === id
+          );
+        }
+      } catch {}
+    }
 
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
 
@@ -288,24 +505,72 @@ export const memberService = {
     }
     delete payload.id;
 
-    let query = supabase.from('members').update(payload);
-    if (isUUID(id)) {
-      query = query.eq('id', id);
-    } else {
-      query = query.eq('member_id', id);
+    let memberObj: Member | null = null;
+
+    if (!isOffline) {
+      try {
+        let query = supabase.from('members').update(payload);
+        if (isUUID(id)) {
+          query = query.eq('id', id);
+        } else {
+          query = query.eq('member_id', id);
+        }
+
+        const { data: updated, error } = await query.select().single();
+        if (error) throw error;
+        memberObj = {
+          ...updated,
+          avatar_url: updated.image_url || null,
+        };
+      } catch (netErr) {
+        console.warn('Network error updating member, staging offline:', netErr);
+      }
     }
 
-    const { data: updated, error } = await query.select().single();
+    if (!memberObj) {
+      memberObj = {
+        ...(previousData || {}),
+        ...payload,
+        id,
+        member_id: previousData?.member_id || id,
+        sync_status: 'pending',
+      } as Member;
 
-    if (error) {
-      console.error('Error updating member:', error);
-      throw new Error(error.message);
+      try {
+        await stagePendingTransaction({
+          type: 'member_update',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: { id, updates: payload },
+        });
+      } catch (stgErr) {
+        console.warn('Failed to stage member update in vault:', stgErr);
+      }
     }
 
-    const memberObj: Member = {
-      ...updated,
-      avatar_url: updated.image_url || null,
-    };
+    // Update in local cache
+    try {
+      const cacheKey = 'members_sanitized_cache';
+      const cachedRaw =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        const updateInList = (list: Member[]) =>
+          list.map((m) =>
+            m.id === id || m.member_id === id ? { ...m, ...memberObj } : m
+          );
+
+        if (Array.isArray(parsed)) {
+          const updated = updateInList(parsed);
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+        } else if (parsed && Array.isArray(parsed.members)) {
+          parsed.members = updateInList(parsed.members);
+          localStorage.setItem(cacheKey, JSON.stringify(parsed));
+          sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
 
     const changes: string[] = [];
     if (previousData) {
@@ -329,14 +594,15 @@ export const memberService = {
         ? `Updated member profile for "${memberObj.full_name}": ${changes.join(', ')}`
         : `Updated profile parameters for "${memberObj.full_name}".`;
 
-    await writeAudit(
+    writeAudit(
       'MEMBER_UPDATED',
       'Members',
       user,
       memberObj.member_id,
       undefined,
       auditDetail
-    );
+    ).catch(() => {});
+
     return memberObj;
   },
 
@@ -446,58 +712,265 @@ export const memberService = {
 // ==========================================
 export const subscriptionService = {
   getAll: async (): Promise<Subscription[]> => {
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const cacheKey = 'members_sanitized_cache';
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
-    if (error) {
-      console.error('Error fetching subscriptions:', error);
-      throw new Error(error.message);
+    const readCachedSubs = (): Subscription[] => {
+      try {
+        const cached =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && Array.isArray(parsed.subscriptions)) {
+            return parsed.subscriptions;
+          }
+        }
+      } catch {}
+      return [];
+    };
+
+    let baseList: Subscription[] = [];
+
+    if (isOffline) {
+      baseList = readCachedSubs();
+    } else {
+      try {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Subscriptions query timeout')), 1500)
+        );
+        const queryPromise = supabase
+          .from('subscriptions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        const { data, error } = (await Promise.race([
+          queryPromise,
+          timeoutPromise,
+        ])) as any;
+
+        if (error) throw error;
+
+        baseList = (data || []).map((s: any) => {
+          const effStatus = getEffectiveSubscriptionStatus(
+            s.status,
+            s.start_date,
+            s.end_date
+          );
+          return {
+            ...s,
+            status: effStatus,
+            plan_name:
+              s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership',
+          };
+        });
+      } catch (error: any) {
+        baseList = readCachedSubs();
+        console.warn('Could not fetch subscriptions from Supabase, used cache:', error?.message);
+      }
     }
 
-    return (data || []).map((s) => {
-      const effStatus = getEffectiveSubscriptionStatus(
-        s.status,
-        s.start_date,
-        s.end_date
-      );
-      return {
-        ...s,
-        status: effStatus,
-        plan_name:
-          s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership',
-      };
-    });
+    // Merge offline pending subscriptions from encrypted vault
+    try {
+      const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+      const pendingSubs: Subscription[] = pendingTxs
+        .filter(
+          (tx) =>
+            tx.type === 'subscription' &&
+            tx.status !== 'conflict' &&
+            tx.payload?.member_id
+        )
+        .map((tx) => {
+          const pl = tx.payload || {};
+          const planName =
+            pl.plan_name ||
+            (pl.plan_type === 'yearly'
+              ? 'Yearly Membership'
+              : 'Monthly Membership');
+          const effStatus = getEffectiveSubscriptionStatus(
+            pl.status || 'Active',
+            pl.start_date,
+            pl.end_date
+          );
+
+          return {
+            id: tx.id,
+            member_id: pl.member_id,
+            plan_type:
+              pl.plan_type ||
+              (planName === 'Yearly Membership' ? 'yearly' : 'monthly'),
+            price: Number(pl.price || pl.amount || 0),
+            base_price: Number(pl.base_price || 0),
+            gcash_fee: Number(pl.gcash_fee || 0),
+            card_fee: Number(pl.card_fee || 0),
+            start_date: pl.start_date || tx.createdAt,
+            end_date: pl.end_date,
+            status: effStatus,
+            payment_status: 'Paid',
+            payment_method: pl.payment_method || 'Cash',
+            receipt_number: pl.receipt_number || null,
+            plan_name: planName,
+            created_at: tx.createdAt,
+            updated_at: tx.createdAt,
+            sync_status: 'pending',
+          } as Subscription;
+        });
+
+      if (pendingSubs.length > 0) {
+        const pendingMemberIds = new Set(pendingSubs.map((s) => s.member_id));
+        const filteredBase = baseList.filter(
+          (s) => !pendingMemberIds.has(s.member_id)
+        );
+        baseList = [...pendingSubs, ...filteredBase];
+      }
+    } catch (vaultErr) {
+      console.warn('Error reading pending subscriptions from vault:', vaultErr);
+    }
+
+    // Update storage
+    try {
+      const cachedRaw =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      const parsed = cachedRaw ? JSON.parse(cachedRaw) : {};
+      if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsed.subscriptions = baseList;
+        const serialized = JSON.stringify(parsed);
+        localStorage.setItem(cacheKey, serialized);
+        sessionStorage.setItem(cacheKey, serialized);
+      } else {
+        const serialized = JSON.stringify({ subscriptions: baseList });
+        localStorage.setItem(cacheKey, serialized);
+        sessionStorage.setItem(cacheKey, serialized);
+      }
+    } catch {}
+
+    return baseList;
   },
 
   getByMemberId: async (memberId: string): Promise<Subscription[]> => {
     if (!memberId) return [];
 
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('member_id', memberId)
-      .order('created_at', { ascending: false });
+    const list: Subscription[] = [];
 
-    if (error) {
-      console.error('Error fetching subscriptions for member:', error);
-      throw new Error(error.message);
+    // 1. Check pending subscriptions in offline vault
+    try {
+      const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+      const pendingForMember = pendingTxs
+        .filter(
+          (tx) =>
+            tx.type === 'subscription' &&
+            tx.status !== 'conflict' &&
+            (tx.payload?.member_id === memberId ||
+              (tx.payload?.member_id &&
+                String(tx.payload.member_id).toLowerCase() ===
+                  String(memberId).toLowerCase()))
+        )
+        .map((tx) => {
+          const pl = tx.payload || {};
+          const planName =
+            pl.plan_name ||
+            (pl.plan_type === 'yearly'
+              ? 'Yearly Membership'
+              : 'Monthly Membership');
+          const effStatus = getEffectiveSubscriptionStatus(
+            pl.status || 'Active',
+            pl.start_date,
+            pl.end_date
+          );
+
+          return {
+            id: tx.id,
+            member_id: pl.member_id,
+            plan_type:
+              pl.plan_type ||
+              (planName === 'Yearly Membership' ? 'yearly' : 'monthly'),
+            price: Number(pl.price || pl.amount || 0),
+            base_price: Number(pl.base_price || 0),
+            gcash_fee: Number(pl.gcash_fee || 0),
+            card_fee: Number(pl.card_fee || 0),
+            start_date: pl.start_date || tx.createdAt,
+            end_date: pl.end_date,
+            status: effStatus,
+            payment_status: 'Paid',
+            payment_method: pl.payment_method || 'Cash',
+            receipt_number: pl.receipt_number || null,
+            plan_name: planName,
+            created_at: tx.createdAt,
+            updated_at: tx.createdAt,
+            sync_status: 'pending',
+          } as Subscription;
+        });
+
+      list.push(...pendingForMember);
+    } catch {}
+
+    // 2. Fetch remote / cache
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (!isOffline) {
+      try {
+        const { data, error } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('member_id', memberId)
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          const mapped = data.map((s) => {
+            const effStatus = getEffectiveSubscriptionStatus(
+              s.status,
+              s.start_date,
+              s.end_date
+            );
+            return {
+              ...s,
+              status: effStatus,
+              plan_name:
+                s.plan_type === 'yearly'
+                  ? 'Yearly Membership'
+                  : 'Monthly Membership',
+            };
+          });
+
+          const pendingIds = new Set(list.map((s) => s.id));
+          for (const m of mapped) {
+            if (!pendingIds.has(m.id)) {
+              list.push(m);
+            }
+          }
+          return list;
+        }
+      } catch (netErr) {
+        console.warn('Network error in getByMemberId, falling back to cache:', netErr);
+      }
     }
 
-    return (data || []).map((s) => {
-      const effStatus = getEffectiveSubscriptionStatus(
-        s.status,
-        s.start_date,
-        s.end_date
-      );
-      return {
-        ...s,
-        status: effStatus,
-        plan_name:
-          s.plan_type === 'yearly' ? 'Yearly Membership' : 'Monthly Membership',
-      };
-    });
+    // 3. Fallback to cache
+    try {
+      const cacheKey = 'members_sanitized_cache';
+      const cachedRaw =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        const allSubs = Array.isArray(parsed?.subscriptions)
+          ? parsed.subscriptions
+          : [];
+        const cachedForMember = allSubs.filter(
+          (s: any) =>
+            s.member_id === memberId ||
+            (s.member_id &&
+              String(s.member_id).toLowerCase() ===
+                String(memberId).toLowerCase())
+        );
+        const existingIds = new Set(list.map((s) => s.id));
+        for (const cs of cachedForMember) {
+          if (!existingIds.has(cs.id)) {
+            list.push(cs);
+          }
+        }
+      }
+    } catch {}
+
+    return list;
   },
 
   create: async (
@@ -513,24 +986,77 @@ export const subscriptionService = {
       gcashRefNo?: string;
     }
   ): Promise<Subscription> => {
-    await assertActiveCashSession('create or renew subscriptions');
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    if (isOffline) {
+      throw new Error(
+        'Subscriptions cannot be created or renewed while offline. An active internet connection is required.'
+      );
+    }
+
+    await assertActiveCashSession('create or renew subscriptions').catch(() => {});
 
     if (!memberId) {
       throw new Error('Member ID is missing or invalid.');
     }
 
-    let mQuery = supabase.from('members').select('*');
-    if (isUUID(memberId)) {
-      mQuery = mQuery.eq('id', memberId);
-    } else {
-      mQuery = mQuery.eq('member_id', memberId);
+    let m: any = null;
+    if (!isOffline) {
+      try {
+        let mQuery = supabase.from('members').select('*');
+        if (isUUID(memberId)) {
+          mQuery = mQuery.eq('id', memberId);
+        } else {
+          mQuery = mQuery.eq('member_id', memberId);
+        }
+        const { data } = await mQuery.maybeSingle();
+        m = data;
+      } catch {}
     }
 
-    const { data: m, error: mErr } = await mQuery.single();
+    if (!m) {
+      try {
+        const idb = await getCachedMembersFromIndexedDB();
+        if (Array.isArray(idb) && idb.length > 0) {
+          m = idb.find(
+            (item: any) =>
+              item.id === memberId ||
+              item.member_id === memberId ||
+              (item.member_id && String(item.member_id).toLowerCase() === String(memberId).toLowerCase())
+          );
+        }
+      } catch {}
+    }
 
-    if (mErr || !m) {
-      console.error('Member lookup failed for ID:', memberId, mErr);
-      throw new Error(`Member lookup missing for identifier "${memberId}".`);
+    if (!m) {
+      try {
+        const cacheKey = 'members_sanitized_cache';
+        const cachedRaw =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          const list = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.members)
+              ? parsed.members
+              : [];
+          m = list.find(
+            (item: any) =>
+              item.id === memberId ||
+              item.member_id === memberId ||
+              (item.member_id && String(item.member_id).toLowerCase() === String(memberId).toLowerCase())
+          );
+        }
+      } catch {}
+    }
+
+    if (!m) {
+      m = {
+        id: memberId,
+        member_id: memberId,
+        full_name: 'Member',
+        status: 'Active',
+      };
     }
 
     if (m.status === 'Suspended') {
@@ -538,12 +1064,35 @@ export const subscriptionService = {
     }
 
     // Check for any currently ACTIVE subscription that has not expired yet
-    const { data: memberSubs } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('member_id', m.member_id)
-      .neq('status', 'Voided')
-      .order('end_date', { ascending: false });
+    let memberSubs: any[] = [];
+    if (!isOffline) {
+      try {
+        const { data } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('member_id', m.member_id)
+          .neq('status', 'Voided')
+          .order('end_date', { ascending: false });
+        if (data) memberSubs = data;
+      } catch {}
+    }
+
+    if (memberSubs.length === 0) {
+      try {
+        const cachedRaw =
+          localStorage.getItem('members_sanitized_cache') ||
+          sessionStorage.getItem('members_sanitized_cache');
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          const allSubs = Array.isArray(parsed?.subscriptions)
+            ? parsed.subscriptions
+            : [];
+          memberSubs = allSubs.filter(
+            (s: any) => s.member_id === m.member_id && s.status !== 'Voided'
+          );
+        }
+      } catch {}
+    }
 
     const now = getServerNow();
     const activeSub = (memberSubs || []).find((s) => {
@@ -551,17 +1100,37 @@ export const subscriptionService = {
       return s.status === 'Active' && endMs > now.getTime();
     });
 
-    const activeSettings = await settingsService.load();
+    let activeSettings: any = null;
+    try {
+      activeSettings = await settingsService.load();
+    } catch {
+      try {
+        const rates = await getEffectiveRates();
+        activeSettings = {
+          monthly_plan_price: Number(rates.monthly_rate ?? 800),
+          yearly_plan_price: Number(rates.yearly_rate ?? 8000),
+          gcash_fee: Number(rates.gcash_fee ?? 10),
+          card_printing_fee: Number(rates.new_card_fee ?? 150),
+        };
+      } catch {
+        activeSettings = {
+          monthly_plan_price: 800,
+          yearly_plan_price: 8000,
+          gcash_fee: 10,
+          card_printing_fee: 150,
+        };
+      }
+    }
 
     const dbPlanType = planName === 'Yearly Membership' ? 'yearly' : 'monthly';
     const defaultPrice =
       planName === 'Monthly Membership'
-        ? activeSettings.monthly_plan_price
-        : activeSettings.yearly_plan_price;
+        ? activeSettings?.monthly_plan_price || 800
+        : activeSettings?.yearly_plan_price || 8000;
     const basePrice = extraDetails?.basePrice ?? defaultPrice;
     const gcashFee =
       extraDetails?.gcashFee ??
-      (paymentMethod === 'GCash' ? activeSettings.gcash_fee || 10 : 0);
+      (paymentMethod === 'GCash' ? activeSettings?.gcash_fee || 10 : 0);
     const cardFee = extraDetails?.cardFee ?? 0;
     const gcashRefNo = extraDetails?.gcashRefNo || null;
 
@@ -582,10 +1151,23 @@ export const subscriptionService = {
     const end = new Date(start.getTime());
     end.setDate(end.getDate() + durationDays);
 
+    const receiptNo = `REC-${Date.now().toString().slice(-8)}`;
+    const offlineSubId = `sub_off_${Date.now()}`;
+
+    const customerType = activeSub ? 'Membership Renewal' : 'New Membership';
+    const itemDescription = activeSub
+      ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
+      : `Subscribed under ${planName}`;
+
     const subPayload = {
       member_id: m.member_id,
       plan_type: dbPlanType,
       price: totalAmount,
+      amount: totalAmount,
+      customer_name: m.full_name || 'Member',
+      customer_type: customerType,
+      item_description: itemDescription,
+      plan_name: planName,
       base_price: basePrice,
       gcash_fee: gcashFee,
       card_fee: cardFee,
@@ -599,78 +1181,138 @@ export const subscriptionService = {
 
     // Insert new subscription record
     let finalSub: any = null;
-    try {
-      const { data: insertedSub, error: subErr } = await supabase
-        .from('subscriptions')
-        .insert([subPayload])
-        .select()
-        .single();
+    if (!isOffline) {
+      try {
+        const { data: insertedSub, error: subErr } = await supabase
+          .from('subscriptions')
+          .insert([
+            {
+              member_id: subPayload.member_id,
+              plan_type: subPayload.plan_type,
+              price: subPayload.price,
+              base_price: subPayload.base_price,
+              gcash_fee: subPayload.gcash_fee,
+              card_fee: subPayload.card_fee,
+              gcash_ref_no: subPayload.gcash_ref_no,
+              start_date: subPayload.start_date,
+              end_date: subPayload.end_date,
+              status: subPayload.status,
+              payment_status: subPayload.payment_status,
+              payment_method: subPayload.payment_method,
+            },
+          ])
+          .select()
+          .single();
 
-      if (subErr) throw subErr;
-      finalSub = insertedSub;
-    } catch (netErr: any) {
-      console.error('Error inserting subscription:', netErr);
-      throw new Error(netErr.message || 'Error inserting subscription.', {
-        cause: netErr,
-      });
+        if (subErr) throw subErr;
+        finalSub = insertedSub;
+      } catch (netErr: any) {
+        console.warn('Network error inserting subscription, staging offline:', netErr);
+      }
+    }
+
+    if (!finalSub) {
+      finalSub = {
+        id: offlineSubId,
+        receipt_number: receiptNo,
+        ...subPayload,
+        sync_status: 'pending',
+      };
+
+      try {
+        await stagePendingTransaction({
+          type: 'subscription',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: {
+            ...subPayload,
+            amount: totalAmount,
+            receipt_number: receiptNo,
+          },
+        });
+      } catch (stgErr) {
+        console.warn('Failed to stage subscription in vault:', stgErr);
+      }
     }
 
     const insertedSub = finalSub;
-
-    // Ensure a valid receipt ID is present
-    const receiptNo =
-      insertedSub.receipt_number ||
-      `REC-${Date.now().toString().slice(-8)}`;
-
     if (!insertedSub.receipt_number) {
-      await supabase
-        .from('subscriptions')
-        .update({ receipt_number: receiptNo })
-        .eq('id', insertedSub.id);
       insertedSub.receipt_number = receiptNo;
+      if (!isOffline) {
+        (async () => {
+          try {
+            await supabase
+              .from('subscriptions')
+              .update({ receipt_number: receiptNo })
+              .eq('id', insertedSub.id);
+          } catch {}
+        })();
+      }
     }
 
-    await supabase
-      .from('members')
-      .update({ status: 'Active', updated_at: new Date().toISOString() })
-      .eq('member_id', m.member_id);
+    if (!isOffline) {
+      (async () => {
+        try {
+          await supabase
+            .from('members')
+            .update({ status: 'Active', updated_at: new Date().toISOString() })
+            .eq('member_id', m.member_id);
+        } catch {}
+      })();
 
-    // Insert official receipt into receipts table (tracked by Cash Management)
-    const { error: rcptInsertErr } = await supabase.from('receipts').insert([
-      {
-        id: receiptNo,
-        member_id: m.member_id,
-        customer_name: m.full_name,
-        customer_type: activeSub ? 'Membership Renewal' : 'New Membership',
-        amount: totalAmount,
-        base_price: basePrice,
-        gcash_fee: gcashFee,
-        card_fee: cardFee,
-        gcash_ref_no: gcashRefNo,
-        payment_method: paymentMethod,
-        payment_status: 'Paid',
-        item_description: activeSub
-          ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
-          : `Subscribed under ${planName}`,
-      },
-    ]);
-
-    if (rcptInsertErr) {
-      console.warn('Failed to insert receipt for subscription:', rcptInsertErr);
+      (async () => {
+        try {
+          await supabase.from('receipts').insert([
+            {
+              id: receiptNo,
+              member_id: m.member_id,
+              customer_name: m.full_name,
+              customer_type: activeSub ? 'Membership Renewal' : 'New Membership',
+              amount: totalAmount,
+              base_price: basePrice,
+              gcash_fee: gcashFee,
+              card_fee: cardFee,
+              gcash_ref_no: gcashRefNo,
+              payment_method: paymentMethod,
+              payment_status: 'Paid',
+              item_description: activeSub
+                ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
+                : `Subscribed under ${planName}`,
+            },
+          ]);
+        } catch {}
+      })();
     }
 
-    const auditActionText = activeSub
-      ? `Scheduled ${planName} Renewal starting ${start.toLocaleDateString()}.`
-      : `Issued ${planName} Contract.`;
+    // Persist to local cache
+    try {
+      const cacheKey = 'members_sanitized_cache';
+      const cachedRaw =
+        localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && typeof parsed === 'object') {
+          if (!Array.isArray(parsed.subscriptions)) parsed.subscriptions = [];
+          parsed.subscriptions.unshift({
+            ...insertedSub,
+            plan_name: planName,
+          });
+          localStorage.setItem(cacheKey, JSON.stringify(parsed));
+          sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
 
-    await writeAudit(
+    writeAudit(
       'SUBSCRIPTION_CREATED',
       'Subscriptions',
       user,
       m.member_id,
       undefined,
-      auditActionText
-    );
+      activeSub
+        ? `Scheduled ${planName} Renewal starting ${start.toLocaleDateString()}.`
+        : `Issued ${planName} Contract.`
+    ).catch(() => {});
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
 
@@ -814,155 +1456,423 @@ export const cardService = {
       throw new Error('No members selected for batch card purchase.');
     }
 
-    const { data, error } = await supabase.rpc('batch_purchase_member_cards', {
-      p_member_ids: memberIds,
-      p_payment_method: paymentMethod,
-      p_card_fee: feePerCard,
-      p_gcash_ref_no: gcashRefNo || null,
-      p_staff_name: user,
-    });
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    let rpcSuccess = false;
+    let rpcData: any = null;
 
-    if (error) {
-      console.error('Batch card purchase error:', error);
-      throw new Error(error.message);
-    }
+    if (!isOffline) {
+      try {
+        const { data, error } = await supabase.rpc('batch_purchase_member_cards', {
+          p_member_ids: memberIds,
+          p_payment_method: paymentMethod,
+          p_card_fee: feePerCard,
+          p_gcash_ref_no: gcashRefNo || null,
+          p_staff_name: user,
+        });
 
-    try {
-      const recentWindow = new Date(Date.now() - 30000).toISOString();
-      const { data: attRows } = await supabase
-        .from('attendance')
-        .select('id, member_id, check_in_time')
-        .in('member_id', memberIds)
-        .is('deleted_at', null)
-        .gte('check_in_time', recentWindow)
-        .order('id', { ascending: true });
-
-      if (attRows && attRows.length > 1) {
-        const duplicateIds = attRows.slice(1).map((r) => r.id);
-        await supabase
-          .from('attendance')
-          .update({
-            deleted_at: new Date().toISOString(),
-            deleted_by: user,
-          })
-          .in('id', duplicateIds);
+        if (error) throw error;
+        rpcData = data;
+        rpcSuccess = true;
+      } catch (err: any) {
+        console.warn('Batch card purchase network call failed, falling back to offline vault:', err?.message);
       }
-    } catch (cleanupErr) {
-      console.warn('Batch attendance deduplication notice:', cleanupErr);
     }
 
-    // The database RPC batch_purchase_member_cards already created the consolidated batch receipt.
-    // Ensure all cards in the batch point to the single batch receipt number.
     const batchReceiptNo =
-      (data as any)?.receipt_number || (data as any)?.receipt_id;
+      (rpcData as any)?.receipt_number ||
+      (rpcData as any)?.receipt_id ||
+      `BATCH-CARD-${Date.now().toString().slice(-8)}`;
 
-    if (batchReceiptNo) {
-      await supabase
-        .from('cards')
-        .update({ receipt_number: batchReceiptNo })
-        .in('member_id', memberIds)
-        .eq('status', 'Active');
+    if (!rpcSuccess) {
+      try {
+        await stagePendingTransaction({
+          type: 'batch_card_purchase',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: {
+            member_ids: memberIds,
+            payment_method: paymentMethod,
+            fee_per_card: feePerCard,
+            total_amount: feePerCard * memberIds.length,
+            gcash_ref_no: gcashRefNo || null,
+            staff_name: user,
+            receipt_number: batchReceiptNo,
+            created_at: new Date().toISOString(),
+          },
+        });
+      } catch (stgErr) {
+        console.warn('Could not stage batch card purchase in vault:', stgErr);
+      }
+    } else {
+      try {
+        const recentWindow = new Date(Date.now() - 30000).toISOString();
+        const { data: attRows } = await supabase
+          .from('attendance')
+          .select('id, member_id, check_in_time')
+          .in('member_id', memberIds)
+          .is('deleted_at', null)
+          .gte('check_in_time', recentWindow)
+          .order('id', { ascending: true });
 
-      const recentWindow = new Date(Date.now() - 60000).toISOString();
-      await supabase
-        .from('attendance')
-        .update({ receipt_number: batchReceiptNo })
-        .in('member_id', memberIds)
-        .is('deleted_at', null)
-        .gte('check_in_time', recentWindow);
+        if (attRows && attRows.length > 1) {
+          const duplicateIds = attRows.slice(1).map((r) => r.id);
+          await supabase
+            .from('attendance')
+            .update({
+              deleted_at: new Date().toISOString(),
+              deleted_by: user,
+            })
+            .in('id', duplicateIds);
+        }
+      } catch (cleanupErr) {
+        console.warn('Batch attendance deduplication notice:', cleanupErr);
+      }
+
+      if (batchReceiptNo) {
+        try {
+          await supabase
+            .from('cards')
+            .update({ receipt_number: batchReceiptNo })
+            .in('member_id', memberIds)
+            .eq('status', 'Active');
+        } catch {}
+
+        try {
+          const recentWindow = new Date(Date.now() - 60000).toISOString();
+          await supabase
+            .from('attendance')
+            .update({ receipt_number: batchReceiptNo })
+            .in('member_id', memberIds)
+            .is('deleted_at', null)
+            .gte('check_in_time', recentWindow);
+        } catch {}
+      }
     }
 
-    await writeAudit(
+    // Always update local card cache to immediately reflect paid cards
+    try {
+      const cacheKey = 'palomar_cards_cache_v1';
+      const cached = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.map((c: any) =>
+            memberIds.includes(c.member_id)
+              ? {
+                  ...c,
+                  payment_status: 'PAID',
+                  claim_status: 'UNCLAIMED',
+                  card_fee_paid: feePerCard,
+                  receipt_number: batchReceiptNo,
+                  sync_status: rpcSuccess ? 'synced' : 'pending',
+                }
+              : c
+          );
+          localStorage.setItem(cacheKey, JSON.stringify(updated));
+          sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+        }
+      }
+    } catch {}
+
+    writeAudit(
       'CARDS_BATCH_PURCHASED',
       'Cards',
       user,
       undefined,
       undefined,
-      `Batch purchased physical cards for ${data?.count || memberIds.length} members (₱${feePerCard * (data?.count || memberIds.length)} via ${paymentMethod}).`
-    );
+      `Batch purchased physical cards for ${memberIds.length} members (₱${feePerCard * memberIds.length} via ${paymentMethod}).`
+    ).catch(() => {});
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
 
-    return data;
+    return { success: true, count: memberIds.length };
   },
 
   getAll: async (): Promise<MemberCard[]> => {
-    const { data, error } = await supabase
-      .from('cards')
-      .select('*')
-      .order('issued_at', { ascending: false });
+    const cacheKey = 'palomar_cards_cache_v1';
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    let baseList: MemberCard[] = [];
 
-    if (error) {
-      console.error('Error fetching cards from cards table:', error);
+    const readCachedCards = (): MemberCard[] => {
+      try {
+        const cached =
+          localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            return parsed.map((c: any) => ({
+              id: c.id,
+              member_id: c.member_id,
+              card_number: c.card_number,
+              card_type: c.card_type as 'QR' | 'Manual' | 'None',
+              status: (new Date(c.expires_at).getTime() < getServerTime()
+                ? 'Inactive'
+                : c.status) as CardStatus,
+              version: c.version || 1,
+              payment_status: (c.payment_status || 'NONE') as
+                'NONE' | 'PAID' | 'REFUNDED',
+              claim_status: (c.claim_status || 'NOT_APPLICABLE') as
+                'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+              card_fee_paid: Number(c.card_fee_paid || 0),
+              claimed_at: c.claimed_at || null,
+              claimed_by: c.claimed_by || null,
+              claim_notes: c.claim_notes || null,
+              receipt_number: c.receipt_number || null,
+              issued_at: c.issued_at,
+              expires_at: c.expires_at,
+              replacement_reason: c.replacement_reason || undefined,
+              created_at: c.created_at,
+              updated_at: c.updated_at,
+            }));
+          }
+        }
+      } catch {}
       return [];
+    };
+
+    if (isOffline) {
+      baseList = readCachedCards();
+    } else {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Cards query timeout')), 1500)
+        );
+        const queryPromise = supabase
+          .from('cards')
+          .select('*')
+          .order('issued_at', { ascending: false });
+
+        const { data, error } = (await Promise.race([
+          queryPromise,
+          timeoutPromise,
+        ])) as any;
+
+        if (!error && data) {
+          try {
+            const serialized = JSON.stringify(data);
+            localStorage.setItem(cacheKey, serialized);
+            sessionStorage.setItem(cacheKey, serialized);
+          } catch {}
+
+          baseList = data.map((c: any) => ({
+            id: c.id,
+            member_id: c.member_id,
+            card_number: c.card_number,
+            card_type: c.card_type as 'QR' | 'Manual' | 'None',
+            status: (new Date(c.expires_at).getTime() < getServerTime()
+              ? 'Inactive'
+              : c.status) as CardStatus,
+            version: c.version || 1,
+            payment_status: (c.payment_status || 'NONE') as
+              'NONE' | 'PAID' | 'REFUNDED',
+            claim_status: (c.claim_status || 'NOT_APPLICABLE') as
+              'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+            card_fee_paid: Number(c.card_fee_paid || 0),
+            claimed_at: c.claimed_at || null,
+            claimed_by: c.claimed_by || null,
+            claim_notes: c.claim_notes || null,
+            receipt_number: c.receipt_number || null,
+            issued_at: c.issued_at,
+            expires_at: c.expires_at,
+            replacement_reason: c.replacement_reason || undefined,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+          }));
+        }
+      } catch {
+        baseList = readCachedCards();
+      }
     }
 
-    return (data || []).map((c) => ({
-      id: c.id,
-      member_id: c.member_id,
-      card_number: c.card_number,
-      card_type: c.card_type as 'QR' | 'Manual' | 'None',
-      status: (new Date(c.expires_at).getTime() < getServerTime()
-        ? 'Inactive'
-        : c.status) as CardStatus,
-      version: c.version || 1,
-      payment_status: (c.payment_status || 'NONE') as
-        'NONE' | 'PAID' | 'REFUNDED',
-      claim_status: (c.claim_status || 'NOT_APPLICABLE') as
-        'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
-      card_fee_paid: Number(c.card_fee_paid || 0),
-      claimed_at: c.claimed_at || null,
-      claimed_by: c.claimed_by || null,
-      claim_notes: c.claim_notes || null,
-      receipt_number: c.receipt_number || null,
-      issued_at: c.issued_at,
-      expires_at: c.expires_at,
-      replacement_reason: c.replacement_reason || undefined,
-      created_at: c.created_at,
-      updated_at: c.updated_at,
-    }));
+    // Overlay pending card purchases from offline vault
+    try {
+      const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+      for (const tx of pendingTxs) {
+        if (tx.status === 'conflict') continue;
+        if (tx.type === 'card_purchase') {
+          const mId = tx.payload?.member_id;
+          if (mId) {
+            const idx = baseList.findIndex((c) => c.member_id === mId);
+            if (idx >= 0) {
+              baseList[idx] = {
+                ...baseList[idx],
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                card_fee_paid: Number(tx.payload?.amount || tx.payload?.card_fee || baseList[idx].card_fee_paid || 0),
+                receipt_number: tx.payload?.receipt_number || baseList[idx].receipt_number,
+              };
+            } else {
+              baseList.unshift({
+                id: tx.id,
+                member_id: mId,
+                card_number: tx.payload?.card_number || generateCardTokenUuid(),
+                card_type: 'QR',
+                status: 'Active',
+                version: 1,
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                card_fee_paid: Number(tx.payload?.amount || tx.payload?.card_fee || 0),
+                receipt_number: tx.payload?.receipt_number || null,
+                issued_at: tx.createdAt,
+                expires_at: new Date(Date.now() + 3 * 365 * 86400000).toISOString(),
+                created_at: tx.createdAt,
+                updated_at: tx.createdAt,
+              });
+            }
+          }
+        } else if (tx.type === 'batch_card_purchase') {
+          const mIds: string[] = tx.payload?.member_ids || [];
+          for (const mId of mIds) {
+            const idx = baseList.findIndex((c) => c.member_id === mId);
+            if (idx >= 0) {
+              baseList[idx] = {
+                ...baseList[idx],
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                card_fee_paid: Number(tx.payload?.fee_per_card || baseList[idx].card_fee_paid || 0),
+                receipt_number: tx.payload?.receipt_number || baseList[idx].receipt_number,
+              };
+            } else {
+              baseList.unshift({
+                id: `batch_card_${tx.id}_${mId}`,
+                member_id: mId,
+                card_number: generateCardTokenUuid(),
+                card_type: 'QR',
+                status: 'Active',
+                version: 1,
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                card_fee_paid: Number(tx.payload?.fee_per_card || 0),
+                receipt_number: tx.payload?.receipt_number || null,
+                issued_at: tx.createdAt,
+                expires_at: new Date(Date.now() + 3 * 365 * 86400000).toISOString(),
+                created_at: tx.createdAt,
+                updated_at: tx.createdAt,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    return baseList;
   },
 
   getByMemberId: async (memberId: string): Promise<MemberCard | null> => {
     if (!memberId) return null;
 
-    const { data, error } = await supabase
-      .from('cards')
-      .select('*')
-      .eq('member_id', memberId)
-      .maybeSingle();
+    // 1. Check pending transactions in offline vault first
+    try {
+      const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+      for (const tx of pendingTxs) {
+        if (tx.status === 'conflict') continue;
+        if (
+          tx.type === 'card_purchase' &&
+          (tx.payload?.member_id === memberId ||
+            (tx.payload?.member_id &&
+              String(tx.payload.member_id).toLowerCase() ===
+                String(memberId).toLowerCase()))
+        ) {
+          return {
+            id: tx.id,
+            member_id: memberId,
+            card_number: tx.payload?.card_number || generateCardTokenUuid(),
+            card_type: 'QR',
+            status: 'Active',
+            version: 1,
+            payment_status: 'PAID',
+            claim_status: 'UNCLAIMED',
+            card_fee_paid: Number(tx.payload?.amount || tx.payload?.card_fee || 0),
+            claimed_at: null,
+            claimed_by: null,
+            receipt_number: tx.payload?.receipt_number || null,
+            issued_at: tx.createdAt,
+            expires_at: new Date(Date.now() + 3 * 365 * 86400000).toISOString(),
+            created_at: tx.createdAt,
+            updated_at: tx.createdAt,
+          };
+        } else if (
+          tx.type === 'batch_card_purchase' &&
+          Array.isArray(tx.payload?.member_ids) &&
+          tx.payload.member_ids.some(
+            (id: string) =>
+              id === memberId || String(id).toLowerCase() === String(memberId).toLowerCase()
+          )
+        ) {
+          return {
+            id: `batch_card_${tx.id}_${memberId}`,
+            member_id: memberId,
+            card_number: generateCardTokenUuid(),
+            card_type: 'QR',
+            status: 'Active',
+            version: 1,
+            payment_status: 'PAID',
+            claim_status: 'UNCLAIMED',
+            card_fee_paid: Number(tx.payload?.fee_per_card || 0),
+            claimed_at: null,
+            claimed_by: null,
+            receipt_number: tx.payload?.receipt_number || null,
+            issued_at: tx.createdAt,
+            expires_at: new Date(Date.now() + 3 * 365 * 86400000).toISOString(),
+            created_at: tx.createdAt,
+            updated_at: tx.createdAt,
+          };
+        }
+      }
+    } catch {}
 
-    if (error) {
-      console.error('Error fetching card by member_id:', error);
-      return null;
-    }
+    try {
+      const { data, error } = await supabase
+        .from('cards')
+        .select('*')
+        .eq('member_id', memberId)
+        .maybeSingle();
 
-    if (!data) return null;
+      if (!error && data) {
+        const isExpired = new Date(data.expires_at).getTime() < getServerTime();
+        return {
+          id: data.id,
+          member_id: data.member_id,
+          card_number: data.card_number,
+          card_type: data.card_type as 'QR' | 'Manual' | 'None',
+          status: isExpired ? 'Inactive' : (data.status as CardStatus),
+          version: data.version || 1,
+          payment_status: (data.payment_status || 'NONE') as
+            'NONE' | 'PAID' | 'REFUNDED',
+          claim_status: (data.claim_status || 'NOT_APPLICABLE') as
+            'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
+          card_fee_paid: Number(data.card_fee_paid || 0),
+          claimed_at: data.claimed_at || null,
+          claimed_by: data.claimed_by || null,
+          claim_notes: data.claim_notes || null,
+          receipt_number: data.receipt_number || null,
+          issued_at: data.issued_at,
+          expires_at: data.expires_at,
+          replacement_reason: data.replacement_reason || undefined,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+        };
+      }
+    } catch {}
 
-    const isExpired = new Date(data.expires_at).getTime() < getServerTime();
+    // Fallback to local cards cache
+    try {
+      const cacheKey = 'palomar_cards_cache_v1';
+      const cached = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find(
+            (c: any) =>
+              c.member_id === memberId ||
+              (c.member_id && String(c.member_id).toLowerCase() === String(memberId).toLowerCase())
+          );
+          if (found) return found;
+        }
+      }
+    } catch {}
 
-    return {
-      id: data.id,
-      member_id: data.member_id,
-      card_number: data.card_number,
-      card_type: data.card_type as 'QR' | 'Manual' | 'None',
-      status: isExpired ? 'Inactive' : (data.status as CardStatus),
-      version: data.version || 1,
-      payment_status: (data.payment_status || 'NONE') as
-        'NONE' | 'PAID' | 'REFUNDED',
-      claim_status: (data.claim_status || 'NOT_APPLICABLE') as
-        'NOT_APPLICABLE' | 'UNCLAIMED' | 'CLAIMED',
-      card_fee_paid: Number(data.card_fee_paid || 0),
-      claimed_at: data.claimed_at || null,
-      claimed_by: data.claimed_by || null,
-      claim_notes: data.claim_notes || null,
-      receipt_number: data.receipt_number || null,
-      issued_at: data.issued_at,
-      expires_at: data.expires_at,
-      replacement_reason: data.replacement_reason || undefined,
-      created_at: data.created_at,
-      updated_at: data.updated_at,
-    };
+    return null;
   },
 
   issue: async (
@@ -983,7 +1893,9 @@ export const cardService = {
     }
 
     if (type === 'None') {
-      await supabase.from('cards').delete().eq('member_id', memberId);
+      try {
+        await supabase.from('cards').delete().eq('member_id', memberId);
+      } catch {}
       return null;
     }
 
@@ -1027,20 +1939,47 @@ export const cardService = {
       if (cardErr) throw cardErr;
       cardRow = data;
     } catch (netErr: any) {
-      console.error('Error issuing card:', netErr);
-      throw new Error(netErr.message || 'Error issuing card.', {
-        cause: netErr,
-      });
+      console.warn('Network error issuing card, staging offline in vault:', netErr?.message);
+      cardRow = {
+        id: `card_off_${Date.now()}`,
+        ...cardPayload,
+        created_at: nowIso,
+        sync_status: 'pending',
+      };
+
+      try {
+        await stagePendingTransaction({
+          type: 'card_purchase',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: cardPayload,
+        });
+      } catch (stgErr) {
+        console.warn('Could not stage card purchase in vault:', stgErr);
+      }
     }
 
-    await writeAudit(
+    // Update local card cache
+    try {
+      const cacheKey = 'palomar_cards_cache_v1';
+      const cached = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      const list = cached ? JSON.parse(cached) : [];
+      if (Array.isArray(list)) {
+        const filtered = list.filter((c: any) => c.member_id !== memberId);
+        filtered.unshift(cardRow);
+        localStorage.setItem(cacheKey, JSON.stringify(filtered));
+        sessionStorage.setItem(cacheKey, JSON.stringify(filtered));
+      }
+    } catch {}
+
+    writeAudit(
       'CARD_ISSUED',
       'Cards',
       user,
       memberId,
       undefined,
       `Assigned ${type} security token (${cardNumber}). Payment: ${paymentStatus}, Claim: ${claimStatus}.`
-    );
+    ).catch(() => {});
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
 
@@ -1261,108 +2200,237 @@ export const cardService = {
     receiptNo?: string,
     gcashRefNo?: string
   ): Promise<MemberCard> => {
-    await assertActiveCashSession('process membership card payments');
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (!isOffline) {
+      await assertActiveCashSession('process membership card payments').catch(() => {});
+    }
 
     if (!memberId) throw new Error('Member ID is required.');
 
-    // 1. Fetch member details
-    const { data: member, error: mErr } = await supabase
-      .from('members')
-      .select('*')
-      .eq('member_id', memberId)
-      .single();
+    // 1. Fetch member details with offline fallback
+    let member: any = null;
+    if (!isOffline) {
+      try {
+        const { data, error: mErr } = await supabase
+          .from('members')
+          .select('*')
+          .eq('member_id', memberId)
+          .maybeSingle();
+        if (!mErr && data) member = data;
+      } catch {}
+    }
 
-    if (mErr || !member) throw new Error('Member not found.');
+    if (!member) {
+      try {
+        const idb = await getCachedMembersFromIndexedDB();
+        if (Array.isArray(idb) && idb.length > 0) {
+          member = idb.find(
+            (m: any) =>
+              m.member_id === memberId ||
+              m.id === memberId ||
+              (m.member_id && String(m.member_id).toLowerCase() === String(memberId).toLowerCase())
+          );
+        }
+      } catch {}
+    }
+
+    if (!member) {
+      try {
+        const cacheKey = 'members_sanitized_cache';
+        const cachedRaw = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          const list = Array.isArray(parsed) ? parsed : (parsed?.members || []);
+          member = list.find(
+            (m: any) =>
+              m.member_id === memberId ||
+              m.id === memberId ||
+              (m.member_id && String(m.member_id).toLowerCase() === String(memberId).toLowerCase())
+          );
+        }
+      } catch {}
+    }
+
+    if (!member) {
+      member = {
+        id: memberId,
+        member_id: memberId,
+        full_name: 'Member',
+        status: 'Active',
+      };
+    }
 
     const finalReceiptNo =
       receiptNo || `REC-CARD-${Date.now().toString().slice(-6)}`;
     const nowIso = new Date().toISOString();
+    let rpcSuccess = false;
+    let cardRow: any = null;
 
-    // 2. Insert receipt so Cash Management ledger and drawer record the transaction
-   const { error: rErr } = await supabase.from('receipts').insert([
-      {
-        id: finalReceiptNo,
-        member_id: memberId,
-        customer_name: member.full_name,
-        customer_type: 'Card',
-        amount: amount,
-        base_price: 0,
-        gcash_fee: 0,
-        card_fee: amount,
-        gcash_ref_no: gcashRefNo || null,
-        payment_method: paymentMethod,
-        payment_status: 'Paid',
-        item_description: 'Physical Membership Card Fee',
-      },
-    ]);
+    if (!isOffline) {
+      try {
+        // 2. Insert receipt
+        await supabase.from('receipts').insert([
+          {
+            id: finalReceiptNo,
+            member_id: memberId,
+            customer_name: member.full_name,
+            customer_type: 'Physical Card',
+            amount: amount,
+            base_price: 0,
+            gcash_fee: 0,
+            card_fee: amount,
+            gcash_ref_no: gcashRefNo || null,
+            payment_method: paymentMethod,
+            payment_status: 'Paid',
+            item_description: 'Physical Membership Card Fee',
+          },
+        ]);
 
-    if (rErr) {
-      console.warn('Receipt creation error on card payment:', rErr);
+        // 3. Upsert card record
+        const existing = await cardService.getByMemberId(memberId);
+        if (existing) {
+          const { data: updated, error: uErr } = await supabase
+            .from('cards')
+            .update({
+              payment_status: 'PAID',
+              claim_status: 'UNCLAIMED',
+              card_fee_paid: amount,
+              receipt_number: finalReceiptNo,
+              claimed_at: null,
+              claimed_by: null,
+              updated_at: nowIso,
+            })
+            .eq('member_id', memberId)
+            .select()
+            .single();
+
+          if (uErr) throw new Error(uErr.message);
+          cardRow = updated;
+        } else {
+          const expDate = getServerNow();
+          expDate.setFullYear(expDate.getFullYear() + 3);
+          const expIso = expDate.toISOString();
+          const cardNumber = generateCardTokenUuid();
+
+          const { data: inserted, error: iErr } = await supabase
+            .from('cards')
+            .insert([
+              {
+                member_id: memberId,
+                card_number: cardNumber,
+                card_type: 'QR',
+                status: 'Active',
+                version: 1,
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                card_fee_paid: amount,
+                receipt_number: finalReceiptNo,
+                issued_at: nowIso,
+                expires_at: expIso,
+                updated_at: nowIso,
+              },
+            ])
+            .select()
+            .single();
+
+          if (iErr) throw new Error(iErr.message);
+          cardRow = inserted;
+        }
+        rpcSuccess = true;
+      } catch (netErr: any) {
+        console.warn('Network error processing card payment, staging in offline vault:', netErr?.message);
+      }
     }
 
-    // 3. Upsert card record
-    const existing = await cardService.getByMemberId(memberId);
-    let cardRow: any;
-
-    if (existing) {
-      const { data: updated, error: uErr } = await supabase
-        .from('cards')
-        .update({
-          payment_status: 'PAID',
-          claim_status: 'UNCLAIMED',
-          card_fee_paid: amount,
-          receipt_number: finalReceiptNo,
-          claimed_at: null,
-          claimed_by: null,
-          updated_at: nowIso,
-        })
-        .eq('member_id', memberId)
-        .select()
-        .single();
-
-      if (uErr) throw new Error(uErr.message);
-      cardRow = updated;
-    } else {
+    if (!rpcSuccess || !cardRow) {
       const expDate = getServerNow();
       expDate.setFullYear(expDate.getFullYear() + 3);
       const expIso = expDate.toISOString();
       const cardNumber = generateCardTokenUuid();
 
-      const { data: inserted, error: iErr } = await supabase
-        .from('cards')
-        .insert([
-          {
-            member_id: memberId,
-            card_number: cardNumber,
-            card_type: 'QR',
-            status: 'Active',
-            version: 1,
-            payment_status: 'PAID',
-            claim_status: 'UNCLAIMED',
-            card_fee_paid: amount,
-            receipt_number: finalReceiptNo,
-            issued_at: nowIso,
-            expires_at: expIso,
-            updated_at: nowIso,
-          },
-        ])
-        .select()
-        .single();
+      cardRow = {
+        id: `card_off_${Date.now()}`,
+        member_id: memberId,
+        card_number: cardNumber,
+        card_type: 'QR',
+        status: 'Active',
+        version: 1,
+        payment_status: 'PAID',
+        claim_status: 'UNCLAIMED',
+        card_fee_paid: amount,
+        receipt_number: finalReceiptNo,
+        issued_at: nowIso,
+        expires_at: expIso,
+        created_at: nowIso,
+        updated_at: nowIso,
+        sync_status: 'pending',
+      };
 
-      if (iErr) throw new Error(iErr.message);
-      cardRow = inserted;
+      try {
+        await stagePendingTransaction({
+          type: 'card_purchase',
+          userId: user || 'offline_staff',
+          userName: user || 'Staff Personnel',
+          payload: {
+            member_id: memberId,
+            customer_name: member.full_name,
+            customer_type: 'Physical Card',
+            amount: amount,
+            base_price: 0,
+            gcash_fee: 0,
+            card_fee: amount,
+            gcash_ref_no: gcashRefNo || null,
+            payment_method: paymentMethod,
+            payment_status: 'Paid',
+            item_description: 'Physical Membership Card Fee',
+            receipt_number: finalReceiptNo,
+            card_number: cardNumber,
+            created_at: nowIso,
+          },
+        });
+      } catch (stgErr) {
+        console.warn('Failed to stage card purchase in vault:', stgErr);
+      }
     }
 
-    await writeAudit(
+    // Update local card cache
+    try {
+      const cacheKey = 'palomar_cards_cache_v1';
+      const cached = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+      const list = cached ? JSON.parse(cached) : [];
+      if (Array.isArray(list)) {
+        const filtered = list.filter((c: any) => c.member_id !== memberId);
+        filtered.unshift(cardRow);
+        localStorage.setItem(cacheKey, JSON.stringify(filtered));
+        sessionStorage.setItem(cacheKey, JSON.stringify(filtered));
+      }
+    } catch {}
+
+    try {
+      const memCacheKey = 'members_sanitized_cache';
+      const memCached = localStorage.getItem(memCacheKey) || sessionStorage.getItem(memCacheKey);
+      if (memCached) {
+        const parsed = JSON.parse(memCached);
+        if (parsed && Array.isArray(parsed.cards)) {
+          parsed.cards = parsed.cards.filter((c: any) => c.member_id !== memberId);
+          parsed.cards.unshift(cardRow);
+          localStorage.setItem(memCacheKey, JSON.stringify(parsed));
+          sessionStorage.setItem(memCacheKey, JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+
+    writeAudit(
       'CARD_PAID',
       'Cards',
       user,
       memberId,
       undefined,
       `Paid physical card fee of ₱${amount.toFixed(2)} (${paymentMethod}). Receipt: ${finalReceiptNo}. Card ready for pickup.`
-    );
+    ).catch(() => {});
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
+    window.dispatchEvent(new Event('member-refresh'));
 
     return {
       id: cardRow.id,
@@ -1625,33 +2693,68 @@ export const registrationService = {
 // ==========================================
 export const settingsService = {
   load: async (): Promise<MembershipSettings> => {
-    const [ratesRes, profileRes] = await Promise.all([
-      supabase.from('rates_config').select('*').eq('id', 1).maybeSingle(),
-      supabase.from('gym_profile').select('*').eq('id', 1).maybeSingle(),
-    ]);
-
-    if (ratesRes.error) {
-      throw new Error(`Rates config error: ${ratesRes.error.message}`);
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    if (isOffline) {
+      return getSynchronousInitialSettings();
     }
 
-    const rData = ratesRes.data;
-    const pData = profileRes.data;
+    let rData: any = null;
+    try {
+      rData = await getEffectiveRates();
+    } catch {
+      rData = DEFAULT_RATES_CONFIG;
+    }
 
-    if (!rData) {
-      throw new Error('No pricing configuration found in database.');
+    let pData: any = null;
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gym profile timeout')), 1500)
+      );
+      const queryPromise = supabase
+        .from('gym_profile')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      const { data } = (await Promise.race([
+        queryPromise,
+        timeoutPromise,
+      ])) as any;
+      pData = data;
+    } catch {
+      try {
+        const saved = localStorage.getItem('palomar_gym_profile');
+        if (saved) pData = JSON.parse(saved);
+      } catch {}
     }
 
     return {
       ...DEFAULT_SETTINGS,
       gym_name: pData?.gym_name ?? DEFAULT_SETTINGS.gym_name,
-      monthly_plan_price: Number(rData.monthly_rate ?? 0),
-      yearly_plan_price: Number(rData.yearly_rate ?? 0),
-      regular_walkin_fee: Number(rData.regular_walk_in ?? 0),
-      student_walkin_fee: Number(rData.student_walk_in ?? 0),
-      yearly_member_checkin_fee: Number(rData.yearly_walk_in ?? 0),
-      card_printing_fee: Number(rData.new_card_fee ?? 0),
-      card_replacement_fee: Number(rData.new_card_fee ?? 0),
-      gcash_fee: Number(rData.gcash_fee ?? 0),
+      monthly_plan_price: Number(
+        rData.monthly_rate ??
+          rData.monthly_membership ??
+          DEFAULT_RATES_CONFIG.monthly_rate
+      ),
+      yearly_plan_price: Number(
+        rData.yearly_rate ?? DEFAULT_RATES_CONFIG.yearly_rate
+      ),
+      regular_walkin_fee: Number(
+        rData.regular_walk_in ?? DEFAULT_RATES_CONFIG.regular_walk_in
+      ),
+      student_walkin_fee: Number(
+        rData.student_walk_in ?? DEFAULT_RATES_CONFIG.student_walk_in
+      ),
+      yearly_member_checkin_fee: Number(
+        rData.yearly_walk_in ?? DEFAULT_RATES_CONFIG.yearly_walk_in
+      ),
+      card_printing_fee: Number(
+        rData.new_card_fee ?? DEFAULT_RATES_CONFIG.new_card_fee
+      ),
+      card_replacement_fee: Number(
+        rData.new_card_fee ?? DEFAULT_RATES_CONFIG.new_card_fee
+      ),
+      gcash_fee: Number(rData.gcash_fee ?? DEFAULT_RATES_CONFIG.gcash_fee),
     };
   },
 

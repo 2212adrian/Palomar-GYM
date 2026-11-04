@@ -21,6 +21,7 @@ import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useNotificationStore } from '../../stores/useNotificationStore';
+import { stagePendingTransaction } from '../../lib/offlineVault';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -741,26 +742,60 @@ export const Products: React.FC<ProductsProps> = ({
           }));
 
           let updateSuccess = false;
-          try {
-            const { error } = await supabase
-              .from('products')
-              .update(productPayload)
-              .eq('id', selectedProductId);
+          let updatedOffline = false;
+          const isOffline =
+            typeof navigator !== 'undefined' && !navigator.onLine;
 
-            if (error) throw error;
-            updateSuccess = true;
-          } catch (netErr) {
-            console.error('Error updating product:', netErr);
-            throw new Error('Error updating product.', {
-              cause: netErr,
-            });
+          if (isOffline) {
+            try {
+              await stagePendingTransaction({
+                type: 'product_create',
+                cashSessionId: '',
+                userId: user?.id || 'admin',
+                userName: profile?.username || user?.email || 'Admin',
+                payload: { ...productPayload, id: selectedProductId },
+              });
+              updatedOffline = true;
+            } catch (stageErr) {
+              console.warn('Failed to stage offline update:', stageErr);
+              updatedOffline = true; // still allow local update
+            }
+          } else {
+            try {
+              const { error } = await supabase
+                .from('products')
+                .update(productPayload)
+                .eq('id', selectedProductId);
+
+              if (error) throw error;
+              updateSuccess = true;
+            } catch (netErr) {
+              console.warn('Network error updating product, staging offline:', netErr);
+              try {
+                await stagePendingTransaction({
+                  type: 'product_create',
+                  cashSessionId: '',
+                  userId: user?.id || 'admin',
+                  userName: profile?.username || user?.email || 'Admin',
+                  payload: { ...productPayload, id: selectedProductId },
+                });
+                updatedOffline = true;
+              } catch {
+                updatedOffline = true;
+              }
+            }
           }
 
-          if (updateSuccess) {
-            toast.success(`Updated "${nameClean}".`, {
-              autoClose: 4000,
-              onClose: () => clearDiff(editedId),
-            });
+          if (updateSuccess || updatedOffline) {
+            toast.success(
+              updatedOffline
+                ? `Updated "${nameClean}" offline (will sync when online).`
+                : `Updated "${nameClean}".`,
+              {
+                autoClose: 4000,
+                onClose: () => clearDiff(editedId),
+              }
+            );
 
             const auditDetails =
               changes.length > 0
@@ -782,20 +817,65 @@ export const Products: React.FC<ProductsProps> = ({
           }
         } else {
           let createdProduct: Product | null = null;
-          try {
-            const { data, error } = await supabase
-              .from('products')
-              .insert(productPayload)
-              .select()
-              .single();
+          const isOffline =
+            typeof navigator !== 'undefined' && !navigator.onLine;
 
-            if (error) throw error;
-            if (data) createdProduct = data as Product;
-          } catch (netErr) {
-            console.error('Error creating product:', netErr);
-            throw new Error('Error creating product.', {
-              cause: netErr,
-            });
+          if (isOffline) {
+            try {
+              const vaultId = await stagePendingTransaction({
+                type: 'product_create',
+                cashSessionId: '',
+                userId: user?.id || 'admin',
+                userName: profile?.username || user?.email || 'Admin',
+                payload: productPayload,
+              });
+
+              createdProduct = {
+                ...productPayload,
+                id: vaultId,
+                sync_status: 'pending',
+              } as any;
+            } catch (err: any) {
+              console.warn('Failed to stage offline product, using local fallback:', err);
+              createdProduct = {
+                ...productPayload,
+                id: `offline-prod-${Date.now()}`,
+                sync_status: 'pending',
+              } as any;
+            }
+          } else {
+            try {
+              const { data, error } = await supabase
+                .from('products')
+                .insert(productPayload)
+                .select()
+                .single();
+
+              if (error) throw error;
+              if (data) createdProduct = data as Product;
+            } catch {
+              try {
+                const vaultId = await stagePendingTransaction({
+                  type: 'product_create',
+                  cashSessionId: '',
+                  userId: user?.id || 'admin',
+                  userName: profile?.username || user?.email || 'Admin',
+                  payload: productPayload,
+                });
+
+                createdProduct = {
+                  ...productPayload,
+                  id: vaultId,
+                  sync_status: 'pending',
+                } as any;
+              } catch {
+                createdProduct = {
+                  ...productPayload,
+                  id: `offline-prod-${Date.now()}`,
+                  sync_status: 'pending',
+                } as any;
+              }
+            }
           }
 
           if (createdProduct) {
@@ -805,6 +885,22 @@ export const Products: React.FC<ProductsProps> = ({
               newProduct,
               ...prev.filter((p) => p.id !== newProduct.id),
             ]);
+
+            try {
+              const cached = localStorage.getItem('products_sanitized_list');
+              const parsed = cached ? JSON.parse(cached) : [];
+              if (Array.isArray(parsed)) {
+                parsed.unshift(newProduct);
+                localStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(parsed)
+                );
+                sessionStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(parsed)
+                );
+              }
+            } catch {}
 
             // Register newly added highlight
             setActiveDiffs((prev) => ({
@@ -818,10 +914,15 @@ export const Products: React.FC<ProductsProps> = ({
               },
             }));
 
-            toast.success(`New product "${nameClean}" listed.`, {
-              autoClose: 4000,
-              onClose: () => clearDiff(newProduct.id),
-            });
+            toast.success(
+              isOffline || (newProduct as any).sync_status === 'pending'
+                ? `Product "${nameClean}" saved offline (will sync when online).`
+                : `New product "${nameClean}" listed.`,
+              {
+                autoClose: 4000,
+                onClose: () => clearDiff(newProduct.id),
+              }
+            );
 
             await logAudit(
               'PRODUCT_CREATED',
@@ -832,11 +933,11 @@ export const Products: React.FC<ProductsProps> = ({
         }
       }
 
-      fetchProducts(true); // Silent sync in background
+      fetchProducts(true).catch(() => {});
       return true;
     } catch {
       toast.error('Failed to save parameters.');
-      fetchProducts(true);
+      fetchProducts(true).catch(() => {});
       return false;
     } finally {
       setSaving(false);
@@ -1180,6 +1281,19 @@ export const Products: React.FC<ProductsProps> = ({
                 >
                   {item.product_name}
                 </span>
+
+                {/* Sync status indicator badge */}
+                {(item as any).sync_status === 'pending' ||
+                String(item.id).startsWith('offline-') ||
+                String(item.id).startsWith('prod_off_') ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-mono text-[9px] font-extrabold uppercase tracking-wider shadow-xs">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> PENDING SYNC
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-mono text-[9px] font-bold uppercase tracking-wider shadow-xs">
+                    <Check className="w-2.5 h-2.5" /> SYNCED
+                  </span>
+                )}
 
                 {/* Badges for active state changes */}
                 {isAdded && (
@@ -1705,6 +1819,19 @@ export const Products: React.FC<ProductsProps> = ({
                             REMOVED
                           </span>
                         )}
+                        {/* Sync status indicator badge */}
+                        {(product as any).sync_status === 'pending' ||
+                        String(product.id).startsWith('offline-') ||
+                        String(product.id).startsWith('prod_off_') ? (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <RefreshCw className="w-2.5 h-2.5 animate-spin" /> PENDING SYNC
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <Check className="w-2.5 h-2.5" /> SYNCED
+                          </span>
+                        )}
+
                         <span
                           className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
                             product.status === 'Active'

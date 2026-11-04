@@ -5,6 +5,8 @@ import React, {
   createContext,
   useContext,
   useRef,
+  useCallback,
+  useMemo,
 } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
@@ -73,33 +75,33 @@ export const SystemLayout: React.FC = () => {
     );
   };
 
-  // ─── Synchronous Direction Calculation During Render ───
+  // ─── Direction-Aware Navigation Transition ───
+  const prevNavPathRef = useRef(location.pathname);
   const [navTransition, setNavTransition] = useState<{
-    pathname: string;
     direction: 'down' | 'up' | null;
     animKey: number;
   }>({
-    pathname: location.pathname,
     direction: null,
     animKey: 0,
   });
 
-  // When location changes, update state during render before paint occurs
-  if (navTransition.pathname !== location.pathname) {
-    const prevIdx = getRouteVerticalIndex(navTransition.pathname);
-    const currIdx = getRouteVerticalIndex(location.pathname);
+  useEffect(() => {
+    if (prevNavPathRef.current !== location.pathname) {
+      const prevIdx = getRouteVerticalIndex(prevNavPathRef.current);
+      const currIdx = getRouteVerticalIndex(location.pathname);
 
-    let dir: 'down' | 'up' | null = null;
-    if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
-      dir = currIdx > prevIdx ? 'down' : 'up';
+      let dir: 'down' | 'up' | null = null;
+      if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
+        dir = currIdx > prevIdx ? 'down' : 'up';
+      }
+
+      prevNavPathRef.current = location.pathname;
+      setNavTransition((prev) => ({
+        direction: dir,
+        animKey: prev.animKey + 1,
+      }));
     }
-
-    setNavTransition({
-      pathname: location.pathname,
-      direction: dir,
-      animKey: navTransition.animKey + 1,
-    });
-  }
+  }, [location.pathname]);
 
   // ─── Global Live Cash Drawer Sync ───
   const loadActiveSession = useCashSessionStore(
@@ -118,8 +120,14 @@ export const SystemLayout: React.FC = () => {
       profile?.role === 'admin')
   );
 
+  const profileActivationAttemptedRef = useRef<string | null>(null);
+
   useEffect(() => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     if (user?.id && profile?.status === 'pending') {
+      if (profileActivationAttemptedRef.current === user.id) return;
+      profileActivationAttemptedRef.current = user.id;
+
       supabase
         .from('profiles')
         .update({ status: 'active' })
@@ -195,13 +203,18 @@ export const SystemLayout: React.FC = () => {
     };
   }, []);
 
-  const startLoading = (id: string) => {
+  const startLoading = useCallback((id: string) => {
     setActiveTasks((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  };
+  }, []);
 
-  const stopLoading = (id: string) => {
+  const stopLoading = useCallback((id: string) => {
     setActiveTasks((prev) => prev.filter((t) => t !== id));
-  };
+  }, []);
+
+  const tabLoadingValue = useMemo(
+    () => ({ startLoading, stopLoading, isOnline }),
+    [startLoading, stopLoading, isOnline]
+  );
 
   useEffect(() => {
     const playIntro = checkShouldPlayIntro();
@@ -284,7 +297,7 @@ export const SystemLayout: React.FC = () => {
   };
 
   return (
-    <TabLoadingContext.Provider value={{ startLoading, stopLoading, isOnline }}>
+    <TabLoadingContext.Provider value={tabLoadingValue}>
       <div className="relative h-[100dvh] overflow-hidden bg-slate-100/90 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-500 font-sans">
         {/* Direction-Aware Page Slide Animations */}
         <style>{`
@@ -390,7 +403,9 @@ export const SystemLayout: React.FC = () => {
                   <div className="flex-1 flex flex-col min-w-0">
                     <Outlet />
                   </div>
-                  <AppFooter variant="system" />
+                  {location.pathname.startsWith('/settings') && (
+                    <AppFooter variant="system" />
+                  )}
                 </div>
               </main>
             </div>

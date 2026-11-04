@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
@@ -7,9 +7,9 @@ import {
   FileSpreadsheet,
   Dumbbell,
   WifiOff,
-  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { supabase } from '../../lib/supabase/client';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import type {
@@ -38,6 +38,7 @@ export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { isBatterySaver } = useBatterySaver();
+  const { loadActiveSession } = useCashSessionStore();
 
   // State Management
   const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +46,11 @@ export const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('combined');
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('month');
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
+
+  // Pull-to-refresh state for Dashboard cards container
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const touchStartY = useRef<number | null>(null);
 
   // Reactive Network Connection State
   const [isOffline, setIsOffline] = useState<boolean>(
@@ -123,6 +129,58 @@ export const Dashboard: React.FC = () => {
     }
   }, [timeRange]);
 
+  // Unified Refresh: Re-validates cash session and updates all Supabase data
+  const handleRefreshDashboard = useCallback(async () => {
+    if (isOffline) return;
+    try {
+      setIsLoading(true);
+      await Promise.allSettled([
+        loadActiveSession(),
+        loadData(),
+      ]);
+    } catch (error) {
+      console.error('Failed to re-validate session and refresh dashboard:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isOffline, loadActiveSession, loadData]);
+
+  // Pull-to-refresh touch handlers for Dashboard cards container
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY <= 15 && !isPullRefreshing && !isLoading && !isOffline) {
+      touchStartY.current = e.touches[0].clientY;
+    } else {
+      touchStartY.current = null;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current === null || isPullRefreshing || isLoading || isOffline) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - touchStartY.current;
+    if (deltaY > 0 && window.scrollY <= 15) {
+      // Elastic rubber-band resistance
+      const distance = Math.min(Math.pow(deltaY, 0.82) * 1.8, 80);
+      setPullDistance(distance);
+    } else if (deltaY <= 0) {
+      setPullDistance(0);
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (touchStartY.current === null) return;
+    touchStartY.current = null;
+    if (pullDistance >= 48 && !isPullRefreshing && !isOffline) {
+      setIsPullRefreshing(true);
+      setPullDistance(48); // Pin during re-validation & refresh
+      await handleRefreshDashboard();
+      setIsPullRefreshing(false);
+      setPullDistance(0);
+    } else {
+      setPullDistance(0);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -192,26 +250,6 @@ export const Dashboard: React.FC = () => {
 
 const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
 
-  if (isLoading && !hasInitialLoaded) {
-    return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center p-6 text-slate-900 dark:text-slate-100 select-none">
-        <div className="flex flex-col items-center gap-3.5 max-w-sm text-center">
-          <div className="w-12 h-12 rounded-2xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center shadow-xs">
-            <Loader2 className="w-6 h-6 animate-spin" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
-              Calculating Analytics Telemetry
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-              Synchronizing check-in attendance, revenue metrics, subscriptions, and stock telemetry...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen text-slate-900 dark:text-slate-100 transition-colors duration-300">
       {/* Container with responsive bottom padding to clear mobile navigation bars */}
@@ -265,14 +303,15 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
 
             <button
               id="btn-refresh-dashboard"
-              onClick={loadData}
+              onClick={handleRefreshDashboard}
               disabled={isLoading || isOffline}
               className={`p-2.5 rounded-xl border transition-all shadow-2xs ${
                 isOffline
                   ? 'bg-slate-100 dark:bg-zinc-800/50 text-slate-400 border-slate-200 dark:border-zinc-700/50 opacity-50 cursor-not-allowed'
                   : 'bg-white dark:bg-[#1e232d] border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 active:scale-95 disabled:opacity-60 cursor-pointer'
               }`}
-              title={isOffline ? 'Offline - Refresh disabled' : 'Refresh Dashboard Feed'}
+              title={isOffline ? 'Offline - Refresh disabled' : 'Re-validate session & refresh telemetry'}
+              aria-label="Refresh dashboard data and session"
             >
               <RotateCcw
                 className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
@@ -281,16 +320,63 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
           </div>
         </div>
 
-        {/* ─── 1. TOP SUMMARY CARDS (5 METRICS) ─── */}
-        <TopSummaryCards metrics={metrics} onCardClick={handleCardClick} />
+        {/* ─── 1. TOP SUMMARY CARDS CONTAINER (WITH PULL-TO-REFRESH & SKELETON PLACEHOLDERS) ─── */}
+        <div
+          className="relative touch-pan-y"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Animated Pull-To-Refresh Indicator */}
+          {(pullDistance > 0 || isPullRefreshing) && (
+            <div
+              className="overflow-hidden transition-[height,opacity] duration-150 flex justify-center items-center py-1 select-none"
+              style={{
+                height: `${Math.max(pullDistance, isPullRefreshing ? 48 : 0)}px`,
+                opacity: Math.min(pullDistance / 35, 1),
+              }}
+            >
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white dark:bg-[#161920] border border-slate-200/90 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold shadow-xs">
+                <RotateCcw
+                  className={`w-3.5 h-3.5 ${
+                    isPullRefreshing || isLoading
+                      ? 'animate-spin text-[#123c73] dark:text-blue-400'
+                      : 'text-slate-500 transition-transform duration-100'
+                  }`}
+                  style={{
+                    transform:
+                      !isPullRefreshing && !isLoading
+                        ? `rotate(${Math.min(pullDistance * 4, 360)}deg)`
+                        : undefined,
+                  }}
+                />
+                <span>
+                  {isPullRefreshing || isLoading
+                    ? 'Re-validating session & refreshing...'
+                    : pullDistance >= 48
+                    ? 'Release to refresh'
+                    : 'Pull down to refresh'}
+                </span>
+              </div>
+            </div>
+          )}
 
-        {/* ─── 2. QUICK ACTIONS BAR ─── */}
-        <QuickActions
-          onScanClick={() => navigate('/scanner')}
-          onNewSaleClick={() => navigate('/sales')}
-          onAddMemberClick={() => navigate('/members/list')}
-          onNewSubscriptionClick={() => navigate('/logbook')}
-        />
+          <TopSummaryCards
+            metrics={metrics}
+            isLoading={isLoading || !hasInitialLoaded}
+            onCardClick={handleCardClick}
+          />
+        </div>
+
+        {/* ─── 2. QUICK ACTIONS BAR (HIDDEN ON MOBILE TO PREVENT LONG SCROLLING) ─── */}
+        <div className="hidden sm:block">
+          <QuickActions
+            onScanClick={() => navigate('/scanner')}
+            onNewSaleClick={() => navigate('/sales')}
+            onAddMemberClick={() => navigate('/members/list')}
+            onNewSubscriptionClick={() => navigate('/logbook')}
+          />
+        </div>
 
         {/* ─── 3. REVENUE & OPERATIONS ANALYTICS ─── */}
         <RevenueAnalyticsTab

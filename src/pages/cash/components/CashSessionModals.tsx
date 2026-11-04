@@ -128,8 +128,15 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
   const expectedCash = metrics.expectedDrawerCash;
   const discrepancy = Math.round((totalActualCash - expectedCash) * 100) / 100;
 
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isOffline) {
+      toast.error('Session closure forbidden while offline. Active internet connection required.');
+      return;
+    }
 
     if (countMode === 'direct' && !directCashInput.trim()) {
       toast.error('Please enter the counted cash amount.');
@@ -576,15 +583,19 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                 loading={isSubmitting}
                 disabled={
                   isSubmitting ||
+                  isOffline ||
                   closeCooldown > 0 ||
                   (countMode === 'direct' && !directCashInput.trim())
                 }
+                title={isOffline ? 'Active internet connection required to reconcile and close session' : undefined}
                 className="w-full py-3.5 text-xs font-heading font-black tracking-wide !bg-rose-600 hover:!bg-rose-700 active:!bg-rose-800 !text-white border-none shadow-md shadow-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
               >
                 <ShieldCheck className="w-4 h-4 mr-1.5" />
-                {closeCooldown > 0
-                  ? `CONFIRM & CLOSE SESSION (${closeCooldown}s)`
-                  : 'CONFIRM & CLOSE SESSION'}
+                {isOffline
+                  ? 'OFFLINE: INTERNET CONNECTION REQUIRED'
+                  : closeCooldown > 0
+                    ? `CONFIRM & CLOSE SESSION (${closeCooldown}s)`
+                    : 'CONFIRM & CLOSE SESSION'}
               </Button>
               <Button
                 type="button"

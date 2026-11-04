@@ -1,6 +1,7 @@
 // src/components/ui/Button.tsx
 import React from 'react';
 import { Loader2 } from 'lucide-react';
+import { triggerHapticButton } from '../../lib/hapticsService';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'google';
@@ -17,12 +18,20 @@ export const Button: React.FC<ButtonProps> = ({
   loadingSubtitle,
   className = '',
   disabled,
+  onClick,
   ...props
 }) => {
   const baseStyle =
     'w-full py-3.5 rounded-xl transition-all duration-200 cursor-pointer select-none flex items-center justify-center gap-2';
 
   const isDisabled = loading || disabled;
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!isDisabled) {
+      triggerHapticButton();
+    }
+    onClick?.(e);
+  };
 
   const variantStyles = {
     primary: isDisabled
@@ -44,6 +53,7 @@ export const Button: React.FC<ButtonProps> = ({
     <button
       className={`${baseStyle} ${variantStyles[variant]} ${className}`}
       disabled={isDisabled}
+      onClick={handleClick}
       {...props}
     >
       {loading ? (

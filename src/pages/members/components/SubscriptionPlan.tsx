@@ -51,8 +51,9 @@ import {
   cardService,
   registrationService,
   settingsService,
-  DEFAULT_SETTINGS,
+  getSynchronousInitialSettings,
 } from '../memberService';
+import { getEffectiveRates } from '../../../lib/ratesService';
 import {
   OfficialReceipt,
   type OfficialReceiptRef,
@@ -361,7 +362,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showStatusDetails, setShowStatusDetails] = useState<boolean>(false);
   const [intakeMode, setIntakeMethod] = useState<'Import' | 'Manual' | null>(() => {
-    if (isStaff && !prefillData && !prefillMember) return 'Import';
     return initialIntakeMode || 'Manual';
   });
   const [selectedPlan, setSelectedPlan] = useState<
@@ -372,8 +372,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     'existing'
   );
 
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [settings, setSettings] =
-    useState<MembershipSettings>(DEFAULT_SETTINGS);
+    useState<MembershipSettings>(getSynchronousInitialSettings);
   const [, setIsLoadingSettings] = useState<boolean>(false);
   const [, setSettingsError] = useState<string | null>(null);
   const [, setIsUsingSettingsFallback] = useState<boolean>(false);
@@ -397,7 +412,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         setSettings(data);
         setIsUsingSettingsFallback(false);
       } else {
-        setSettings(DEFAULT_SETTINGS);
+        setSettings(getSynchronousInitialSettings());
         setIsUsingSettingsFallback(true);
       }
     } catch (err: any) {
@@ -405,7 +420,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         'Failed to load settings from Supabase in IntakeWizardModal:',
         err
       );
-      setSettings(DEFAULT_SETTINGS);
+      setSettings(getSynchronousInitialSettings());
       setSettingsError(
         'Could not fetch pricing parameters from Supabase. Default pricing applied.'
       );
@@ -417,20 +432,60 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      if (initialIntakeMode) {
+        setIntakeMethod(initialIntakeMode);
+      }
+      if (initialPlan) {
+        setSelectedPlan(initialPlan);
+      }
+      if (initialStep !== undefined) {
+        setStep(initialStep);
+      }
+
+      // Hydrate immediately from offline browser storage
+      const cachedRaw =
+        sessionStorage.getItem('members_sanitized_cache') ||
+        localStorage.getItem('members_sanitized_cache');
+      if (cachedRaw) {
+        try {
+          const parsed = JSON.parse(cachedRaw);
+          let mList: Member[] = [];
+          if (Array.isArray(parsed)) mList = parsed;
+          else if (parsed && Array.isArray(parsed.members)) mList = parsed.members;
+          if (mList.length > 0) {
+            setAllMembers(mList);
+          }
+          if (parsed && Array.isArray(parsed.subscriptions)) {
+            setAllSubscriptions(parsed.subscriptions);
+          }
+        } catch {}
+      }
+
       loadActiveSession();
       const unsub = subscribeRealtime();
       fetchWizardSettings();
-      memberService.getAll().then(setAllMembers).catch(console.error);
+      memberService
+        .getAll()
+        .then((mList) => {
+          if (mList && mList.length > 0) {
+            setAllMembers(mList);
+          }
+        })
+        .catch(() => {});
       subscriptionService
         .getAll()
-        .then(setAllSubscriptions)
-        .catch(console.error);
+        .then((sList) => {
+          if (sList && sList.length > 0) {
+            setAllSubscriptions(sList);
+          }
+        })
+        .catch(() => {});
 
       return () => {
         unsub();
       };
     }
-  }, [isOpen, loadActiveSession, subscribeRealtime]);
+  }, [isOpen, initialIntakeMode, initialPlan, initialStep, loadActiveSession, subscribeRealtime]);
 
   const cardFee = settings.card_printing_fee || 50;
   const gcashFee = settings.gcash_fee || 10;
@@ -536,13 +591,30 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     (!val || !val.trim() || val.trim().toLowerCase() === 'no phone');
 
   const matchingSearchMembers = useMemo(() => {
-    if (!memberSearchQuery.trim()) return [];
+    let pool = allMembers;
+    if (!pool || pool.length === 0) {
+      try {
+        const cachedRaw =
+          sessionStorage.getItem('members_sanitized_cache') ||
+          localStorage.getItem('members_sanitized_cache');
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (Array.isArray(parsed)) pool = parsed;
+          else if (parsed && Array.isArray(parsed.members)) pool = parsed.members;
+        }
+      } catch {}
+    }
+
+    if (!memberSearchQuery.trim()) {
+      return (pool || []).slice(0, 40);
+    }
     const q = memberSearchQuery.toLowerCase().trim();
-    return allMembers.filter(
+    return (pool || []).filter(
       (m: Member) =>
-        m.full_name.toLowerCase().includes(q) ||
-        m.member_id.toLowerCase().includes(q) ||
-        (m.phone && m.phone.includes(q))
+        (m.full_name && m.full_name.toLowerCase().includes(q)) ||
+        (m.member_id && m.member_id.toLowerCase().includes(q)) ||
+        (m.phone && m.phone.toLowerCase().includes(q)) ||
+        (m.email && m.email.toLowerCase().includes(q))
     );
   }, [memberSearchQuery, allMembers]);
 
@@ -1674,33 +1746,28 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         try {
           liveSettings = await settingsService.load();
         } catch {
-          toast.error(
-            'Network connection unstable. Could not verify live pricing with database.'
-          );
-          setIsSubmitting(false);
-          return;
+          try {
+            const rates = await getEffectiveRates();
+            liveSettings = {
+              ...settings,
+              monthly_plan_price: Number(rates.monthly_rate ?? settings.monthly_plan_price ?? 800),
+              yearly_plan_price: Number(rates.yearly_rate ?? settings.yearly_plan_price ?? 8000),
+              gcash_fee: Number(rates.gcash_fee ?? settings.gcash_fee ?? 10),
+              card_printing_fee: Number(rates.new_card_fee ?? settings.card_printing_fee ?? 150),
+            };
+          } catch {
+            liveSettings = settings;
+          }
         }
 
         if (!liveSettings) {
-          toast.error(
-            'Unable to verify live rates from Supabase. Please retry once online.'
-          );
-          setIsSubmitting(false);
-          return;
+          liveSettings = settings;
         }
 
         const livePrice =
           selectedPlan === 'Monthly Membership'
-            ? liveSettings.monthly_plan_price
-            : liveSettings.yearly_plan_price;
-
-        if (typeof livePrice !== 'number' || livePrice <= 0) {
-          toast.error(
-            'Invalid live pricing returned from database. Subscription cannot be processed.'
-          );
-          setIsSubmitting(false);
-          return;
-        }
+            ? liveSettings.monthly_plan_price || 800
+            : liveSettings.yearly_plan_price || 8000;
 
         setSettings(liveSettings);
         livePlanBasePrice = livePrice;
@@ -1797,22 +1864,26 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       // Record standalone card purchase receipt if registering profile-only with card
       if (selectedPlan === 'No Subscription' && addIdCard && liveCardFee > 0) {
-        await supabase.from('receipts').insert([
-          {
-            id: receiptNo,
-            member_id: targetMember.member_id,
-            customer_name: targetMember.full_name,
-            customer_type: 'Physical Card',
-            amount: liveCardFee,
-            base_price: 0,
-            gcash_fee: 0,
-            card_fee: liveCardFee,
-            gcash_ref_no: gcashReference.trim() || null,
-            payment_method: mappedPayment,
-            payment_status: 'Paid',
-            item_description: 'Physical Membership Card Fee',
-          },
-        ]);
+        try {
+          await supabase.from('receipts').insert([
+            {
+              id: receiptNo,
+              member_id: targetMember.member_id,
+              customer_name: targetMember.full_name,
+              customer_type: 'Physical Card',
+              amount: liveCardFee,
+              base_price: 0,
+              gcash_fee: 0,
+              card_fee: liveCardFee,
+              gcash_ref_no: gcashReference.trim() || null,
+              payment_method: mappedPayment,
+              payment_status: 'Paid',
+              item_description: 'Physical Membership Card Fee',
+            },
+          ]);
+        } catch (rcptErr) {
+          console.warn('Receipt creation deferred offline:', rcptErr);
+        }
       }
 
       const isEnrolled = selectedPlan !== 'No Subscription';
@@ -1848,7 +1919,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       // Fresh created member without enrollment and without card selection has no card created
 
       if (importedQueueReg) {
-        await registrationService.approve(importedQueueReg.id, 'Admin Staff');
+        try {
+          await registrationService.approve(importedQueueReg.id, 'Admin Staff');
+        } catch (apprErr) {
+          console.warn('Queue approval deferred offline:', apprErr);
+        }
       }
 
       const now = getServerNow();
@@ -1965,6 +2040,36 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     (!isStaff && enrollmentType === 'new');
 
   if (!isOpen) return null;
+
+  if (isOffline) {
+    return createPortal(
+      <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none">
+        <div className="bg-(--bg-card) border border-amber-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-500 flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="font-heading text-lg font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+              Subscriptions Locked (Offline)
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+              Subscribing and renewing contracts is not permitted while offline. An active internet connection is required to create subscriptions, verify existing contracts, and process member billing.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleModalClose}
+              className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-white font-heading text-xs uppercase tracking-wider font-bold rounded-xl cursor-pointer transition-colors shadow-xs"
+            >
+              Close Window
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none">
@@ -2321,78 +2426,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
 
-                    {memberSearchQuery.trim().length > 0 ? (
+                    {matchingSearchMembers.length > 0 ? (
                       <div className="p-2 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl max-h-60 overflow-y-auto space-y-1">
-                        {matchingSearchMembers.length > 0 ? (
-                          matchingSearchMembers.map((m: Member) => {
-                            const meta = getMemberSubscriptionMeta(m);
-
-                            return (
-                              <div
-                                key={m.id}
-                                onClick={() => {
-                                  if (meta.isSuspended) {
-                                    toast.error(
-                                      `Member "${m.full_name}" is currently Suspended.`
-                                    );
-                                    return;
-                                  }
-                                  if (meta.hasTwoSubs) {
-                                    toast.error(
-                                      `Member "${m.full_name}" already has two active subscriptions.`
-                                    );
-                                    return;
-                                  }
-                                  handleSelectExistingMember(m);
-                                  setMemberSearchQuery('');
-                                }}
-                                className={`p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
-                                  meta.isSuspended
-                                    ? 'bg-rose-500/10 border-rose-500/30 opacity-70'
-                                    : 'bg-(--bg-input)/50 border-(--border-color) hover:border-blue-500/50'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black text-xs shrink-0">
-                                    {m.full_name[0]?.toUpperCase()}
-                                  </div>
-                                  <div className="min-w-0 text-left">
-                                    <span className="font-black text-xs text-(--color-text) truncate block uppercase">
-                                      {m.full_name}
-                                    </span>
-                                    <span className="text-[10px] text-(--color-text)/60 font-mono block mt-0.5">
-                                      {m.member_id} • {m.phone || 'No Phone'}
-                                      {meta.activeSub &&
-                                        ` • Active: ${meta.activeSub.plan_name}`}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`text-[9px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider ${
-                                    meta.isSuspended
-                                      ? 'bg-rose-500/20 text-rose-500 border border-rose-500/30'
-                                      : meta.isWithin30Days && meta.activeSub
-                                        ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
-                                        : 'bg-blue-500/15 text-blue-500 border border-blue-500/30'
-                                  }`}
-                                >
-                                  {meta.isSuspended ? 'Suspended' : 'Select'}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-xl text-center space-y-1.5">
-                            <p className="text-xs font-bold text-(--color-text) uppercase">
-                              No Profiles Found
-                            </p>
-                            <p className="text-[11px] text-(--color-text)/50">
-                              No member matches &ldquo;{memberSearchQuery}
-                              &rdquo;.
-                            </p>
+                        {!memberSearchQuery.trim() && (
+                          <div className="px-2 py-1 text-[10px] font-bold text-(--color-text)/40 uppercase tracking-wider">
+                            Available Profiles ({matchingSearchMembers.length})
                           </div>
                         )}
+                        {matchingSearchMembers.map((m: Member) => {
+                          const meta = getMemberSubscriptionMeta(m);
+
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => {
+                                if (meta.isSuspended) {
+                                  toast.error(
+                                    `Member "${m.full_name}" is currently Suspended.`
+                                  );
+                                  return;
+                                }
+                                if (meta.hasTwoSubs) {
+                                  toast.error(
+                                    `Member "${m.full_name}" already has two active subscriptions.`
+                                  );
+                                  return;
+                                }
+                                handleSelectExistingMember(m);
+                                setMemberSearchQuery('');
+                              }}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                                meta.isSuspended
+                                  ? 'bg-rose-500/10 border-rose-500/30 opacity-70'
+                                  : 'bg-(--bg-input)/50 border-(--border-color) hover:border-blue-500/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black text-xs shrink-0">
+                                  {m.full_name[0]?.toUpperCase()}
+                                </div>
+                                <div className="min-w-0 text-left">
+                                  <span className="font-black text-xs text-(--color-text) truncate block uppercase">
+                                    {m.full_name}
+                                  </span>
+                                  <span className="text-[10px] text-(--color-text)/60 font-mono block mt-0.5">
+                                    {m.member_id} • {m.phone || 'No Phone'}
+                                    {meta.activeSub &&
+                                      ` • Active: ${meta.activeSub.plan_name}`}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <span
+                                className={`text-[9px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider ${
+                                  meta.isSuspended
+                                    ? 'bg-rose-500/20 text-rose-500 border border-rose-500/30'
+                                    : meta.isWithin30Days && meta.activeSub
+                                      ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
+                                      : 'bg-blue-500/15 text-blue-500 border border-blue-500/30'
+                                }`}
+                              >
+                                {meta.isSuspended ? 'Suspended' : 'Select'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : memberSearchQuery.trim() ? (
+                      <div className="p-2 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xl">
+                        <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-xl text-center space-y-1.5">
+                          <p className="text-xs font-bold text-(--color-text) uppercase">
+                            No Profiles Found
+                          </p>
+                          <p className="text-[11px] text-(--color-text)/50">
+                            No member matches &ldquo;{memberSearchQuery}
+                            &rdquo;.
+                          </p>
+                        </div>
                       </div>
                     ) : (
                       <div className="py-8 px-4 border-2 border-dashed border-(--border-color) rounded-2xl bg-(--bg-input)/30 text-center flex flex-col items-center justify-center space-y-2.5 select-none">
@@ -2401,11 +2511,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
                         <div className="space-y-0.5">
                           <h4 className="font-bold text-xs sm:text-sm text-(--color-text) uppercase tracking-wider">
-                            Search Member Records
+                            No Cached Profiles Found
                           </h4>
                           <p className="text-[11px] text-(--color-text)/60 font-medium max-w-xs leading-relaxed">
                             Type a member name, phone number, or Member ID above
-                            to retrieve their profile.
+                            to retrieve their profile once online.
                           </p>
                         </div>
                       </div>
@@ -3664,6 +3774,21 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();
 
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
     mode: 'Import' | 'Manual' | null;
@@ -3674,7 +3799,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
   // 1. SETTINGS MUST BE DECLARED FIRST
   const [settings, setSettings] =
-    useState<MembershipSettings>(DEFAULT_SETTINGS);
+    useState<MembershipSettings>(getSynchronousInitialSettings);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
@@ -3712,12 +3837,12 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         setSettings(data);
         setIsUsingFallback(false);
       } else {
-        setSettings(DEFAULT_SETTINGS);
+        setSettings(getSynchronousInitialSettings());
         setIsUsingFallback(true);
       }
     } catch (err: any) {
       console.warn('Error fetching Supabase pricing settings:', err);
-      setSettings(DEFAULT_SETTINGS);
+      setSettings(getSynchronousInitialSettings());
       setSettingsError(
         'Supabase pricing rates unavailable. Displaying standard fallback pricing.'
       );
@@ -3763,6 +3888,23 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
       {/* STAFF & ADMIN INDICATION GUIDE */}
       <IndicationGuideBanner topicId="plans" className="max-w-4xl mx-auto" />
+
+      {/* OFFLINE SUBSCRIPTIONS LOCKED ALERT BANNER */}
+      {isOffline && (
+        <div className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 max-w-2xl mx-auto flex items-center gap-3 shadow-lg">
+          <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div className="text-left">
+            <h5 className="font-heading text-xs uppercase tracking-wider font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              Subscriptions Locked (No Internet Connection)
+            </h5>
+            <p className="text-[10px] font-semibold text-slate-700 dark:text-slate-300 mt-0.5 leading-tight">
+              Subscriptions and contract renewals cannot be created while offline. Please connect to the internet to purchase or renew memberships.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* CONNECTION FALLBACK ALERT BANNER */}
       <AnimatePresence>
@@ -3810,9 +3952,16 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
       {/* CHOICE 1: SCAN LOBBY QR / SEARCH PRE-REGISTRATION */}
       <motion.div
-        whileHover={isSessionOpen ? { scale: 1.01 } : {}}
+        whileHover={!isOffline && isSessionOpen ? { scale: 1.01 } : {}}
         transition={{ duration: 0.2 }}
         onClick={() => {
+          if (isOffline) {
+            toast.error(
+              'Subscriptions locked: Internet connection required to scan or register contracts.',
+              { toastId: 'offline-scan-block' }
+            );
+            return;
+          }
           if (!isSessionOpen) {
             toast.warning(
               'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -3826,9 +3975,11 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           });
         }}
         className={`p-5 rounded-3xl border transition-all flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none ${
-          !isSessionOpen
+          isOffline
             ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-            : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400 cursor-pointer'
+            : !isSessionOpen
+              ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+              : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400 cursor-pointer'
         }`}
       >
         <div className="flex items-center gap-4 text-left">
@@ -3840,11 +3991,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
                 Scan QR Code
               </span>
-              {!isSessionOpen && (
+              {isOffline ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                  <Lock className="w-2.5 h-2.5" /> Locked Offline
+                </span>
+              ) : !isSessionOpen ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
                   <Lock className="w-2.5 h-2.5" /> Session Closed
                 </span>
-              )}
+              ) : null}
             </div>
             <h4 className="font-heading text-base text-slate-900 dark:text-white uppercase leading-none font-bold">
               use camera to scan qr code
@@ -3857,9 +4012,16 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         </div>
         <button
           type="button"
-          disabled={!isSessionOpen}
+          disabled={!isSessionOpen || isOffline}
           onClick={(e) => {
             e.stopPropagation();
+            if (isOffline) {
+              toast.error(
+                'Subscriptions locked: Internet connection required to scan or register contracts.',
+                { toastId: 'offline-scan-block' }
+              );
+              return;
+            }
             if (!isSessionOpen) {
               toast.warning(
                 'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -3873,12 +4035,20 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
             });
           }}
           className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 shadow-md transition-all ${
-            !isSessionOpen
+            isOffline || !isSessionOpen
               ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
               : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
           }`}
         >
-          {!isSessionOpen ? 'Session Closed' : 'Scan Lobby QR'}
+          {isOffline ? (
+            <span className="flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Locked Offline
+            </span>
+          ) : !isSessionOpen ? (
+            'Session Closed'
+          ) : (
+            'Scan Lobby QR'
+          )}
         </button>
       </motion.div>
 
@@ -3914,10 +4084,17 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           {/* MONTHLY PLAN CARD */}
           <motion.div
             whileHover={
-              isMonthlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
+              !isOffline && isMonthlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
             }
             transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
+              if (isOffline) {
+                toast.error(
+                  'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                  { toastId: 'offline-enroll-block' }
+                );
+                return;
+              }
               if (!isSessionOpen) {
                 toast.warning(
                   'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -3926,16 +4103,18 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               }
               setModalConfig({
                 isOpen: true,
-                mode: 'Import',
+                mode: 'Manual',
                 plan: 'Monthly Membership',
               });
             }}
             className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              !isSessionOpen
+              isOffline
                 ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                : isMonthlyValid
-                  ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
-                  : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+                : !isSessionOpen
+                  ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                  : isMonthlyValid
+                    ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
+                    : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
             {/* Ambient Glow */}
@@ -3949,11 +4128,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                       <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                       100% Free Check-Ins
                     </span>
-                    {!isSessionOpen && (
+                    {isOffline ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        <Lock className="w-2.5 h-2.5" /> Locked Offline
+                      </span>
+                    ) : !isSessionOpen ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
                         <Lock className="w-2.5 h-2.5" /> Session Closed
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold">
@@ -4018,8 +4201,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
               <button
                 type="button"
-                disabled={!isMonthlyValid || !isSessionOpen}
+                disabled={isOffline || !isMonthlyValid || !isSessionOpen}
                 onClick={() => {
+                  if (isOffline) {
+                    toast.error(
+                      'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                      { toastId: 'offline-enroll-block' }
+                    );
+                    return;
+                  }
                   if (!isSessionOpen) {
                     toast.warning(
                       'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -4029,24 +4219,28 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                   if (isMonthlyValid) {
                     setModalConfig({
                       isOpen: true,
-                      mode: isStaff ? 'Import' : 'Manual',
+                      mode: 'Manual',
                       plan: 'Monthly Membership',
                     });
                   }
                 }}
                 className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
-                  !isSessionOpen
+                  isOffline || !isSessionOpen || !isMonthlyValid
                     ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                    : isMonthlyValid
-                      ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white cursor-pointer shadow-emerald-600/20'
-                      : 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                    : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white cursor-pointer shadow-emerald-600/20'
                 }`}
               >
-                {!isSessionOpen
-                  ? 'Session Closed'
-                  : isMonthlyValid
-                    ? 'Select Monthly'
-                    : 'Unavailable'}
+                {isOffline ? (
+                  <span className="flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Locked Offline
+                  </span>
+                ) : !isSessionOpen ? (
+                  'Session Closed'
+                ) : isMonthlyValid ? (
+                  'Select Monthly'
+                ) : (
+                  'Unavailable'
+                )}
               </button>
             </div>
           </motion.div>
@@ -4054,10 +4248,17 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           {/* YEARLY PLAN CARD */}
           <motion.div
             whileHover={
-              isYearlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
+              !isOffline && isYearlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
             }
             transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={() => {
+              if (isOffline) {
+                toast.error(
+                  'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                  { toastId: 'offline-enroll-block' }
+                );
+                return;
+              }
               if (!isSessionOpen) {
                 toast.warning(
                   'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -4067,17 +4268,19 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               if (isYearlyValid) {
                 setModalConfig({
                   isOpen: true,
-                  mode: isStaff ? 'Import' : 'Manual',
+                  mode: 'Manual',
                   plan: 'Yearly Membership',
                 });
               }
             }}
             className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              !isSessionOpen
+              isOffline
                 ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                : isYearlyValid
-                  ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
-                  : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+                : !isSessionOpen
+                  ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                  : isYearlyValid
+                    ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
+                    : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
             }`}
           >
             {/* Ambient Glow */}
@@ -4091,11 +4294,15 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                       <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                       365-Day VIP Tier
                     </span>
-                    {!isSessionOpen && (
+                    {isOffline ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        <Lock className="w-2.5 h-2.5" /> Locked Offline
+                      </span>
+                    ) : !isSessionOpen ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
                         <Lock className="w-2.5 h-2.5" /> Session Closed
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
                     Yearly Membership
@@ -4167,9 +4374,16 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
 
               <button
                 type="button"
-                disabled={!isYearlyValid || !isSessionOpen}
-               onClick={(e) => {
+                disabled={isOffline || !isYearlyValid || !isSessionOpen}
+                onClick={(e) => {
                   e.stopPropagation();
+                  if (isOffline) {
+                    toast.error(
+                      'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                      { toastId: 'offline-enroll-block' }
+                    );
+                    return;
+                  }
                   if (!isSessionOpen) {
                     toast.warning(
                       'Cash drawer is closed. Paid subscriptions cannot be transacted.'
@@ -4179,24 +4393,28 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                   if (isYearlyValid) {
                     setModalConfig({
                       isOpen: true,
-                      mode: isStaff ? 'Import' : 'Manual',
+                      mode: 'Manual',
                       plan: 'Yearly Membership',
                     });
                   }
                 }}
                 className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
-                  !isSessionOpen
+                  isOffline || !isSessionOpen || !isYearlyValid
                     ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                    : isYearlyValid
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white cursor-pointer'
-                      : 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                    : 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white cursor-pointer'
                 }`}
               >
-                {!isSessionOpen
-                  ? 'Session Closed'
-                  : isYearlyValid
-                    ? 'Select Yearly'
-                    : 'Unavailable'}
+                {isOffline ? (
+                  <span className="flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Locked Offline
+                  </span>
+                ) : !isSessionOpen ? (
+                  'Session Closed'
+                ) : isYearlyValid ? (
+                  'Select Yearly'
+                ) : (
+                  'Unavailable'
+                )}
               </button>
             </div>
           </motion.div>

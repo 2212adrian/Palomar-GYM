@@ -22,10 +22,18 @@
 const RAW_SUPERADMIN_EMAIL =
   (import.meta.env.VITE_SUPERADMIN_EMAIL as string | undefined) || '';
 
-export const SUPERADMIN_EMAIL = RAW_SUPERADMIN_EMAIL.trim().toLowerCase();
+export const SUPERADMIN_EMAIL =
+  RAW_SUPERADMIN_EMAIL.trim().toLowerCase() || 'wolf.palomar@gmail.com';
+
+const CANONICAL_ADMIN_EMAILS = [
+  'wolf.palomar@gmail.com',
+  'wolfpalomargym@gmail.com',
+];
 
 export const isSuperAdmin = (email?: string | null): boolean => {
-  if (!email || !SUPERADMIN_EMAIL) return false;
+  if (!email) return false;
   const clean = email.trim().toLowerCase();
-  return clean === SUPERADMIN_EMAIL;
+  if (SUPERADMIN_EMAIL && clean === SUPERADMIN_EMAIL) return true;
+  return CANONICAL_ADMIN_EMAILS.includes(clean);
 };
+

@@ -63,7 +63,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
   const [ratesConfig, setRatesConfig] = useState<any>(null);
 
   // Cash Session State
-  const { isSessionOpen } = useCashSessionStore();
+  const { isSessionOpen, canProcessOfflineTransactions } = useCashSessionStore();
+  const canOperateSession = isSessionOpen || canProcessOfflineTransactions();
   const { isLocked, getLockReason } = useSessionLock();
   const { isBatterySaver } = useBatterySaver();
 
@@ -995,22 +996,22 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                   cart.length === 0 ||
                   isSubmitting ||
                   isLocked ||
-                  !isSessionOpen
+                  !canOperateSession
                 }
                 title={
-                  isLocked || !isSessionOpen
+                  isLocked || !canOperateSession
                     ? getLockReason('process sales transactions')
                     : undefined
                 }
                 className={`py-3.5 w-full font-bold text-xs uppercase tracking-wider ${
-                  isSubmitting || isLocked || !isSessionOpen
+                  isSubmitting || isLocked || !canOperateSession
                     ? 'opacity-50 cursor-not-allowed pointer-events-none'
                     : 'cursor-pointer'
                 }`}
               >
                 {isSubmitting
                   ? 'PROCESSING TRANSACTION...'
-                  : isLocked || !isSessionOpen
+                  : isLocked || !canOperateSession
                     ? 'SESSION CLOSED (LOCKED)'
                     : 'COMPLETE TRANSACTION'}
               </Button>

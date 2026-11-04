@@ -31,10 +31,11 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
+import { triggerHapticButton, triggerHapticFormSuccess } from '../../lib/hapticsService';
 
 interface DraftChange {
   role?: 'admin' | 'staff';
-  status?: 'active' | 'inactive';
+  status?: 'active' | 'disabled' | 'inactive';
 }
 
 interface CreatedAccountInfo {
@@ -120,8 +121,11 @@ export const UserManagement: React.FC = () => {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Quick filter state
-  const [activeFilter, setActiveFilter] = useState<'all' | 'admin' | 'staff' | 'active' | 'pending' | 'inactive'>('all');
+  // Online presence and quick filter state
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [activeFilter, setActiveFilter] = useState<
+    'all' | 'admin' | 'staff' | 'online' | 'offline' | 'pending' | 'disabled'
+  >('all');
 
   // Credential Handover Modal state
   const [createdAccount, setCreatedAccount] = useState<CreatedAccountInfo | null>(null);
@@ -180,10 +184,33 @@ export const UserManagement: React.FC = () => {
       )
       .subscribe();
 
+    // Live staff presence tracking
+    const presenceChannel = supabase.channel('gym-staff-presence', {
+      config: { presence: { key: user?.id || 'staff' } },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const onlineSet = new Set<string>();
+        Object.keys(state).forEach((k) => onlineSet.add(k));
+        if (user?.id) onlineSet.add(user.id);
+        setOnlineUserIds(onlineSet);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && user?.id) {
+          await presenceChannel.track({
+            userId: user.id,
+            onlineAt: new Date().toISOString(),
+          });
+        }
+      });
+
     return () => {
       supabase.removeChannel(directoryChannel);
+      supabase.removeChannel(presenceChannel);
     };
-  }, [isAdmin]);
+  }, [isAdmin, user?.id]);
 
   const isDirty = Object.keys(drafts).length > 0;
 
@@ -393,6 +420,8 @@ export const UserManagement: React.FC = () => {
           console.warn('Optional avatar photo upload skipped', avatarErr);
         }
       }
+
+      triggerHapticFormSuccess();
 
       setCreatedAccount({
         name: cleanName,
@@ -689,20 +718,24 @@ export const UserManagement: React.FC = () => {
 
   const handleToggleUserStatus = (
     targetId: string,
-    currentStatus: 'active' | 'inactive' | 'pending',
+    currentStatus: string,
     targetRole: string
   ) => {
     if (targetId === user?.id) {
+      triggerHapticButton();
       toast.error('You cannot change your own account status.');
       return;
     }
 
     if (targetRole === 'admin' && !viewerIsSuperAdmin) {
+      triggerHapticButton();
       toast.error(
         'Administrator account statuses can only be modified by the Superadmin.'
       );
       return;
     }
+
+    triggerHapticButton();
 
     setDrafts((prev) => {
       const draft = prev[targetId] || {};
@@ -710,8 +743,11 @@ export const UserManagement: React.FC = () => {
       const originalStatus = targetUser?.status || 'active';
 
       const effectiveCurrent = draft.status || currentStatus;
-      const nextStatus: 'active' | 'inactive' =
-        effectiveCurrent === 'active' ? 'inactive' : 'active';
+      const isCurrentlyDisabled =
+        effectiveCurrent === 'disabled' || effectiveCurrent === 'inactive';
+      const nextStatus: 'active' | 'disabled' = isCurrentlyDisabled
+        ? 'active'
+        : 'disabled';
 
       const updatedDraft: DraftChange = { ...draft, status: nextStatus };
 
@@ -832,16 +868,42 @@ export const UserManagement: React.FC = () => {
     }
   }
 
+  const getComputedUserStatus = (
+    u: any
+  ): 'online' | 'offline' | 'pending' | 'disabled' => {
+    const draft = drafts[u.id];
+    const rawStatus =
+      draft?.status !== undefined ? draft.status : u.status || 'pending';
+
+    if (rawStatus === 'disabled' || rawStatus === 'inactive') {
+      return 'disabled';
+    }
+
+    if (rawStatus === 'pending') {
+      if (onlineUserIds.has(u.id) || u.id === user?.id) {
+        return 'online';
+      }
+      return 'pending';
+    }
+
+    if (onlineUserIds.has(u.id) || u.id === user?.id) {
+      return 'online';
+    }
+
+    return 'offline';
+  };
+
   const filteredUsers = systemUsers.filter((u) => {
     const draft = drafts[u.id];
     const effectiveRole = draft?.role || u.role || 'staff';
-    const effectiveStatus = draft?.status || u.status || 'active';
+    const compStatus = getComputedUserStatus(u);
 
     if (activeFilter === 'admin') return effectiveRole === 'admin';
     if (activeFilter === 'staff') return effectiveRole === 'staff';
-    if (activeFilter === 'active') return effectiveStatus === 'active';
-    if (activeFilter === 'pending') return effectiveStatus === 'pending';
-    if (activeFilter === 'inactive') return effectiveStatus === 'inactive';
+    if (activeFilter === 'online') return compStatus === 'online';
+    if (activeFilter === 'offline') return compStatus === 'offline';
+    if (activeFilter === 'pending') return compStatus === 'pending';
+    if (activeFilter === 'disabled') return compStatus === 'disabled';
     return true;
   });
 
@@ -967,72 +1029,94 @@ export const UserManagement: React.FC = () => {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: 'Status & Presence',
       sortable: true,
       render: (u) => {
         const isSelfUser = u.id === user?.id;
-
+        const compStatus = getComputedUserStatus(u);
         const draft = drafts[u.id];
-        const isModified =
-          draft && draft.status !== undefined && draft.status !== u.status;
-        const currentStatus = draft?.status || u.status || 'pending';
+        const isModified = draft && draft.status !== undefined;
 
-        const getStatusBadge = (status: string) => {
-          if (status === 'inactive') {
+        const getStatusBadge = (
+          status: 'online' | 'offline' | 'pending' | 'disabled'
+        ) => {
+          if (status === 'disabled') {
             return (
-              <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
-                Inactive
+              <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold font-mono">
+                <span className="w-2 h-2 bg-rose-500 rounded-full shrink-0" />
+                <span>Disabled</span>
               </span>
             );
           } else if (status === 'pending') {
             return (
-              <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full " />
-                Pending
+              <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold font-mono">
+                <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0" />
+                <span>Pending</span>
+              </span>
+            );
+          } else if (status === 'online') {
+            return (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold font-mono">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <span>Online</span>
               </span>
             );
           } else {
             return (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                Active
+              <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 font-semibold font-mono">
+                <span className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full shrink-0" />
+                <span>Offline</span>
               </span>
             );
           }
         };
 
-        if (isSelfUser) {
-          return getStatusBadge(u.status || 'active');
-        }
+        const isAccountDisabled = compStatus === 'disabled';
 
         return (
-          <button
-            type="button"
-            onClick={() =>
-              handleToggleUserStatus(
-                u.id,
-                u.status || 'pending',
-                u.role || 'staff'
-              )
-            }
-            title="Click to toggle account status draft"
-            className="cursor-pointer hover:opacity-80 transition-opacity outline-none text-left"
-          >
-            {isModified ? (
-              <div className="flex items-center gap-1.5">
-                <span className="opacity-40 line-through scale-90 origin-left block">
-                  {getStatusBadge(u.status || 'active')}
-                </span>
-                <span className="text-[10px] text-blue-500 font-bold">→</span>
-                <span className=" block">
-                  {getStatusBadge(currentStatus)}
-                </span>
-              </div>
-            ) : (
-              getStatusBadge(currentStatus)
+          <div className="flex items-center gap-2.5">
+            <div className="min-w-[80px]">
+              {getStatusBadge(compStatus)}
+            </div>
+
+            {!isSelfUser && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleToggleUserStatus(
+                    u.id,
+                    compStatus,
+                    u.role || 'staff'
+                  )
+                }
+                title={
+                  isAccountDisabled
+                    ? 'Account is Disabled. Click to enable access.'
+                    : 'Account is Enabled. Click to disable (locks out login).'
+                }
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isAccountDisabled
+                    ? 'bg-slate-300 dark:bg-slate-700'
+                    : 'bg-emerald-600'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                    isAccountDisabled ? 'translate-x-0.5' : 'translate-x-4'
+                  }`}
+                />
+              </button>
             )}
-          </button>
+
+            {isModified && (
+              <span className="text-[10px] text-blue-500 font-bold font-mono">
+                (Draft)
+              </span>
+            )}
+          </div>
         );
       },
     },
@@ -1162,11 +1246,48 @@ export const UserManagement: React.FC = () => {
         {(
           [
             { id: 'all', label: 'All Accounts', count: systemUsers.length },
-            { id: 'admin', label: 'Admins', count: systemUsers.filter((u) => (drafts[u.id]?.role || u.role) === 'admin').length },
-            { id: 'staff', label: 'Staff', count: systemUsers.filter((u) => (drafts[u.id]?.role || u.role) === 'staff').length },
-            { id: 'active', label: 'Active', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'active').length },
-            { id: 'pending', label: 'Pending', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'pending').length },
-            { id: 'inactive', label: 'Inactive', count: systemUsers.filter((u) => (drafts[u.id]?.status || u.status) === 'inactive').length },
+            {
+              id: 'admin',
+              label: 'Admins',
+              count: systemUsers.filter(
+                (u) => (drafts[u.id]?.role || u.role) === 'admin'
+              ).length,
+            },
+            {
+              id: 'staff',
+              label: 'Staff',
+              count: systemUsers.filter(
+                (u) => (drafts[u.id]?.role || u.role) === 'staff'
+              ).length,
+            },
+            {
+              id: 'online',
+              label: 'Online',
+              count: systemUsers.filter(
+                (u) => getComputedUserStatus(u) === 'online'
+              ).length,
+            },
+            {
+              id: 'offline',
+              label: 'Offline',
+              count: systemUsers.filter(
+                (u) => getComputedUserStatus(u) === 'offline'
+              ).length,
+            },
+            {
+              id: 'pending',
+              label: 'Pending',
+              count: systemUsers.filter(
+                (u) => getComputedUserStatus(u) === 'pending'
+              ).length,
+            },
+            {
+              id: 'disabled',
+              label: 'Disabled',
+              count: systemUsers.filter(
+                (u) => getComputedUserStatus(u) === 'disabled'
+              ).length,
+            },
           ] as const
         ).map((filter) => {
           const isActive = activeFilter === filter.id;
@@ -1174,7 +1295,10 @@ export const UserManagement: React.FC = () => {
             <button
               key={filter.id}
               type="button"
-              onClick={() => setActiveFilter(filter.id)}
+              onClick={() => {
+                triggerHapticButton();
+                setActiveFilter(filter.id);
+              }}
               className={`px-3 py-1.5 rounded-lg font-heading tracking-wider text-[10px] uppercase font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 isActive
                   ? 'bg-(--color-primary) text-white shadow-xs'
@@ -1184,7 +1308,9 @@ export const UserManagement: React.FC = () => {
               <span>{filter.label}</span>
               <span
                 className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-(--bg-input) text-slate-400'
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : 'bg-(--bg-input) text-slate-400'
                 }`}
               >
                 {filter.count}

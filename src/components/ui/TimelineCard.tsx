@@ -15,6 +15,9 @@ import {
   Wallet,
   Gift,
   CreditCard,
+  CheckCircle2,
+  CloudOff,
+  AlertCircle,
 } from 'lucide-react';
 
 export interface LogRecord {
@@ -41,6 +44,7 @@ export interface LogRecord {
   receiptNumber?: string | null;
   memberIds?: string[];
   cash_session_id?: string | null;
+  sync_status?: 'synced' | 'pending' | 'conflict' | 'failed' | 'dropped';
 }
 
 export interface SaleRecord {
@@ -67,6 +71,7 @@ export interface SaleRecord {
     quantity: number;
     price: number;
   }>;
+  sync_status?: 'synced' | 'pending' | 'conflict' | 'failed' | 'dropped';
 }
 
 interface TimelineCardProps {
@@ -242,6 +247,38 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       log.categoryOrPlan.replace('Pass', '').replace('Membership', '').trim() ||
       log.categoryOrPlan;
 
+    const isSubscription =
+      Boolean(log.isSubscription) ||
+      entryCategory === 'new_subscription' ||
+      (log.categoryOrPlan || '').toLowerCase().includes('monthly') ||
+      (log.categoryOrPlan || '').toLowerCase().includes('yearly') ||
+      (log.categoryOrPlan || '').toLowerCase().includes('subscription');
+
+    let isWithin24Hours = true;
+    let hoursRemaining = 24;
+    if (isSubscription && log.timestamp) {
+      try {
+        const createdMs = new Date(log.timestamp).getTime();
+        const diffMs = Date.now() - createdMs;
+        const diffHours = diffMs / (1000 * 60 * 60);
+        isWithin24Hours = diffHours <= 24;
+        hoursRemaining = Math.max(0, Math.ceil(24 - diffHours));
+      } catch {
+        isWithin24Hours = true;
+      }
+    }
+
+    const effectiveCanDelete = isSubscription
+      ? canDelete && isWithin24Hours
+      : canDelete;
+
+    const effectiveDeleteDisabledReason =
+      isSubscription && !isWithin24Hours
+        ? 'Subscription void window expired (24h limit reached)'
+        : deleteDisabledReason;
+
+    const syncStatus = log.sync_status || 'synced';
+
     return {
       log,
       entryCategory,
@@ -250,13 +287,20 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       isPaid,
       formattedInTime,
       planLabel,
+      isSubscription,
+      isWithin24Hours,
+      hoursRemaining,
+      effectiveCanDelete,
+      effectiveDeleteDisabledReason,
+      syncStatus,
     };
-  }, [mode, data]);
+  }, [mode, data, canDelete, deleteDisabledReason]);
 
   // --- SALE MODE ---
   const saleMeta = useMemo(() => {
     if (mode !== 'sale') return null;
     const tx = data as SaleRecord;
+    const syncStatus = tx.sync_status || 'synced';
     const totalUnits =
       tx.quantity ||
       tx.items?.reduce((sum: number, i: any) => sum + i.quantity, 0) ||
@@ -325,6 +369,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       totalAmount,
       changeCalculated,
       gcashFeeApplied,
+      syncStatus,
     };
   }, [mode, data]);
 
@@ -442,6 +487,52 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   <h4 className="text-xs sm:text-sm font-bold tracking-wide text-slate-900 dark:text-white uppercase truncate max-w-[150px] sm:max-w-md leading-tight">
                     {attendanceMeta.log.customerName}
                   </h4>
+
+                  {/* Sync Status Indicator: Green (synced), Yellow (pending), Red (failed/dropped) */}
+                  {attendanceMeta.syncStatus === 'pending' ? (
+                    <span
+                      title="Pending Offline Sync (Secured in Encrypted Vault)"
+                      className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-amber-800 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded shrink-0 animate-pulse"
+                    >
+                      <CloudOff className="w-2.5 h-2.5 stroke-[2.5]" />
+                      <span>PENDING</span>
+                    </span>
+                  ) : attendanceMeta.syncStatus === 'conflict' || attendanceMeta.syncStatus === 'failed' || attendanceMeta.syncStatus === 'dropped' ? (
+                    <span
+                      title="Sync Failed or Dropped"
+                      className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 px-1.5 py-0.5 rounded shrink-0"
+                    >
+                      <AlertCircle className="w-2.5 h-2.5 stroke-[2.5]" />
+                      <span>FAILED</span>
+                    </span>
+                  ) : (
+                    <span
+                      title="Synced to Supabase"
+                      className="inline-flex items-center text-emerald-600 dark:text-emerald-400 shrink-0"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </span>
+                  )}
+
+                  {/* 24-Hour Subscription Void Window Indicator */}
+                  {attendanceMeta.isSubscription && (
+                    <span
+                      className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                        attendanceMeta.isWithin24Hours
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-300 dark:text-emerald-300 dark:bg-emerald-950/60 dark:border-emerald-700'
+                          : 'text-slate-500 bg-slate-100 border-slate-300 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700 opacity-80'
+                      }`}
+                      title={
+                        attendanceMeta.isWithin24Hours
+                          ? `Voidable within 24 hours of creation (${attendanceMeta.hoursRemaining}h remaining)`
+                          : 'Subscription locked: 24-hour void window has expired'
+                      }
+                    >
+                      {attendanceMeta.isWithin24Hours
+                        ? `VOIDABLE (${attendanceMeta.hoursRemaining}h)`
+                        : 'LOCKED (24h+)'}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -533,22 +624,22 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>
 
-                  {(canDelete || deleteDisabledReason) && (
+                  {(attendanceMeta.effectiveCanDelete || attendanceMeta.effectiveDeleteDisabledReason) && (
                     <button
                       type="button"
-                      disabled={!!deleteDisabledReason}
+                      disabled={!attendanceMeta.effectiveCanDelete}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!deleteDisabledReason) {
+                        if (attendanceMeta.effectiveCanDelete) {
                           onTriggerDelete(attendanceMeta.log);
                         }
                       }}
                       className={`p-1.5 rounded-lg transition-all border shrink-0 shadow-xs ${
-                        deleteDisabledReason
+                        !attendanceMeta.effectiveCanDelete
                           ? 'opacity-40 cursor-not-allowed text-slate-400 border-slate-200 dark:border-zinc-800 dark:text-zinc-600'
                           : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50 border-slate-200 hover:border-rose-300 dark:text-slate-300 dark:hover:text-rose-400 dark:hover:bg-rose-950/80 dark:border-slate-700 cursor-pointer'
                       }`}
-                      title={deleteDisabledReason || 'Remove this check-in'}
+                      title={attendanceMeta.effectiveDeleteDisabledReason || 'Remove this check-in'}
                     >
                       <Trash2 className="w-4 h-4 stroke-[2]" />
                     </button>
@@ -588,6 +679,32 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   <h4 className="text-xs sm:text-sm font-heading font-bold tracking-wide text-slate-900 dark:text-white uppercase truncate max-w-[200px] sm:max-w-md leading-tight">
                     {saleMeta.summaryHeader}
                   </h4>
+
+                  {/* Sync Status Indicator: Green (synced), Yellow (pending), Red (failed/dropped) */}
+                  {saleMeta.syncStatus === 'pending' ? (
+                    <span
+                      title="Pending Offline Sync (Secured in Encrypted Vault)"
+                      className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-amber-800 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded shrink-0 animate-pulse"
+                    >
+                      <CloudOff className="w-2.5 h-2.5 stroke-[2.5]" />
+                      <span>PENDING</span>
+                    </span>
+                  ) : saleMeta.syncStatus === 'conflict' || saleMeta.syncStatus === 'failed' || saleMeta.syncStatus === 'dropped' ? (
+                    <span
+                      title="Sync Failed or Dropped"
+                      className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 px-1.5 py-0.5 rounded shrink-0"
+                    >
+                      <AlertCircle className="w-2.5 h-2.5 stroke-[2.5]" />
+                      <span>FAILED</span>
+                    </span>
+                  ) : (
+                    <span
+                      title="Synced to Supabase"
+                      className="inline-flex items-center text-emerald-600 dark:text-emerald-400 shrink-0"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </span>
+                  )}
 
                   <span
                     className={`px-2 py-0.5 rounded-md text-[10px] font-heading font-bold tracking-wider uppercase leading-none border inline-flex items-center gap-1 shrink-0 ${saleMeta.theme.badgeClass}`}

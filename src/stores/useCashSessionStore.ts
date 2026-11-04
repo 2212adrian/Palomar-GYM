@@ -2,6 +2,8 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase/client';
 import { useAuthStore } from './authStore';
+import { isSuperAdmin } from '../constants/auth';
+import { stagePendingTransaction, getDecryptedPendingTransactions } from '../lib/offlineVault';
 import {
   fetchActiveCashSession,
   fetchCashSessionHistory,
@@ -11,6 +13,28 @@ import type {
   CashSession,
   CashFlowMetrics,
 } from '../types/cash';
+
+const isConnectionError = (err: any): boolean => {
+  if (!err) return false;
+  const str = (
+    (typeof err === 'string' ? err : '') +
+    ' ' +
+    (err.message || '') +
+    ' ' +
+    (err.details || '') +
+    ' ' +
+    (err.name || '')
+  ).toLowerCase();
+  return (
+    str.includes('no internet connection') ||
+    str.includes('failed to fetch') ||
+    str.includes('network') ||
+    str.includes('offline') ||
+    str.includes('check your wi-fi') ||
+    str.includes('timeout') ||
+    str.includes('aborterror')
+  );
+};
 
 export interface UnifiedActivityItem {
   id: string;
@@ -35,13 +59,22 @@ interface CashSessionStoreState {
   isSessionOpen: boolean;
   currentDrawerCash: number | null;
   wasSuspendedByOffline: boolean;
+  lastKnownSession: CashSession | null;
 
+  canProcessOfflineTransactions: () => boolean;
+  getLastKnownSessionId: () => string | null;
   loadActiveSession: () => Promise<void>;
   loadHistory: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   recalculateMetrics: () => Promise<void>;
   setSessionClosed: () => void;
   suspendSessionForOffline: () => void;
+  openOfflineCashSession: (params: {
+    openingFloat: number;
+    notes?: string;
+    openedBy?: string | null;
+    openedByName: string;
+  }) => void;
   restoreSessionAfterOnline: () => Promise<void>;
   subscribeRealtime: () => () => void;
 }
@@ -64,19 +97,88 @@ let globalRealtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 let realtimeSubscriberCount = 0;
 let debounceRecalculateTimer: ReturnType<typeof setTimeout> | null = null;
 
+const getInitialOfflineState = () => {
+  if (typeof window === 'undefined') {
+    return { session: null, isOpen: false, isSuspended: false };
+  }
+  try {
+    const raw = localStorage.getItem('palomar_last_cash_session');
+    const wasOpen = localStorage.getItem('palomar_session_was_open_offline') === 'true';
+    const parsed = raw ? (JSON.parse(raw) as CashSession) : null;
+    const isOffline = !navigator.onLine;
+    const shouldBeOpen = Boolean(
+      parsed && (wasOpen || parsed.status === 'open' || !parsed.closed_at)
+    );
+    if (parsed && shouldBeOpen) {
+      return {
+        session: parsed,
+        isOpen: true,
+        isSuspended: isOffline,
+      };
+    }
+    return { session: parsed, isOpen: false, isSuspended: false };
+  } catch {
+    return { session: null, isOpen: false, isSuspended: false };
+  }
+};
+
+const initialOffline = getInitialOfflineState();
+
 export const useCashSessionStore = create<CashSessionStoreState>((set, get) => ({
-  activeSession: null,
-  activeSessionId: null,
+  activeSession: initialOffline.session,
+  activeSessionId: initialOffline.session?.id || null,
   isInitializing: true,
   transactions: [],
   history: [],
   metrics: INITIAL_METRICS,
   isLoading: true,
-  isSessionOpen: false,
-  currentDrawerCash: null,
-  wasSuspendedByOffline: false,
+  isSessionOpen: initialOffline.isOpen,
+  currentDrawerCash: initialOffline.session?.opening_float
+    ? Number(initialOffline.session.opening_float)
+    : null,
+  wasSuspendedByOffline: initialOffline.isSuspended,
+  lastKnownSession: initialOffline.session,
+
+  canProcessOfflineTransactions: () => {
+    const { wasSuspendedByOffline, lastKnownSession, activeSession, isSessionOpen } = get();
+    if (isSessionOpen) return true;
+    if (activeSession || lastKnownSession) return true;
+    if (wasSuspendedByOffline) return true;
+    try {
+      const stored = localStorage.getItem('palomar_last_cash_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.id && (!parsed.closed_at || parsed.status === 'open')) {
+          return true;
+        }
+      }
+      const wasOpen = localStorage.getItem('palomar_session_was_open_offline') === 'true';
+      return Boolean(wasOpen);
+    } catch {
+      return false;
+    }
+  },
+
+  getLastKnownSessionId: () => {
+    const { lastKnownSession, activeSessionId, activeSession } = get();
+    if (activeSessionId) return activeSessionId;
+    if (activeSession?.id) return activeSession.id;
+    if (lastKnownSession?.id) return lastKnownSession.id;
+    try {
+      const stored = localStorage.getItem('palomar_last_cash_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed?.id || null;
+      }
+    } catch {}
+    return null;
+  },
 
   setSessionClosed: () => {
+    try {
+      localStorage.removeItem('palomar_last_cash_session');
+      localStorage.setItem('palomar_session_was_open_offline', 'false');
+    } catch {}
     set({
       activeSession: null,
       activeSessionId: null,
@@ -86,22 +188,34 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       metrics: INITIAL_METRICS,
       currentDrawerCash: null,
       wasSuspendedByOffline: false,
+      lastKnownSession: null,
     });
   },
 
   /**
-   * Suspends and locks the active session immediately when the network disconnects.
+   * Suspends cloud operations during network disconnection while keeping
+   * the active session open locally so offline transactions can be safely queued and encrypted.
    */
   suspendSessionForOffline: () => {
-    const { activeSession, isSessionOpen } = get();
-    if (isSessionOpen && activeSession) {
+    const { activeSession, isSessionOpen, lastKnownSession } = get();
+    const effectiveSession = activeSession || lastKnownSession;
+    if ((isSessionOpen || effectiveSession) && effectiveSession) {
+      try {
+        localStorage.setItem('palomar_last_cash_session', JSON.stringify(effectiveSession));
+        localStorage.setItem('palomar_session_was_open_offline', 'true');
+      } catch {}
       set({
-        isSessionOpen: false,
+        // Session remains unlocked locally for front-desk offline POS and check-ins
+        isSessionOpen: true,
         wasSuspendedByOffline: true,
-        activeSession: null,
-        activeSessionId: null,
-        currentDrawerCash: null,
+        lastKnownSession: effectiveSession,
+        activeSession: effectiveSession,
+        activeSessionId: effectiveSession.id,
       });
+    } else {
+      try {
+        localStorage.setItem('palomar_session_was_open_offline', 'false');
+      } catch {}
     }
   },
 
@@ -116,12 +230,115 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     }
   },
 
+  openOfflineCashSession: (params: {
+    openingFloat: number;
+    notes?: string;
+    openedBy?: string | null;
+    openedByName: string;
+  }) => {
+    const offlineId = `offline-session-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    const offlineSession: CashSession = {
+      id: offlineId,
+      session_number: `OFFLINE-${nowIso.slice(0, 10).replace(/-/g, '')}`,
+      status: 'open',
+      opened_at: nowIso,
+      closed_at: null,
+      opening_float: params.openingFloat,
+      opened_by: params.openedBy || null,
+      opened_by_name: params.openedByName,
+      closed_by: null,
+      closed_by_name: null,
+      notes: params.notes || 'Opened in Offline Mode',
+      closing_expected_cash: params.openingFloat,
+      closing_actual_cash: null,
+      discrepancy: null,
+      denominations: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    try {
+      localStorage.setItem('palomar_last_cash_session', JSON.stringify(offlineSession));
+      localStorage.setItem('palomar_session_was_open_offline', 'true');
+    } catch {}
+
+    set({
+      activeSession: offlineSession,
+      activeSessionId: offlineId,
+      isSessionOpen: true,
+      wasSuspendedByOffline: true,
+      lastKnownSession: offlineSession,
+      currentDrawerCash: params.openingFloat,
+      metrics: {
+        ...INITIAL_METRICS,
+        openingFloat: params.openingFloat,
+        expectedDrawerCash: params.openingFloat,
+      },
+    });
+
+    stagePendingTransaction({
+      type: 'attendance',
+      cashSessionId: offlineId,
+      userId: params.openedBy || 'offline-user',
+      userName: params.openedByName || 'Staff',
+      payload: {
+        action: 'CASH_SESSION_OPEN_OFFLINE',
+        session_id: offlineId,
+        opening_float: params.openingFloat,
+        opened_by: params.openedBy,
+        opened_by_name: params.openedByName,
+        notes: params.notes,
+        created_at: nowIso,
+      },
+    }).catch(() => {});
+  },
+
   loadActiveSession: async () => {
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    // In offline mode, strictly PRESERVE the cached session and never close it
+    if (isOffline) {
+      const { lastKnownSession, activeSession } = get();
+      const stored = (() => {
+        try {
+          const raw = localStorage.getItem('palomar_last_cash_session');
+          return raw ? (JSON.parse(raw) as CashSession) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const effective = activeSession || lastKnownSession || stored;
+      if (effective) {
+        set({
+          activeSession: effective,
+          activeSessionId: effective.id,
+          isSessionOpen: true,
+          wasSuspendedByOffline: true,
+          lastKnownSession: effective,
+          currentDrawerCash: get().currentDrawerCash ?? Number(effective.opening_float || 0),
+          isLoading: false,
+          isInitializing: false,
+        });
+      } else {
+        set({
+          isLoading: false,
+          isInitializing: false,
+        });
+      }
+      return;
+    }
+
     try {
       set({ isLoading: true });
       const session = await fetchActiveCashSession();
 
       if (!session) {
+        try {
+          localStorage.removeItem('palomar_last_cash_session');
+          localStorage.setItem('palomar_session_was_open_offline', 'false');
+        } catch {}
         set({
           activeSession: null,
           activeSessionId: null,
@@ -131,29 +348,46 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           metrics: INITIAL_METRICS,
           currentDrawerCash: null,
           isLoading: false,
+          lastKnownSession: null,
         });
         return;
       }
 
       const initialFloat = Number(session.opening_float || 0);
+      try {
+        localStorage.setItem('palomar_last_cash_session', JSON.stringify(session));
+        localStorage.setItem('palomar_session_was_open_offline', 'true');
+      } catch {}
 
       set({
         activeSession: session,
         activeSessionId: session.id,
         isSessionOpen: true,
         wasSuspendedByOffline: false,
+        lastKnownSession: session,
         currentDrawerCash: get().currentDrawerCash ?? initialFloat,
       });
 
       await get().recalculateMetrics();
     } catch (err) {
-      console.error('Failed to load active session:', err);
-      set({
-        activeSession: null,
-        activeSessionId: null,
-        isSessionOpen: false,
-        currentDrawerCash: null,
-      });
+      const isNetworkErr =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        isConnectionError(err);
+      if (!isNetworkErr) {
+        console.error('Failed to load active session:', err);
+      }
+      const canOffline = get().canProcessOfflineTransactions();
+      const lastSession = get().lastKnownSession;
+
+      if ((isNetworkErr || canOffline) && lastSession) {
+        set({
+          activeSession: lastSession,
+          activeSessionId: lastSession.id,
+          isSessionOpen: true,
+          wasSuspendedByOffline: true,
+          currentDrawerCash: get().currentDrawerCash ?? Number(lastSession.opening_float || 0),
+        });
+      }
     } finally {
       set({ isLoading: false, isInitializing: false });
     }
@@ -163,7 +397,8 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     const auth = useAuthStore.getState();
     const isAdmin = Boolean(
       auth.user?.email &&
-        (auth.user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
+        (isSuperAdmin(auth.user.email) ||
+          auth.user.email.toLowerCase() === 'wolfpalomargym@gmail.com' ||
           auth.profile?.role === 'admin')
     );
     if (!isAdmin) {
@@ -171,11 +406,29 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        const cached = localStorage.getItem('sales_closed_sessions_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            set({ history: parsed });
+          }
+        }
+      } catch {}
+      return;
+    }
+
     try {
       const history = await fetchCashSessionHistory(30);
       set({ history });
+      try {
+        localStorage.setItem('sales_closed_sessions_cache', JSON.stringify(history));
+      } catch {}
     } catch (err) {
-      console.error('Failed to load session history:', err);
+      if ((typeof navigator === 'undefined' || navigator.onLine) && !isConnectionError(err)) {
+        console.error('Failed to load session history:', err);
+      }
     }
   },
 
@@ -193,6 +446,130 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     const openingFloat = Number(session.opening_float || 0);
     const effectiveStart = session.opened_at;
 
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    if (isOffline) {
+      // In offline mode, compute metrics from openingFloat + pending vault transactions immediately
+      let pendingActivity: UnifiedActivityItem[] = [];
+      let pendingCashIn = 0;
+      let pendingCashOut = 0;
+      let pendingDigitalIn = 0;
+      let pendingCashSales = 0;
+      let pendingDigitalSales = 0;
+      let pendingCashLogbook = 0;
+      let pendingDigitalLogbook = 0;
+
+      try {
+        const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+        for (const tx of pendingTxs) {
+          if (tx.status === 'conflict') continue;
+          const pl = tx.payload || {};
+          const isCash =
+            String(pl.payment_method || '').toLowerCase().includes('cash') &&
+            !String(pl.payment_method || '').toLowerCase().includes('gcash');
+
+          if (tx.type === 'attendance') {
+            const fee = Number(pl.entry_fee || 0);
+            if (fee > 0) {
+              if (isCash) pendingCashLogbook += fee;
+              else pendingDigitalLogbook += fee;
+
+              pendingActivity.push({
+                id: tx.id,
+                source: 'logbook',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'CHECK-IN (CASH) [OFFLINE]' : 'CHECK-IN (GCASH) [OFFLINE]',
+                reason: `${pl.customer_name || 'Guest'} (${pl.customer_type || 'Walk-In'})`,
+                reference_number: pl.gcash_ref_no || null,
+                performed_by_name: tx.userName || 'Reception',
+                amount: fee,
+                created_at: tx.createdAt,
+              });
+            }
+          } else if (tx.type === 'subscription') {
+            const amt = Number(pl.price || pl.amount || 0);
+            if (amt > 0) {
+              if (isCash) pendingCashLogbook += amt;
+              else pendingDigitalLogbook += amt;
+
+              pendingActivity.push({
+                id: tx.id,
+                source: 'receipt',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'MEMBERSHIP (CASH) [OFFLINE]' : 'MEMBERSHIP (DIGITAL) [OFFLINE]',
+                reason: `${pl.customer_name || 'Member'} - ${pl.plan_name || 'Subscription'}`,
+                reference_number: pl.receipt_number || null,
+                performed_by_name: tx.userName || 'Reception',
+                amount: amt,
+                created_at: tx.createdAt,
+              });
+            }
+          } else if (tx.type === 'card_purchase' || tx.type === 'batch_card_purchase') {
+            const amt = Number(pl.amount || pl.card_fee || pl.total_amount || 0);
+            if (amt > 0) {
+              if (isCash) pendingCashLogbook += amt;
+              else pendingDigitalLogbook += amt;
+
+              pendingActivity.push({
+                id: tx.id,
+                source: 'receipt',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'CARD FEE (CASH) [OFFLINE]' : 'CARD FEE (DIGITAL) [OFFLINE]',
+                reason: pl.item_description || 'Physical Membership Card Fee',
+                reference_number: pl.receipt_number || null,
+                performed_by_name: tx.userName || 'Reception',
+                amount: amt,
+                created_at: tx.createdAt,
+              });
+            }
+          } else if (tx.type === 'sale') {
+            const amt = Number(pl.total_amount || pl.amount || 0);
+            if (amt > 0) {
+              if (isCash) pendingCashSales += amt;
+              else pendingDigitalSales += amt;
+
+              pendingActivity.push({
+                id: tx.id,
+                source: 'pos',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'POS SALE [OFFLINE]' : 'POS DIGITAL [OFFLINE]',
+                reason: pl.product_name || 'Product Sale',
+                reference_number: pl.receipt_no || null,
+                performed_by_name: tx.userName || 'Cashier',
+                amount: amt,
+                created_at: tx.createdAt,
+              });
+            }
+          }
+        }
+      } catch {}
+
+      const totalCashCol = pendingCashSales + pendingCashLogbook;
+      const expectedDrawer = openingFloat + totalCashCol + (pendingCashIn - pendingCashOut);
+      const totalDigCol = pendingDigitalSales + pendingDigitalLogbook + pendingDigitalIn;
+
+      set(() => ({
+        metrics: {
+          openingFloat,
+          cashInTotal: Math.round(pendingCashIn * 100) / 100,
+          cashOutTotal: Math.round(pendingCashOut * 100) / 100,
+          digitalInTotal: Math.round(pendingDigitalIn * 100) / 100,
+          cashSales: Math.round(pendingCashSales * 100) / 100,
+          digitalSales: Math.round(pendingDigitalSales * 100) / 100,
+          cashLogbook: Math.round(pendingCashLogbook * 100) / 100,
+          digitalLogbook: Math.round(pendingDigitalLogbook * 100) / 100,
+          expectedDrawerCash: Math.round(expectedDrawer * 100) / 100,
+          totalDigitalCollections: Math.round(totalDigCol * 100) / 100,
+          totalSessionCollections: Math.round((totalCashCol + totalDigCol + pendingCashIn) * 100) / 100,
+        },
+        currentDrawerCash: Math.round(expectedDrawer * 100) / 100,
+        transactions: pendingActivity.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ),
+      }));
+      return;
+    }
+
     try {
       // 1. Fetch Manual Drawer Movements (Cash In / Cash Out / Digital In)
       let rawManualTxs: any[] = [];
@@ -209,11 +586,15 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           rawManualTxs = await fetchSessionTransactions(session.id);
         }
       } catch (manualQueryErr) {
-        console.warn('Error fetching manual cash transactions, retrying service:', manualQueryErr);
+        if (!isConnectionError(manualQueryErr)) {
+          console.warn('Error fetching manual cash transactions, retrying service:', manualQueryErr);
+        }
         try {
           rawManualTxs = await fetchSessionTransactions(session.id);
         } catch (fallbackErr) {
-          console.error('Failed to load manual cash transactions:', fallbackErr);
+          if (!isConnectionError(fallbackErr)) {
+            console.error('Failed to load manual cash transactions:', fallbackErr);
+          }
         }
       }
 
@@ -254,7 +635,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         .is('deleted_at', null)
         .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
 
-      if (salesErr) {
+      if (salesErr && !isConnectionError(salesErr)) {
         console.warn('Error fetching POS sales for cash session:', salesErr);
       }
 
@@ -296,7 +677,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at, cash_session_id')
         .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
 
-      if (rcptErr) {
+      if (rcptErr && !isConnectionError(rcptErr)) {
         console.warn('Error fetching receipts for cash session:', rcptErr);
       }
 
@@ -349,7 +730,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         .is('deleted_at', null)
         .or(`cash_session_id.eq.${session.id},check_in_time.gte.${effectiveStart},created_at.gte.${effectiveStart}`);
 
-      if (attErr) {
+      if (attErr && !isConnectionError(attErr)) {
         console.error('Error fetching attendance for cash session:', attErr);
       }
 
@@ -397,10 +778,60 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         }
       });
 
+      // 5. Merge pending offline transactions from vault
+      try {
+        const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+        for (const tx of pendingTxs) {
+          if (tx.status === 'conflict') continue;
+          const pl = tx.payload || {};
+          const isCash =
+            String(pl.payment_method || '').toLowerCase().includes('cash') &&
+            !String(pl.payment_method || '').toLowerCase().includes('gcash');
+
+          if (tx.type === 'attendance') {
+            const fee = Number(pl.entry_fee || 0);
+            if (fee > 0) {
+              if (isCash) cashAttendance += fee;
+              else digitalAttendance += fee;
+
+              mappedAttendanceTxs.push({
+                id: tx.id,
+                source: 'logbook',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'CHECK-IN (CASH) [OFFLINE]' : 'CHECK-IN (GCASH) [OFFLINE]',
+                reason: `${pl.customer_name || 'Guest'} (${pl.customer_type || 'Walk-In'})`,
+                reference_number: pl.gcash_ref_no || null,
+                performed_by_name: tx.userName || 'Reception',
+                amount: fee,
+                created_at: tx.createdAt,
+              });
+            }
+          } else if (tx.type === 'card_purchase' || tx.type === 'batch_card_purchase') {
+            const amt = Number(pl.amount || pl.card_fee || pl.total_amount || 0);
+            if (amt > 0) {
+              if (isCash) cashReceipts += amt;
+              else digitalReceipts += amt;
+
+              mappedReceiptsTxs.push({
+                id: tx.id,
+                source: 'receipt',
+                type: isCash ? 'cash_in' : 'digital_in',
+                displayType: isCash ? 'CARD FEE (CASH) [OFFLINE]' : 'CARD FEE (DIGITAL) [OFFLINE]',
+                reason: pl.item_description || 'Physical Membership Card Fee',
+                reference_number: pl.receipt_number || null,
+                performed_by_name: tx.userName || 'Reception',
+                amount: amt,
+                created_at: tx.createdAt,
+              });
+            }
+          }
+        }
+      } catch {}
+
       const totalCashLogbook = cashAttendance + cashReceipts;
       const totalDigitalLogbook = digitalAttendance + digitalReceipts;
 
-      // 5. Calculate Metrics Totals
+      // 6. Calculate Metrics Totals
       const totalCashCollections = cashSales + totalCashLogbook;
       const netManualDrawer = cashInTotal - cashOutTotal;
 
@@ -444,11 +875,17 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         transactions: allUnifiedActivity,
       });
     } catch (error) {
-      console.error('Error recalculating cash metrics:', error);
+      if ((typeof navigator === 'undefined' || navigator.onLine) && !isConnectionError(error)) {
+        console.error('Error recalculating cash metrics:', error);
+      }
     }
   },
 
   subscribeRealtime: () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return () => {};
+    }
+
     realtimeSubscriberCount += 1;
 
     const triggerRecalculate = () => {

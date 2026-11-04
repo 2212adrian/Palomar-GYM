@@ -35,13 +35,17 @@ import { createPortal } from 'react-dom';
 // Supabase & Authentication Stores
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
-import { getServerNow,  } from '../../lib/serverTime';
+import { getServerNow } from '../../lib/serverTime';
 import { useAuthStore } from '../../stores/authStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useSessionLock } from '../../hooks/useSessionLock';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { isSuperAdmin } from '../../constants/auth';
 import { IndicationGuideBanner } from '../../components/guide/IndicationGuideBanner';
+import {
+  stagePendingTransaction,
+  getDecryptedPendingTransactions,
+} from '../../lib/offlineVault';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
@@ -270,9 +274,12 @@ export const Sales: React.FC = () => {
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
   const { isBatterySaver } = useBatterySaver();
-  const { activeSession, isSessionOpen, history, loadHistory } =
+  const { activeSession, isSessionOpen, history, loadHistory, canProcessOfflineTransactions } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
+
+  const canOperateSession = isSessionOpen || canProcessOfflineTransactions();
+  const isActionLocked = isLocked || !canOperateSession;
 
   const [closedSessionsList, setClosedSessionsList] = useState<
     SessionSummaryInfo[]
@@ -466,6 +473,10 @@ export const Sales: React.FC = () => {
       // ignore parse error
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('rates_config')
@@ -481,7 +492,9 @@ export const Sales: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error('Error fetching rates_config:', err);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        console.error('Error fetching rates_config:', err);
+      }
     }
   };
 
@@ -656,6 +669,30 @@ export const Sales: React.FC = () => {
             }
           }
         }
+
+        // Merge pending offline sales from encrypted vault
+        try {
+          const pendingVaultItems = await getDecryptedPendingTransactions();
+          const pendingSales = pendingVaultItems
+            .filter((p) => p.type === 'sale')
+            .map((p) => ({
+              ...p.payload,
+              id: p.id,
+              created_at: p.createdAt,
+              sync_status: p.status || 'pending',
+            }))
+            .filter((s) => (s.created_at || '').startsWith(dateStr));
+
+          if (pendingSales.length > 0) {
+            setTransactions((prev) => {
+              const existingIds = new Set(prev.map((t) => String(t.id)));
+              const uniquePending = pendingSales.filter((p) => !existingIds.has(String(p.id)));
+              return [...uniquePending, ...prev];
+            });
+          }
+        } catch (vaultErr) {
+          console.warn('Error reading offline vault for sales:', vaultErr);
+        }
       } catch {
         // General error guard
       } finally {
@@ -682,6 +719,10 @@ export const Sales: React.FC = () => {
       }
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('products')
@@ -700,7 +741,9 @@ export const Sales: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error('Error loading products list:', err);
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        console.error('Error loading products list:', err);
+      }
     }
   }, []);
 
@@ -708,6 +751,10 @@ export const Sales: React.FC = () => {
     fetchRatesConfig();
     fetchProducts();
     fetchTransactions(false);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
 
     const channelId = `sales_rt_${dateStr}_${Date.now()}`;
     let salesThrottleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -931,9 +978,64 @@ export const Sales: React.FC = () => {
   }, [activeRevenue, activeSalesCount, activeItemsSold, revenueTrend]);
 
   const handleSaleSuccess = async (newTx: any) => {
-
     const calculatedGcashFee =
       newTx.paymentMethod === 'GCash' ? ratesConfig?.gcash_fee || 10.0 : 0.0;
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    const canOffline = useCashSessionStore.getState().canProcessOfflineTransactions();
+    const sessionId = activeSession?.id || useCashSessionStore.getState().getLastKnownSessionId();
+
+    if (!isOnline) {
+      if (!canOffline || !sessionId) {
+        toast.error('Cannot record offline sale: No active cash drawer session was open.');
+        return;
+      }
+
+      const offlineSalePayload = {
+        items: newTx.items,
+        product_name: newTx.productName,
+        payment_method: newTx.paymentMethod,
+        amount_received: newTx.amountReceived,
+        change_calculated: newTx.changeCalculated,
+        total_amount: newTx.totalAmount,
+        gcash_fee_applied: calculatedGcashFee,
+        reference_number: newTx.referenceNumber || newTx.reference_number || null,
+        cash_session_id: sessionId,
+        created_at: newTx.createdAt || new Date().toISOString(),
+      };
+
+      try {
+        const auth = useAuthStore.getState();
+        const vaultId = await stagePendingTransaction({
+          type: 'sale',
+          cashSessionId: sessionId,
+          userId: auth.user?.id || 'offline_cashier',
+          userName: auth.profile?.username || auth.user?.email || 'Cashier',
+          payload: offlineSalePayload,
+        });
+
+        const offlineSale = {
+          ...offlineSalePayload,
+          id: vaultId,
+          sync_status: 'pending',
+        };
+
+        setNewlyAddedId(vaultId);
+        setTimeout(() => setNewlyAddedId(null), 2500);
+
+        setTransactions((prev) => {
+          const updated = [offlineSale, ...prev];
+          sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+          return updated;
+        });
+
+        toast.info('Sale secured in encrypted offline vault (pending sync).');
+        return;
+      } catch (vaultErr: any) {
+        toast.error(`Offline vault storage failed: ${vaultErr.message}`);
+        return;
+      }
+    }
 
     try {
       const { data: insertedSale, error } = await supabase
@@ -949,23 +1051,20 @@ export const Sales: React.FC = () => {
             gcash_fee_applied: calculatedGcashFee,
             reference_number:
               newTx.referenceNumber || newTx.reference_number || null,
-            cash_session_id: activeSession?.id || null,
+            cash_session_id: sessionId || null,
           },
         ])
         .select()
         .single();
 
-      if (error) {
-        console.error('Error inserting sale transaction:', error);
-        throw error;
-      }
+      if (error) throw error;
 
       if (insertedSale) {
         setNewlyAddedId(insertedSale.id);
         setTimeout(() => setNewlyAddedId(null), 2500);
 
         setTransactions((prev) => {
-          const updated = [insertedSale, ...prev];
+          const updated = [{ ...insertedSale, sync_status: 'synced' }, ...prev];
           sessionStorage.setItem(
             `sales_sanitized_${dateStr}`,
             JSON.stringify(updated)
@@ -1003,6 +1102,44 @@ export const Sales: React.FC = () => {
         .then(() => fetchProducts())
         .catch(console.error);
     } catch (err: any) {
+      if (canOffline && sessionId) {
+        const offlineSalePayload = {
+          items: newTx.items,
+          product_name: newTx.productName,
+          payment_method: newTx.paymentMethod,
+          amount_received: newTx.amountReceived,
+          change_calculated: newTx.changeCalculated,
+          total_amount: newTx.totalAmount,
+          gcash_fee_applied: calculatedGcashFee,
+          reference_number: newTx.referenceNumber || newTx.reference_number || null,
+          cash_session_id: sessionId,
+          created_at: newTx.createdAt || new Date().toISOString(),
+        };
+
+        try {
+          const auth = useAuthStore.getState();
+          const vaultId = await stagePendingTransaction({
+            type: 'sale',
+            cashSessionId: sessionId,
+            userId: auth.user?.id || 'offline_cashier',
+            userName: auth.profile?.username || auth.user?.email || 'Cashier',
+            payload: offlineSalePayload,
+          });
+
+          const offlineSale = {
+            ...offlineSalePayload,
+            id: vaultId,
+            sync_status: 'pending',
+          };
+
+          setTransactions((prev) => [offlineSale, ...prev]);
+          toast.info('Network interrupted. Sale held in encrypted offline vault.');
+          return;
+        } catch {
+          // fallback to error below
+        }
+      }
+
       console.error('Error saving sale transaction:', err);
       toast.error(
         err.message ||
@@ -1172,8 +1309,20 @@ export const Sales: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const isActionLocked = isLocked || !isSessionOpen;
-    const actionLockReason = !isSessionOpen
+    const handleSyncUpdated = () => {
+      fetchTransactions(true);
+      fetchProducts();
+    };
+    window.addEventListener('palomar:sync-updated', handleSyncUpdated);
+    return () => {
+      window.removeEventListener('palomar:sync-updated', handleSyncUpdated);
+    };
+  }, [fetchTransactions, fetchProducts]);
+
+  useEffect(() => {
+    const canOperateSession = isSessionOpen || useCashSessionStore.getState().canProcessOfflineTransactions();
+    const isActionLocked = isLocked || !canOperateSession;
+    const actionLockReason = !canOperateSession
       ? 'Cash session is closed. Open a cash session to record new sales.'
       : getLockReason('create new sales');
 
@@ -1208,7 +1357,7 @@ export const Sales: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  if (!isSessionOpen) {
+                  if (!canOperateSession) {
                     toast.warning(
                       'Recycle Bin is unavailable while the cash session is closed.'
                     );
@@ -1221,14 +1370,14 @@ export const Sales: React.FC = () => {
                   }
                   setIsRecycleBinOpen(true);
                 }}
-                disabled={!isSessionOpen}
+                disabled={!canOperateSession}
                 title={
-                  !isSessionOpen
+                  !canOperateSession
                     ? 'Recycle Bin is locked: Cash session is closed'
                     : 'Recycle Bin'
                 }
                 className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-                  !isSessionOpen
+                  !canOperateSession
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer active:scale-95'
                 }`}
@@ -1242,7 +1391,7 @@ export const Sales: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (!isSessionOpen) {
+              if (!canOperateSession) {
                 toast.warning(
                   'Cannot create new sale: Cash drawer session is closed.'
                 );
@@ -1833,17 +1982,13 @@ export const Sales: React.FC = () => {
 
                     {/* QUICK ACTION BUTTON */}
                     <motion.button
-                      whileHover={
-                        isLocked || !isSessionOpen ? {} : { scale: 1.01 }
-                      }
-                      whileTap={
-                        isLocked || !isSessionOpen ? {} : { scale: 0.98 }
-                      }
+                      whileHover={isActionLocked ? {} : { scale: 1.01 }}
+                      whileTap={isActionLocked ? {} : { scale: 0.98 }}
                       type="button"
-                      disabled={isLocked || !isSessionOpen}
+                      disabled={isActionLocked}
                       onClick={() => setIsCreateModalOpen(true)}
                       className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
-                        isLocked || !isSessionOpen
+                        isActionLocked
                           ? 'opacity-50 cursor-not-allowed'
                           : 'cursor-pointer'
                       }`}
@@ -2019,26 +2164,25 @@ export const Sales: React.FC = () => {
 
               <button
                 type="button"
-                disabled={isLocked || !isSessionOpen}
+                disabled={isActionLocked}
                 title={
-                  !isSessionOpen
-                    ? 'Cash session is closed. Open a cash session to record new sales.'
-                    : isLocked
-                      ? getLockReason('create new sale')
-                      : 'Create New Sale'
+                  isActionLocked
+                    ? !canOperateSession
+                      ? 'Cash session is closed. Open a cash session to record new sales.'
+                      : getLockReason('create new sale')
+                    : 'Create New Sale'
                 }
                 onClick={() => {
-                  if (!isSessionOpen) {
+                  if (isActionLocked) {
                     toast.warning(
                       'Cannot create sale: Cash drawer session is closed.'
                     );
                     return;
                   }
-                  if (isLocked) return;
                   setIsCreateModalOpen(true);
                 }}
                 className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-all ${
-                  isLocked || !isSessionOpen
+                  isActionLocked
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer active:scale-95'
                 }`}

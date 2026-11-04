@@ -68,6 +68,7 @@ import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { getDecryptedPendingTransactions, dropPendingTransaction } from '../../lib/offlineVault';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
@@ -402,10 +403,13 @@ export const LogbookPage: React.FC = () => {
   const { setActions } = useContext(HeaderActionsContext);
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
-  const { activeSession, isSessionOpen, history, loadHistory } =
+  const { activeSession, isSessionOpen, history, loadHistory, canProcessOfflineTransactions } =
     useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
   const { isBatterySaver } = useBatterySaver();
+
+  const canOperateSession = isSessionOpen || canProcessOfflineTransactions();
+  const isActionLocked = isLocked || !canOperateSession;
 
   const [closedSessionsList, setClosedSessionsList] = useState<
     SessionSummaryInfo[]
@@ -438,16 +442,28 @@ export const LogbookPage: React.FC = () => {
     return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
-  // Session-based deletability check
+  // Session-based deletability check with 24-hour void window for subscriptions
   const isLogDeletable = useCallback(
     (log: LogRecord) => {
-      const isCard = isCardRecord(log);
+      // Offline pending records can always be cancelled / dropped
+      if (String(log.id).startsWith('offline_tx_') || log.sync_status === 'pending' || log.sync_status === 'conflict') {
+        return true;
+      }
 
-      if (
-        (!isCard && log.isSubscription) ||
-        (!isCard && (log as any).deletable === false) ||
-        log.customerType === 'New Membership'
-      ) {
+      const isCard = isCardRecord(log);
+      const isSub = log.isSubscription || log.customerType === 'New Membership';
+
+      // 24-hour void window policy for subscriptions
+      if (isSub) {
+        const itemDate = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+        const ageMs = Date.now() - itemDate;
+        if (ageMs > 24 * 60 * 60 * 1000) {
+          return false; // Permanently locked after 24h
+        }
+        return isSessionOpen;
+      }
+
+      if (!isCard && (log as any).deletable === false) {
         return false;
       }
 
@@ -473,10 +489,20 @@ export const LogbookPage: React.FC = () => {
 
   const getLogDeleteDisabledReason = useCallback(
     (log: LogRecord) => {
-      const isCard = isCardRecord(log);
-      if (!isCard && (log.isSubscription || log.customerType === 'New Membership')) {
-        return 'Subscription contracts cannot be deleted from Logbook.';
+      const isSub = log.isSubscription || log.customerType === 'New Membership';
+
+      if (isSub) {
+        const itemDate = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+        const ageMs = Date.now() - itemDate;
+        if (ageMs > 24 * 60 * 60 * 1000) {
+          return 'Subscription is locked: Passed the 24-hour void window and cannot be deleted.';
+        }
+        if (!isSessionOpen) {
+          return 'Cash session is closed. Open a cash session to void this subscription.';
+        }
+        return undefined;
       }
+
       if (!isSessionOpen) {
         return 'Cash session is closed. Open a cash session to manage attendance.';
       }
@@ -590,11 +616,152 @@ export const LogbookPage: React.FC = () => {
     });
   }, [closedSessionsList, history]);
 
+  // Helpers for robust offline-ready logbook loading
+  const isConnectionError = (err: any): boolean => {
+    if (!err) return false;
+    const str = (
+      (typeof err === 'string' ? err : '') +
+      ' ' +
+      (err.message || '') +
+      ' ' +
+      (err.details || '') +
+      ' ' +
+      (err.name || '')
+    ).toLowerCase();
+    return (
+      str.includes('no internet connection') ||
+      str.includes('failed to fetch') ||
+      str.includes('network') ||
+      str.includes('offline') ||
+      str.includes('check your wi-fi') ||
+      str.includes('timeout') ||
+      str.includes('aborterror')
+    );
+  };
+
+  const mapPendingTxToLogRecord = (tx: any): LogRecord => {
+    const pl = tx.payload || {};
+    const isSub = tx.type === 'subscription';
+    if (tx.type === 'attendance') {
+      const fee = Number(pl.entry_fee || 0);
+      return {
+        id: tx.id,
+        timestamp: tx.createdAt,
+        memberId: pl.member_id || null,
+        customerName: pl.customer_name || 'Guest',
+        customerType: pl.customer_type || 'Walk-In',
+        categoryOrPlan: pl.plan_name || 'Regular Pass',
+        paymentMethod: pl.payment_method || 'Cash',
+        amountPaid: fee,
+        basePrice: Number(pl.base_price || fee),
+        gcashFee: Number(pl.gcash_fee || 0),
+        cardFee: Number(pl.card_fee || 0),
+        gcashRefNo: pl.gcash_ref_no || '',
+        referenceNumber: pl.gcash_ref_no || '',
+        paymentRef: pl.gcash_ref_no || '',
+        paymentStatus: fee > 0 ? 'Paid' : 'Promo',
+        status: 'Active',
+        isSubscription: false,
+        deletable: true,
+        receiptNumber: null,
+        memberIds: [],
+        cash_session_id: tx.cashSessionId || null,
+        sync_status: tx.status === 'conflict' ? 'conflict' : 'pending',
+      } as LogRecord;
+    } else if (tx.type === 'batch_card_purchase') {
+      const totalAmt = Number(
+        pl.total_amount ||
+          (pl.fee_per_card ? pl.fee_per_card * (pl.member_ids?.length || 1) : 0)
+      );
+      const count = pl.member_ids?.length || 1;
+      return {
+        id: tx.id,
+        timestamp: tx.createdAt,
+        memberId: null,
+        customerName: `${count} Members (Batch Cards)`,
+        customerType: 'Physical Card',
+        categoryOrPlan: `Physical Membership Cards (${count} Cards)`,
+        paymentMethod: pl.payment_method || 'Cash',
+        amountPaid: totalAmt,
+        basePrice: totalAmt,
+        gcashFee: 0,
+        cardFee: totalAmt,
+        gcashRefNo: pl.gcash_ref_no || '',
+        referenceNumber: pl.gcash_ref_no || pl.receipt_number || '',
+        paymentRef: pl.gcash_ref_no || '',
+        paymentStatus: 'Paid',
+        status: 'Active',
+        isSubscription: false,
+        deletable: false,
+        receiptNumber: pl.receipt_number || null,
+        memberIds: pl.member_ids || [],
+        cash_session_id: tx.cashSessionId || null,
+        sync_status: tx.status === 'conflict' ? 'conflict' : 'pending',
+      } as LogRecord;
+    } else if (tx.type === 'card_purchase') {
+      const cardAmt = Number(pl.amount || pl.card_fee || 0);
+      return {
+        id: tx.id,
+        timestamp: tx.createdAt,
+        memberId: pl.member_id || null,
+        customerName: pl.customer_name || 'Member',
+        customerType: 'Physical Card',
+        categoryOrPlan:
+          pl.item_description || 'Physical Membership Card Fee',
+        paymentMethod: pl.payment_method || 'Cash',
+        amountPaid: cardAmt,
+        basePrice: 0,
+        gcashFee: Number(pl.gcash_fee || 0),
+        cardFee: cardAmt,
+        gcashRefNo: pl.gcash_ref_no || '',
+        referenceNumber: pl.gcash_ref_no || pl.receipt_number || '',
+        paymentRef: pl.gcash_ref_no || '',
+        paymentStatus: 'Paid',
+        status: 'Active',
+        isSubscription: false,
+        deletable: false,
+        receiptNumber: pl.receipt_number || null,
+        memberIds: pl.member_id ? [pl.member_id] : [],
+        cash_session_id: tx.cashSessionId || null,
+        sync_status: tx.status === 'conflict' ? 'conflict' : 'pending',
+      } as LogRecord;
+    } else {
+      const amt = Number(pl.amount || 0);
+      return {
+        id: tx.id,
+        timestamp: tx.createdAt,
+        memberId: pl.member_id || null,
+        customerName: pl.customer_name || 'Member',
+        customerType: pl.customer_type || 'New Membership',
+        categoryOrPlan:
+          pl.item_description ||
+          (isSub ? 'Subscription' : 'Membership Card Fee'),
+        paymentMethod: pl.payment_method || 'Cash',
+        amountPaid: amt,
+        basePrice: Number(pl.base_price || amt),
+        gcashFee: Number(pl.gcash_fee || 0),
+        cardFee: Number(pl.card_fee || 0),
+        gcashRefNo: pl.gcash_ref_no || '',
+        referenceNumber: pl.gcash_ref_no || '',
+        paymentRef: pl.gcash_ref_no || '',
+        paymentStatus: 'Paid',
+        status: 'Active',
+        isSubscription: isSub,
+        deletable: false,
+        receiptNumber: null,
+        memberIds: [],
+        cash_session_id: tx.cashSessionId || null,
+        sync_status: tx.status === 'conflict' ? 'conflict' : 'pending',
+      } as LogRecord;
+    }
+  };
+
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchAttendanceFromSupabase = useCallback(
     async (isBackground: boolean = false) => {
       const cacheKey = `logbook_sanitized_${dateStr}`;
       const sessionsCacheKey = 'logbook_closed_sessions_cache';
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
       if (!isBackground) {
         const cachedClosed =
@@ -622,21 +789,67 @@ export const LogbookPage: React.FC = () => {
           } catch (e) {
             console.error('Failed to parse cached logbook session:', e);
           }
-        } else {
+        } else if (!isOffline) {
           setLoadingLogs(true);
         }
       }
 
-      try {
-        // Fetch closed sessions list from Supabase
+      // INSTANT OFFLINE SHORT-CIRCUIT: Do NOT hit network when offline. Render immediately!
+      if (isOffline) {
         try {
-          const { data: closedSessionsData } = await supabase
-            .from('cash_sessions')
-            .select(
-              'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
-            )
-            .eq('status', 'closed')
-            .order('closed_at', { ascending: false });
+          const cachedSession =
+            sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+          let cachedLogs: LogRecord[] = [];
+          if (cachedSession) {
+            try {
+              const parsed = JSON.parse(cachedSession);
+              if (Array.isArray(parsed)) {
+                cachedLogs = parsed;
+              }
+            } catch {}
+          }
+
+          let pendingRecords: LogRecord[] = [];
+          try {
+            const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+            pendingRecords = pendingTxs
+              .filter(
+                (tx) =>
+                  tx.type === 'attendance' ||
+                  tx.type === 'subscription' ||
+                  tx.type === 'card_purchase' ||
+                  tx.type === 'batch_card_purchase'
+              )
+              .filter((tx) => {
+                const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
+                return !txDate || txDate === dateStr;
+              })
+              .map(mapPendingTxToLogRecord);
+          } catch {}
+
+          const combined = deduplicateBatchCards([...pendingRecords, ...cachedLogs]);
+          setLogs(combined);
+        } finally {
+          if (!isBackground) {
+            setLoadingLogs(false);
+          }
+        }
+        return;
+      }
+
+      try {
+        // Fetch closed sessions list from Supabase with safety timeout
+        try {
+          const { data: closedSessionsData } = await Promise.race([
+            supabase
+              .from('cash_sessions')
+              .select(
+                'id, session_number, opened_at, closed_at, opened_by_name, closed_by_name, status'
+              )
+              .eq('status', 'closed')
+              .order('closed_at', { ascending: false }),
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+          ]);
 
           if (closedSessionsData) {
             setClosedSessionsList(closedSessionsData);
@@ -656,9 +869,16 @@ export const LogbookPage: React.FC = () => {
         let mappedLogs: LogRecord[] | null = null;
 
         try {
-          const { data, error } = await supabase.rpc('get_sanitized_logbook', {
+          const rpcPromise = supabase.rpc('get_sanitized_logbook', {
             target_date: dateStr,
           });
+          const timeoutPromise = new Promise<any>((_, reject) =>
+            setTimeout(() => reject(new Error('RPC query timeout')), 1500)
+          );
+          const { data, error } = (await Promise.race([
+            rpcPromise,
+            timeoutPromise,
+          ])) as any;
 
           if (!error && data) {
             mappedLogs = (data || []).map((row: any) => ({
@@ -688,7 +908,7 @@ export const LogbookPage: React.FC = () => {
               cash_session_id: row.cash_session_id || null,
             }));
 
-            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online (skip in Battery Saver mode to conserve power)
+            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online
             if (
               !isBatterySaver &&
               (typeof navigator === 'undefined' || navigator.onLine)
@@ -717,10 +937,12 @@ export const LogbookPage: React.FC = () => {
             }
           }
         } catch (rpcErr: any) {
-          console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
+          if (!isConnectionError(rpcErr)) {
+            console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
+          }
         }
 
-        // Direct table query fallback (always allow so Service Worker can serve cached GET responses when offline)
+        // Direct table query fallback with timeout
         if (!mappedLogs) {
           try {
             const startOfDay = new Date(
@@ -730,29 +952,37 @@ export const LogbookPage: React.FC = () => {
               `${dateStr}T23:59:59.999+08:00`
             ).toISOString();
 
+            const attPromise = supabase
+              .from('attendance')
+              .select('*')
+              .is('deleted_at', null)
+              .gte('check_in_time', startOfDay)
+              .lte('check_in_time', endOfDay)
+              .order('check_in_time', { ascending: false });
+
+            const rcptPromise = supabase
+              .from('receipts')
+              .select('*')
+              .gte('created_at', startOfDay)
+              .lte('created_at', endOfDay)
+              .order('created_at', { ascending: false });
+
+            const fallbackTimeout = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Fallback query timeout')), 1500)
+            );
+
             const [attRes, rcptRes] = await Promise.allSettled([
-              supabase
-                .from('attendance')
-                .select('*')
-                .is('deleted_at', null)
-                .gte('check_in_time', startOfDay)
-                .lte('check_in_time', endOfDay)
-                .order('check_in_time', { ascending: false }),
-              supabase
-                .from('receipts')
-                .select('*')
-                .gte('created_at', startOfDay)
-                .lte('created_at', endOfDay)
-                .order('created_at', { ascending: false }),
+              Promise.race([attPromise, fallbackTimeout]),
+              Promise.race([rcptPromise, fallbackTimeout]),
             ]);
 
             const rawAttendance =
-              attRes.status === 'fulfilled' && !attRes.value.error
-                ? attRes.value.data || []
+              attRes.status === 'fulfilled' && !(attRes.value as any)?.error
+                ? (attRes.value as any)?.data || []
                 : [];
             const rawReceipts =
-              rcptRes.status === 'fulfilled' && !rcptRes.value.error
-                ? rcptRes.value.data || []
+              rcptRes.status === 'fulfilled' && !(rcptRes.value as any)?.error
+                ? (rcptRes.value as any)?.data || []
                 : [];
 
             const fallbackList: LogRecord[] = [];
@@ -821,24 +1051,52 @@ export const LogbookPage: React.FC = () => {
               );
               mappedLogs = fallbackList;
             }
-          } catch (directErr) {
-            console.error('Direct table fetch error:', directErr);
+          } catch (directErr: any) {
+            if (!isConnectionError(directErr)) {
+              console.error('Direct table fetch error:', directErr);
+            }
           }
         }
 
-        if (mappedLogs) {
-          const consolidatedLogs = deduplicateBatchCards(mappedLogs);
+        // Merge offline pending records from encrypted vault
+        let pendingRecords: LogRecord[] = [];
+        try {
+          const pendingTxs = await getDecryptedPendingTransactions().catch(() => []);
+          pendingRecords = pendingTxs
+            .filter(
+              (tx) =>
+                tx.type === 'attendance' ||
+                tx.type === 'subscription' ||
+                tx.type === 'card_purchase' ||
+                tx.type === 'batch_card_purchase'
+            )
+            .filter((tx) => {
+              const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
+              return !txDate || txDate === dateStr;
+            })
+            .map(mapPendingTxToLogRecord);
+        } catch (vaultErr) {
+          console.warn('Vault pending attendance fetch error:', vaultErr);
+        }
+
+        const combinedLogs = [...pendingRecords, ...(mappedLogs || [])];
+        if (combinedLogs.length > 0 || mappedLogs !== null) {
+          const consolidatedLogs = deduplicateBatchCards(combinedLogs);
           setLogs(consolidatedLogs);
-          const serialized = JSON.stringify(consolidatedLogs);
-          sessionStorage.setItem(cacheKey, serialized);
-          try {
-            localStorage.setItem(cacheKey, serialized);
-          } catch {
-            // ignore quota error
+          if (mappedLogs) {
+            const serialized = JSON.stringify(consolidatedLogs);
+            sessionStorage.setItem(cacheKey, serialized);
+            try {
+              localStorage.setItem(cacheKey, serialized);
+            } catch {
+              // ignore quota error
+            }
           }
         }
       } catch (err: any) {
-        console.error('Failed to fetch attendance:', err);
+        if (!isConnectionError(err)) {
+          console.error('Failed to fetch attendance:', err);
+        }
       } finally {
         if (!isBackground) {
           setLoadingLogs(false);
@@ -905,6 +1163,11 @@ export const LogbookPage: React.FC = () => {
     };
     window.addEventListener('palomar_logbook_updated', handleBatchUpdated);
 
+    const handleSyncUpdated = () => {
+      fetchAttendanceFromSupabase(true);
+    };
+    window.addEventListener('palomar:sync-updated', handleSyncUpdated);
+
     // Background polling interval: 45s normal vs 180s (3 min) in Battery Saver mode
     const pollIntervalMs = isBatterySaver ? 180000 : 45000;
     const pollTimer = setInterval(() => {
@@ -917,6 +1180,7 @@ export const LogbookPage: React.FC = () => {
       if (throttleTimer) clearTimeout(throttleTimer);
       clearInterval(pollTimer);
       window.removeEventListener('palomar_logbook_updated', handleBatchUpdated);
+      window.removeEventListener('palomar:sync-updated', handleSyncUpdated);
       supabase.removeChannel(channel);
     };
   }, [dateStr, fetchAttendanceFromSupabase, loadHistory, isBatterySaver]);
@@ -1608,6 +1872,17 @@ export const LogbookPage: React.FC = () => {
     }
 
     const strId = String(log.id);
+    if (strId.startsWith('offline_tx_') || log.sync_status === 'pending' || log.sync_status === 'conflict') {
+      try {
+        await dropPendingTransaction(strId);
+        setLogs((prev) => prev.filter((item) => String(item.id) !== strId));
+        toast.info('Offline transaction cancelled and removed.');
+      } catch (e: any) {
+        toast.error(`Failed to drop offline transaction: ${e.message}`);
+      }
+      return;
+    }
+
     if (deletingIds.includes(strId)) return;
 
     setDeletingIds((prev) => [...prev, strId]);
@@ -1668,8 +1943,11 @@ export const LogbookPage: React.FC = () => {
   }, [user?.id]);
 
   useEffect(() => {
-    const isActionLocked = isLocked || !isSessionOpen;
-    const actionLockReason = !isSessionOpen
+    const canOperateSession =
+      isSessionOpen ||
+      useCashSessionStore.getState().canProcessOfflineTransactions();
+    const isActionLocked = isLocked || !canOperateSession;
+    const actionLockReason = !canOperateSession
       ? 'Cash session is closed. Open a cash session to record new check-ins.'
       : getLockReason('create a new check-in');
 
@@ -1727,14 +2005,14 @@ export const LogbookPage: React.FC = () => {
                 }
                 setIsRecycleBinOpen(true);
               }}
-              disabled={!isSessionOpen}
+              disabled={!canOperateSession}
               title={
-                !isSessionOpen
+                !canOperateSession
                   ? 'Recycle Bin is locked: Cash session is closed'
                   : 'Recycle Bin'
               }
               className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-                !isSessionOpen
+                !canOperateSession
                   ? 'opacity-50 cursor-not-allowed'
                   : 'cursor-pointer active:scale-95'
               }`}
@@ -1747,7 +2025,7 @@ export const LogbookPage: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (!isSessionOpen) {
+              if (!canOperateSession) {
                 toast.warning(
                   'Cannot check in: Cash drawer session is closed.'
                 );
@@ -2052,13 +2330,13 @@ export const LogbookPage: React.FC = () => {
                       ) : isSelectedDayToday ? (
                         <button
                           type="button"
-                          disabled={isLocked || !isSessionOpen}
+                          disabled={isActionLocked}
                           onClick={() => {
                             setInitialSearchVal('');
                             setIsCreateModalOpen(true);
                           }}
                           className={`mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
-                            isLocked || !isSessionOpen
+                            isActionLocked
                               ? 'opacity-50 cursor-not-allowed'
                               : 'cursor-pointer hover:opacity-90 active:scale-95'
                           }`}
@@ -2419,20 +2697,16 @@ export const LogbookPage: React.FC = () => {
 
                     {/* QUICK ACTION HORIZONTAL CHECK-IN BUTTON */}
                     <motion.button
-                      whileHover={
-                        isLocked || !isSessionOpen ? {} : { scale: 1.01 }
-                      }
-                      whileTap={
-                        isLocked || !isSessionOpen ? {} : { scale: 0.98 }
-                      }
+                      whileHover={isActionLocked ? {} : { scale: 1.01 }}
+                      whileTap={isActionLocked ? {} : { scale: 0.98 }}
                       type="button"
-                      disabled={isLocked || !isSessionOpen}
+                      disabled={isActionLocked}
                       onClick={() => {
                         setInitialSearchVal('');
                         setIsCreateModalOpen(true);
                       }}
                       className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
-                        isLocked || !isSessionOpen
+                        isActionLocked
                           ? 'opacity-50 cursor-not-allowed'
                           : 'cursor-pointer'
                       }`}
@@ -2657,27 +2931,26 @@ export const LogbookPage: React.FC = () => {
 
               <button
                 type="button"
-                disabled={isLocked || !isSessionOpen}
+                disabled={isActionLocked}
                 title={
-                  !isSessionOpen
-                    ? 'Cash session is closed. Open a cash session to record check-ins.'
-                    : isLocked
-                      ? getLockReason('record new check-in')
-                      : 'Record New Check-In'
+                  isActionLocked
+                    ? !canOperateSession
+                      ? 'Cash session is closed. Open a cash session to record check-ins.'
+                      : getLockReason('record new check-in')
+                    : 'Record New Check-In'
                 }
                 onClick={() => {
-                  if (!isSessionOpen) {
+                  if (isActionLocked) {
                     toast.warning(
                       'Cannot check in: Cash drawer session is closed.'
                     );
                     return;
                   }
-                  if (isLocked) return;
                   setInitialSearchVal('');
                   setIsCreateModalOpen(true);
                 }}
                 className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md transition-all ${
-                  isLocked || !isSessionOpen
+                  isActionLocked
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer active:scale-95'
                 }`}

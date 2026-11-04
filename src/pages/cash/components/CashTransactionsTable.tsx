@@ -155,15 +155,15 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
         </div>
       ) : (
         <>
-          {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto">
+          {/* Landscape / Desktop Table */}
+          <div className="hidden landscape:md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-neutral-900/60 text-slate-500 dark:text-slate-400 uppercase font-black tracking-wider text-[10px] border-b border-slate-200 dark:border-white/5">
                 <tr>
                   <th className="py-3 px-4">Time</th>
                   <th className="py-3 px-4">Type</th>
                   <th className="py-3 px-4">Activity Description</th>
-                  <th className="py-3 px-4">Staff / Source</th>
+                  <th className="py-3 px-4">Transacted By</th>
                   <th className="py-3 px-4 text-right">Amount</th>
                 </tr>
               </thead>
@@ -223,9 +223,11 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
                         )}
                       </td>
                       <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                           <User className="w-3 h-3 text-slate-400" />
-                          <span>{tx.performed_by_name}</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {tx.performed_by_name || 'System'}
+                          </span>
                         </div>
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -251,8 +253,8 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
             </table>
           </div>
 
-          {/* Mobile Card Layout with Windowing/Virtualization */}
-          <div className="md:hidden">
+          {/* Mobile & Portrait Card Layout with Windowing/Virtualization */}
+          <div className="landscape:md:hidden">
             <VirtualWindowList
               items={filteredTransactions}
               estimateItemHeight={76}

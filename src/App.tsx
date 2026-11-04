@@ -24,6 +24,7 @@ import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
 import { initBackgroundSyncService } from './lib/backgroundSyncService';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import { OfflineStatus } from './components/common/OfflineStatus';
+import { VersionUpdateManager } from './components/common/VersionUpdateManager';
 import { useBatterySaver } from './hooks/useBatterySaver';
 import { useNotificationStore } from './stores/useNotificationStore';
 import pkg from '../package.json';
@@ -511,6 +512,7 @@ export const App: React.FC = () => {
 
       <WhatsNewModal />
       <OfflineStatus />
+      <VersionUpdateManager />
 
       <Modal
         isOpen={isExitModalOpen}

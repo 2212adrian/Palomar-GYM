@@ -19,6 +19,7 @@ interface QuickActionsProps {
   onAddMemberClick?: () => void;
   onNewSubscriptionClick?: () => void;
   onCashRegisterClick?: () => void;
+  className?: string;
 }
 
 export const QuickActions: React.FC<QuickActionsProps> = ({
@@ -27,13 +28,16 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
   onAddMemberClick,
   onNewSubscriptionClick,
   onCashRegisterClick,
+  className = '',
 }) => {
   const navigate = useNavigate();
   const { isSessionOpen } = useCashSessionStore();
   const { openScanner } = useScannerStore();
 
   return (
-    <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs">
+    <div
+      className={`hidden sm:block bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs ${className}`}
+    >
       <div className="flex items-center justify-between gap-3 mb-3.5">
         <div>
           <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white font-heading flex items-center gap-1.5">

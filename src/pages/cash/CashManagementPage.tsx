@@ -86,6 +86,9 @@ export const CashManagementPage: React.FC = () => {
   const [openingNotes, setOpeningNotes] = useState('');
   const [isOpeningSession, setIsOpeningSession] = useState(false);
 
+  // View Tab state: Admin toggles between ledger and history; Staff only sees ledger
+  const [activeCashTab, setActiveCashTab] = useState<'ledger' | 'history'>('ledger');
+
   // Mobile history card pagination state
   const [mobileHistoryPage, setMobileHistoryPage] = useState(1);
 
@@ -123,12 +126,8 @@ export const CashManagementPage: React.FC = () => {
     }
   }, [lastCountedCash, isSessionOpen]);
 
-const handleStartSession = async (e: React.FormEvent) => {
+  const handleStartSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isOffline) {
-      toast.error('Cannot open cash session: No internet connection.');
-      return;
-    }
     if (!isAdmin) {
       toast.error('Only administrators can open cash sessions.');
       return;
@@ -147,6 +146,20 @@ const handleStartSession = async (e: React.FormEvent) => {
         user?.user_metadata?.full_name ||
         user?.email ||
         'Admin';
+
+      if (isOffline) {
+        useCashSessionStore.getState().openOfflineCashSession({
+          openingFloat: floatVal,
+          notes: openingNotes.trim() || undefined,
+          openedBy: user?.id || null,
+          openedByName: actorName,
+        });
+        toast.success(
+          `Offline cash drawer session opened with starting float ₱${floatVal.toFixed(2)}. Transactions unlocked!`
+        );
+        setOpeningNotes('');
+        return;
+      }
 
       await openCashSession({
         openingFloat: floatVal,
@@ -187,7 +200,7 @@ const handleStartSession = async (e: React.FormEvent) => {
         sortable: true,
         sortValue: (s) => (s.closed_at ? new Date(s.closed_at).getTime() : 0),
         render: (s) => (
-          <span className="text-slate-500 dark:text-slate-400">
+          <span className="text-slate-500 dark:text-slate-400 text-xs">
             {s.closed_at
               ? format(new Date(s.closed_at), 'MMM d, yyyy h:mm a')
               : 'In progress'}
@@ -195,55 +208,52 @@ const handleStartSession = async (e: React.FormEvent) => {
         ),
       },
       {
-        key: 'opened_by_name',
-        header: 'Opened By',
+        key: 'staff_handler',
+        header: 'Staff / Handler',
         sortable: true,
-        render: (s) => (
-          <span className="text-slate-600 dark:text-slate-300">
-            {s.opened_by_name || '-'}
-          </span>
-        ),
+        sortValue: (s) => s.opened_by_name || s.closed_by_name || '',
+        render: (s) => {
+          const opened = s.opened_by_name?.trim() || '';
+          const closed = s.closed_by_name?.trim() || '';
+          if (!closed || opened.toLowerCase() === closed.toLowerCase()) {
+            return (
+              <span className="text-slate-700 dark:text-slate-300 font-medium">
+                {opened || closed || '-'}
+              </span>
+            );
+          }
+          return (
+            <div className="text-xs">
+              <span className="text-slate-700 dark:text-slate-300 font-medium">{opened}</span>
+              <span className="text-slate-400 mx-1.5 font-bold">→</span>
+              <span className="text-slate-600 dark:text-slate-400 font-medium">{closed}</span>
+            </div>
+          );
+        },
       },
       {
-        key: 'closed_by_name',
-        header: 'Closed By',
-        sortable: true,
-        render: (s) => (
-          <span className="text-slate-600 dark:text-slate-300">
-            {s.closed_by_name || '-'}
-          </span>
-        ),
-      },
-      {
-        key: 'opening_float',
-        header: 'Opening Float',
+        key: 'float_and_counted',
+        header: 'Opening Float → Actual Counted',
         sortable: true,
         headerClassName: 'text-right',
         cellClassName: 'text-right',
-        sortValue: (s) => Number(s.opening_float || 0),
+        sortValue: (s) => Number(s.closing_actual_cash || s.opening_float || 0),
         render: (s) => (
-          <span className="font-mono text-slate-700 dark:text-slate-300">
-            ₱
-            {Number(s.opening_float || 0).toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-            })}
-          </span>
-        ),
-      },
-      {
-        key: 'closing_actual_cash',
-        header: 'Actual Counted',
-        sortable: true,
-        headerClassName: 'text-right',
-        cellClassName: 'text-right',
-        sortValue: (s) => Number(s.closing_actual_cash || 0),
-        render: (s) => (
-          <span className="font-mono font-bold text-slate-900 dark:text-white">
-            ₱
-            {Number(s.closing_actual_cash || 0).toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-            })}
-          </span>
+          <div className="font-mono text-xs inline-flex items-center gap-1.5 justify-end">
+            <span className="text-slate-500 dark:text-slate-400">
+              ₱
+              {Number(s.opening_float || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+              })}
+            </span>
+            <span className="text-slate-400 font-bold">→</span>
+            <span className="font-bold text-slate-900 dark:text-white">
+              ₱
+              {Number(s.closing_actual_cash || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+              })}
+            </span>
+          </div>
         ),
       },
       {
@@ -400,8 +410,20 @@ const handleStartSession = async (e: React.FormEvent) => {
             </button>
             {isAdmin && (
               <button
-                onClick={() => setShowCloseModal(true)}
-                className="px-3.5 py-2.5 rounded-xl bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 cursor-pointer"
+                onClick={() => {
+                  if (isOffline) {
+                    toast.error('Session closure forbidden while offline. Internet connection required.');
+                    return;
+                  }
+                  setShowCloseModal(true);
+                }}
+                disabled={isOffline}
+                title={isOffline ? 'Internet connection required to close cash session' : 'Close Session'}
+                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 ${
+                  isOffline
+                    ? 'bg-slate-300 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60'
+                    : 'bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] active:scale-95 text-white cursor-pointer'
+                }`}
               >
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 Close Session
@@ -411,182 +433,223 @@ const handleStartSession = async (e: React.FormEvent) => {
         )}
       </div>
 
-      {/* Main Drawer Ledger & Metrics */}
-      {isSessionOpen ? (
-        <div className="space-y-6">
-          <CashMetricsCards metrics={metrics} />
-
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                SESSION ACTIVITY LEDGER
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Real-time log of physical cash inflows, outflows, and digital
-                collections.
-              </p>
-            </div>
-            <CashTransactionsTable
-              transactions={transactions}
-              isLoading={isLoading}
-            />
-          </div>
-        </div>
-    ) : (
-        /* Closed State */
-        <div className="bg-white dark:bg-[#12151c] border border-slate-200 dark:border-white/10 rounded-2xl p-5 sm:p-8 shadow-xs">
-          {isOffline ? (
-            <div className="max-w-md mx-auto text-center py-8 space-y-4">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
-                <WifiOff className="w-7 h-7 sm:w-8 sm:h-8" />
-              </div>
-
-              <div className="space-y-1.5">
-                <h3 className="text-base sm:text-lg font-heading font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                  CASH DRAWER IS OFFLINE
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  Opening a cash session requires an active internet connection to authenticate cashier credentials, verify float balances, and sync live ledger records.
-                </p>
-              </div>
-
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#0c0e12] border border-slate-200/80 dark:border-white/10 text-[11px] font-mono text-slate-600 dark:text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <span>Internet connection required to start session</span>
-              </div>
-            </div>
-          ) : isAdmin ? (
-            <div className="max-w-xl mx-auto text-center space-y-6">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center mx-auto transition-transform hover:scale-105">
-                <Wallet className="w-7 h-7 sm:w-8 sm:h-8" />
-              </div>
-
-              <div>
-                <h3 className="text-lg sm:text-xl font-heading font-black text-slate-900 dark:text-white">
-                  START NEW CASH SESSION
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-                  Start today's cash session by setting the physical opening
-                  float in the cash drawer.
-                </p>
-              </div>
-
-              <form
-                onSubmit={handleStartSession}
-                className="space-y-4 sm:space-y-5 text-left"
+      {/* View Switcher Tabs: Admin toggles between Ledger and History; Staff only sees Ledger */}
+      {isAdmin && (
+        <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 rounded-2xl w-fit shadow-xs">
+          <button
+            type="button"
+            onClick={() => setActiveCashTab('ledger')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all duration-150 cursor-pointer ${
+              activeCashTab === 'ledger'
+                ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            <span>SESSION ACTIVITY LEDGER</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveCashTab('history')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all duration-150 cursor-pointer ${
+              activeCashTab === 'history'
+                ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>CASH SESSIONS HISTORY</span>
+            {history.length > 0 && (
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  activeCashTab === 'history'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-400'
+                }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                      Opening Float Amount (₱) *
-                    </label>
-                    {lastCountedCash !== null && (
-                      <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                        Last Session:{' '}
-                        <strong className="text-emerald-600 dark:text-emerald-400">
-                          ₱
-                          {lastCountedCash.toLocaleString('en-US', {
-                            minimumFractionDigits: 2,
-                          })}
-                        </strong>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">
-                      ₱
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      required
-                      value={openingFloatInput}
-                      onChange={(e) => setOpeningFloatInput(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202]"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2.5">
-                    {lastCountedCash !== null && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpeningFloatInput(lastCountedCash.toString())
-                        }
-                        className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 ${
-                          openingFloatInput === lastCountedCash.toString()
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-                        }`}
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Last: ₱{lastCountedCash.toLocaleString()}
-                      </button>
-                    )}
-
-                    {PRESET_FLOATS.map((preset) => (
-                      <button
-                        type="button"
-                        key={preset}
-                        onClick={() => setOpeningFloatInput(preset.toString())}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 ${
-                          openingFloatInput === preset.toString()
-                            ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-xs'
-                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#161920] dark:hover:bg-[#1e232d] text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-white/10'
-                        }`}
-                      >
-                        ₱{preset.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">
-                    Session Notes (Optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="e.g. Morning shift opener, change fund replenished..."
-                    value={openingNotes}
-                    onChange={(e) => setOpeningNotes(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202] resize-none"
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  loading={isOpeningSession}
-                  className="w-full py-3.5 sm:py-4 text-xs sm:text-sm font-heading font-black tracking-wider shadow-sm transition-all duration-150 active:scale-[0.99] bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] text-white"
-                >
-                  <Play className="w-4 h-4 mr-1.5" />
-                  OPEN TODAY'S CASH SESSION
-                </Button>
-              </form>
-            </div>
-          ) : (
-            <div className="max-w-md mx-auto text-center py-8 space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
-                <Lock className="w-7 h-7" />
-              </div>
-              <h3 className="text-base font-heading font-black">
-                CASH SESSION IS CURRENTLY CLOSED
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                An administrator must open today's cash drawer session with an
-                initial opening float before cash payments or manual movements
-                can be accepted.
-              </p>
-            </div>
-          )}
+                {history.length}
+              </span>
+            )}
+          </button>
         </div>
       )}
 
-      {/* CASH SESSIONS HISTORY (5 rows per page with pagination) - Admin Only */}
-      {isAdmin && (
-        <div className="space-y-3 pt-2">
+      {/* VIEW 1: SESSION ACTIVITY LEDGER (Visible to both Admin and Staff) */}
+      {(!isAdmin || activeCashTab === 'ledger') && (
+        <>
+          {isSessionOpen ? (
+            <div className="space-y-6">
+              <CashMetricsCards metrics={metrics} />
+
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-heading font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    SESSION ACTIVITY LEDGER
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Real-time log of physical cash inflows, outflows, and digital collections.
+                  </p>
+                </div>
+                <CashTransactionsTable
+                  transactions={transactions}
+                  isLoading={isLoading}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Closed State */
+            <div className="bg-white dark:bg-[#12151c] border border-slate-200 dark:border-white/10 rounded-2xl p-5 sm:p-8 shadow-xs">
+              {isOffline ? (
+                <div className="max-w-md mx-auto text-center py-8 space-y-4">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
+                    <WifiOff className="w-7 h-7 sm:w-8 sm:h-8" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-base sm:text-lg font-heading font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                      CASH DRAWER IS OFFLINE
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                      Opening a cash session requires an active internet connection to authenticate cashier credentials, verify float balances, and sync live ledger records.
+                    </p>
+                  </div>
+
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#0c0e12] border border-slate-200/80 dark:border-white/10 text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>Internet connection required to start session</span>
+                  </div>
+                </div>
+              ) : isAdmin ? (
+                <div className="max-w-xl mx-auto text-center space-y-6">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center mx-auto transition-transform hover:scale-105">
+                    <Wallet className="w-7 h-7 sm:w-8 sm:h-8" />
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-heading font-black text-slate-900 dark:text-white">
+                      START NEW CASH SESSION
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                      Start today's cash session by setting the physical opening float in the cash drawer.
+                    </p>
+                  </div>
+
+                  <form
+                    onSubmit={handleStartSession}
+                    className="space-y-4 sm:space-y-5 text-left"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                          Opening Float Amount (₱) *
+                        </label>
+                        {lastCountedCash !== null && (
+                          <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                            Last Session:{' '}
+                            <strong className="text-emerald-600 dark:text-emerald-400">
+                              ₱
+                              {lastCountedCash.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </strong>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">
+                          ₱
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          required
+                          value={openingFloatInput}
+                          onChange={(e) => setOpeningFloatInput(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202]"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2.5">
+                        {lastCountedCash !== null && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpeningFloatInput(lastCountedCash.toString())
+                            }
+                            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 ${
+                              openingFloatInput === lastCountedCash.toString()
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
+                            }`}
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Last: ₱{lastCountedCash.toLocaleString()}
+                          </button>
+                        )}
+
+                        {PRESET_FLOATS.map((preset) => (
+                          <button
+                            type="button"
+                            key={preset}
+                            onClick={() => setOpeningFloatInput(preset.toString())}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 ${
+                              openingFloatInput === preset.toString()
+                                ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#161920] dark:hover:bg-[#1e232d] text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-white/10'
+                            }`}
+                          >
+                            ₱{preset.toLocaleString()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-2">
+                        Session Notes (Optional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="e.g. Morning shift opener, change fund replenished..."
+                        value={openingNotes}
+                        onChange={(e) => setOpeningNotes(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202] resize-none"
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      loading={isOpeningSession}
+                      className="w-full py-3.5 sm:py-4 text-xs sm:text-sm font-heading font-black tracking-wider shadow-sm transition-all duration-150 active:scale-[0.99] bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] text-white"
+                    >
+                      <Play className="w-4 h-4 mr-1.5" />
+                      OPEN TODAY'S CASH SESSION
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <div className="max-w-md mx-auto text-center py-8 space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                    <Lock className="w-7 h-7" />
+                  </div>
+                  <h3 className="text-base font-heading font-black">
+                    CASH SESSION IS CURRENTLY CLOSED
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    An administrator must open today's cash drawer session with an initial opening float before cash payments or manual movements can be accepted.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* VIEW 2: CASH SESSIONS HISTORY (Admin Only - One View at a Time) */}
+      {isAdmin && activeCashTab === 'history' && (
+        <div className="space-y-3 pt-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <History className="w-4 h-4 text-slate-500" />
@@ -599,8 +662,8 @@ const handleStartSession = async (e: React.FormEvent) => {
             </span>
           </div>
 
-          {/* Desktop & Tablet View: Reusable Table Component (5 rows per page) */}
-          <div className="hidden md:block">
+          {/* Desktop & Landscape Tablet View: Reusable Table Component (5 rows per page) */}
+          <div className="hidden landscape:md:block">
             <Table<CashSession>
               data={history}
               columns={historyColumns}
@@ -617,8 +680,8 @@ const handleStartSession = async (e: React.FormEvent) => {
             />
           </div>
 
-          {/* Mobile View: 5 cards per page with clean page controls */}
-          <div className="md:hidden space-y-3">
+          {/* Mobile & Portrait View: Clean Cards with Portrait Optimization */}
+          <div className="landscape:md:hidden space-y-3">
             <div className="bg-white dark:bg-[#12151c] border border-slate-200 dark:border-white/10 rounded-2xl divide-y divide-slate-100 dark:divide-white/5 overflow-hidden shadow-xs">
               {history.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
@@ -627,17 +690,22 @@ const handleStartSession = async (e: React.FormEvent) => {
               ) : (
                 paginatedMobileHistory.map((s) => {
                   const disc = Number(s.discrepancy || 0);
+                  const opened = s.opened_by_name?.trim() || '';
+                  const closed = s.closed_by_name?.trim() || '';
+                  const singleStaff =
+                    !closed || opened.toLowerCase() === closed.toLowerCase();
+
                   return (
                     <div
                       key={s.id}
-                      className="p-3.5 space-y-2.5 active:bg-slate-50 dark:active:bg-[#10131b]/60 transition-colors"
+                      className="p-4 space-y-3 active:bg-slate-50 dark:active:bg-[#10131b]/60 transition-colors"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                        <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
                           {s.session_number}
                         </span>
                         <span
-                          className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
                             disc === 0
                               ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                               : disc > 0
@@ -659,26 +727,31 @@ const handleStartSession = async (e: React.FormEvent) => {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/70 dark:bg-[#0c0e12]/60 border border-slate-100 dark:border-white/5 p-2.5 rounded-xl">
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50/70 dark:bg-[#0c0e12]/60 border border-slate-100 dark:border-white/5 p-3 rounded-xl">
                         <div>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold">
-                            Float In
+                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                            Staff / Handler
                           </p>
-                          <p className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                            ₱{Number(s.opening_float || 0).toFixed(2)}
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {singleStaff
+                              ? opened || closed || '-'
+                              : `${opened} → ${closed}`}
                           </p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold">
-                            Counted Out
+                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                            Float → Counted
                           </p>
-                          <p className="font-mono font-bold text-slate-900 dark:text-white">
-                            ₱{Number(s.closing_actual_cash || 0).toFixed(2)}
+                          <p className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                            ₱{Number(s.opening_float || 0).toFixed(2)} →{' '}
+                            <span className="text-slate-900 dark:text-white">
+                              ₱{Number(s.closing_actual_cash || 0).toFixed(2)}
+                            </span>
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                         <span className="truncate">
                           Closed:{' '}
                           {s.closed_at
@@ -687,7 +760,7 @@ const handleStartSession = async (e: React.FormEvent) => {
                         </span>
                         <button
                           onClick={() => setSelectedHistorySession(s)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 dark:bg-[#161920] dark:hover:bg-[#1e232d] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 text-[11px] font-bold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 dark:bg-[#161920] dark:hover:bg-[#1e232d] border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                         >
                           <Eye className="w-3 h-3" />
                           Details
@@ -699,12 +772,11 @@ const handleStartSession = async (e: React.FormEvent) => {
               )}
             </div>
 
-            {/* Mobile Pagination Footer Controls */}
+            {/* Mobile / Portrait Pagination Footer Controls */}
             {history.length > SESSIONS_PER_PAGE && (
               <div className="flex items-center justify-between px-1 py-1 text-xs">
                 <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                  Page {mobileHistoryPage} of {totalMobilePages} (
-                  {history.length} total)
+                  Page {mobileHistoryPage} of {totalMobilePages} ({history.length} total)
                 </span>
 
                 <div className="flex items-center gap-1">
@@ -720,10 +792,7 @@ const handleStartSession = async (e: React.FormEvent) => {
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
 
-                  {Array.from(
-                    { length: totalMobilePages },
-                    (_, i) => i + 1
-                  ).map((p) => (
+                  {Array.from({ length: totalMobilePages }, (_, i) => i + 1).map((p) => (
                     <button
                       key={p}
                       type="button"

@@ -30,6 +30,7 @@ import {
   ArrowLeftRight,
   Undo2,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 
 const MIN_ALLOWED_DATE = '2024-01-01';
@@ -282,6 +283,45 @@ export const DatabaseBackup: React.FC = () => {
     }
   };
 
+  const enforceAutoBackupRetention = async (items: BackupItem[]) => {
+    const autoItems = items
+      .filter((b) => b.type === 'auto')
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+    if (autoItems.length > 3) {
+      const toDelete = autoItems.slice(3);
+      try {
+        await supabase.storage
+          .from('backups')
+          .remove(toDelete.map((b) => b.filename));
+        await supabase
+          .from('database_backups')
+          .delete()
+          .in(
+            'id',
+            toDelete.map((b) => b.id)
+          );
+
+        await logAudit(
+          'DATABASE_BACKUP_ROTATED',
+          `Automated 3-day retention policy executed: pruned ${toDelete.length} oldest automated backup(s).`
+        );
+        toast.info(
+          `Retention cycle rotated: ${toDelete.length} oldest automated backup(s) pruned to maintain 3-day window.`
+        );
+
+        const deleteIds = new Set(toDelete.map((b) => b.id));
+        return items.filter((b) => !deleteIds.has(b.id));
+      } catch (e) {
+        console.warn('Failed to prune oldest auto backups:', e);
+      }
+    }
+    return items;
+  };
+
   const fetchBackups = async () => {
     try {
       setIsLoading(true);
@@ -291,8 +331,15 @@ export const DatabaseBackup: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setBackups((data as BackupItem[]) || []);
-      return data as BackupItem[];
+      let items = (data as BackupItem[]) || [];
+
+      // Automatically enforce 3-day retention policy on automated backups
+      if (items.filter((b) => b.type === 'auto').length > 3) {
+        items = await enforceAutoBackupRetention(items);
+      }
+
+      setBackups(items);
+      return items;
     } catch (err: any) {
       console.warn(
         'Failed to retrieve backups from table:',
@@ -302,6 +349,35 @@ export const DatabaseBackup: React.FC = () => {
       return [];
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteBackup = async (backup: BackupItem) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete backup "${backup.notes || backup.filename}"? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await supabase.storage.from('backups').remove([backup.filename]);
+      const { error } = await supabase
+        .from('database_backups')
+        .delete()
+        .eq('id', backup.id);
+      if (error) throw error;
+
+      await logAudit(
+        'DATABASE_BACKUP_DELETED',
+        `Deleted database backup: "${backup.notes || backup.filename}" (${backup.type}).`,
+        backup.id
+      );
+
+      toast.success('Backup permanently deleted.');
+      fetchBackups();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete backup.');
     }
   };
 
@@ -936,6 +1012,15 @@ export const DatabaseBackup: React.FC = () => {
             className="px-3 py-1.5 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary) dark:text-(--color-primary-light) hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-(--color-primary)/20 disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
           >
             RESTORE
+          </button>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => handleDeleteBackup(b)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+            title="Delete this backup"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       ),

@@ -1,5 +1,5 @@
 // src/routes/index.tsx
-import React, { useState, createContext } from 'react';
+import React, { useState, createContext, useMemo, useRef, useEffect } from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -202,12 +202,11 @@ const ROUTE_HEADERS: Record<
 const HeaderLayout: React.FC = () => {
   const location = useLocation();
   const [actions, setActions] = useState<React.ReactNode>(null);
-  const [prevPath, setPrevPath] = useState(location.pathname);
+  const prevPathRef = useRef(location.pathname);
 
-  if (prevPath !== location.pathname) {
-    setPrevPath(location.pathname);
+  useEffect(() => {
     const getBaseSegment = (p: string) => '/' + p.split('/').filter(Boolean)[0];
-    const oldBase = getBaseSegment(prevPath);
+    const oldBase = getBaseSegment(prevPathRef.current);
     const newBase = getBaseSegment(location.pathname);
 
     const isLogbookOrMember = (seg: string) =>
@@ -219,7 +218,8 @@ const HeaderLayout: React.FC = () => {
     ) {
       setActions(null);
     }
-  }
+    prevPathRef.current = location.pathname;
+  }, [location.pathname]);
 
   const headerInfo =
     ROUTE_HEADERS[location.pathname] ||
@@ -227,8 +227,10 @@ const HeaderLayout: React.FC = () => {
       location.pathname.startsWith(k)
     )?.[1];
 
+  const contextValue = useMemo(() => ({ setActions }), [setActions]);
+
   return (
-    <HeaderActionsContext.Provider value={{ setActions }}>
+    <HeaderActionsContext.Provider value={contextValue}>
       <div className="space-y-4 sm:space-y-6 min-h-full flex flex-col min-w-0 pt-1 md:pt-2 relative text-[var(--color-text,#0f172a)] dark:text-slate-100">
         {headerInfo && (
           <div className="hidden md:block shrink-0 pb-1">

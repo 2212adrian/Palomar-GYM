@@ -36,7 +36,7 @@ import {
   subscriptionService,
   cardService,
   settingsService,
-  DEFAULT_SETTINGS,
+  getSynchronousInitialSettings,
 } from '../memberService';
 import type {
   Member,
@@ -258,7 +258,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [isUndoingClaim, setIsUndoingClaim] = useState(false);
 
   const [settings, setSettings] =
-    useState<MembershipSettings>(DEFAULT_SETTINGS);
+    useState<MembershipSettings>(getSynchronousInitialSettings);
   const [isPayCardModalOpen, setIsPayCardModalOpen] = useState(false);
   const [payCardMethod, setPayCardMethod] = useState<'Cash' | 'GCash'>('Cash');
   const [payCardGcashRef, setPayCardGcashRef] = useState('');
@@ -1192,7 +1192,7 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs"
+              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs z-30 relative"
               title="Close panel"
             >
               <X className="w-4 h-4" />
@@ -1329,14 +1329,11 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
           ].map((tab) => (
             <button
               key={tab}
-              disabled={isOffline}
               onClick={() => setActiveTab(tab as any)}
-              className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 ${
-                isOffline
-                  ? 'opacity-50 cursor-not-allowed bg-slate-500/5 border border-(--border-color) text-slate-400'
-                  : activeTab === tab
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs cursor-pointer'
-                    : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer'
+              className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
+                activeTab === tab
+                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                  : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >
               {tab}
@@ -2977,13 +2974,8 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
-                  disabled={isOffline}
                   onClick={handleCancelEditing}
-                  className={`flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                    isOffline
-                      ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
-                      : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-zinc-700 cursor-pointer'
-                  }`}
+                  className="flex-1 sm:flex-initial min-h-[44px] px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-zinc-700 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                   <span>CANCEL EDITING</span>
