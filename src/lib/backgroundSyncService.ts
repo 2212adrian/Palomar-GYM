@@ -550,16 +550,6 @@ export function initBackgroundSyncService(): () => void {
             `Internet restored: ${syncResult.syncedCount} offline transaction(s) synchronized to cloud.`,
             { toastId: 'online-sync-success', autoClose: 4000 }
           );
-        } else if (wasSuspended && useCashSessionStore.getState().isSessionOpen) {
-          toast.success(
-            'Internet connection restored. Cash drawer session has been reopened to its original state.',
-            { toastId: 'online-restored', autoClose: 4000 }
-          );
-        } else {
-          toast.info('Internet connection restored. Live sync active.', {
-            toastId: 'online-restored',
-            autoClose: 4000,
-          });
         }
       }
     } catch (err) {

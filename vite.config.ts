@@ -131,7 +131,7 @@ export default defineConfig(({ mode }) => {
               urlPattern: ({ url }) =>
                 url.pathname.includes('/rest/v1/') &&
                 !url.pathname.includes('/rest/v1/system_config') &&
-                !url.pathname.includes('/rest/v1/rpc/get_security_access_config'),
+                !url.pathname.includes('/rest/v1/rpc/get_security_access_control'),
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'palomar-api-cache',
@@ -163,7 +163,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true, // Set to 'true' to generate the manifest during development
+          type: 'module', // Ensures service worker registration works correctly in dev
         },
       }),
     ],

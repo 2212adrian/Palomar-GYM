@@ -25,7 +25,6 @@ import {
   Smartphone,
   ExternalLink,
   Loader2,
-  BookOpen,
 } from 'lucide-react';
 import {
   motion,
@@ -42,7 +41,6 @@ import {
   formatBadgeCount,
 } from '../../stores/useNotificationStore';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
-import { useGuideStore, type GuideTopicId } from '../../stores/useGuideStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
@@ -388,22 +386,6 @@ export const Topbar: React.FC<TopbarProps> = ({
     setNotificationOpen,
     subscribeRealtime,
   } = useNotificationStore();
-
-  const { openGuide } = useGuideStore();
-
-  const getContextualGuideTopic = (): GuideTopicId => {
-    const path = location.pathname.toLowerCase();
-    if (path.startsWith('/sales/products')) return 'products';
-    if (path.startsWith('/sales')) return 'sales';
-    if (path.startsWith('/logbook')) return 'logbook';
-    if (path.startsWith('/members/plans')) return 'plans';
-    if (path.startsWith('/members/list')) return 'members';
-    if (path.startsWith('/reports')) return 'reports';
-    if (path.startsWith('/cash')) return 'cash';
-    if (path.startsWith('/dashboard')) return 'dashboard';
-    if (path.startsWith('/system/users')) return 'users';
-    return isAdmin ? 'members' : 'sales';
-  };
 
   useEffect(() => {
     loadActiveSession();
@@ -1323,47 +1305,25 @@ export const Topbar: React.FC<TopbarProps> = ({
           {currentTimeFull}
         </div>
 
-        {/* INTERACTIVE EASY SYSTEM GUIDE TRIGGER - Hidden on mobile viewports */}
-        <button
-          type="button"
-          onClick={() => openGuide(getContextualGuideTopic())}
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all text-xs font-heading font-extrabold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none shrink-0"
-          title={
-            isAdmin
-              ? 'Open Admin Instruction Guide (Members, Products, Sales, Cash & More)'
-              : 'Open Staff Desk Guide (Cash Drawer, Sales, Logbook, Plans, Reports & Scanner)'
-          }
-        >
-          <BookOpen className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
-          <span className="hidden md:inline">
-            {isAdmin ? 'Admin Guide' : 'Staff Guide'}
-          </span>
-          <span className="inline md:hidden">Guide</span>
-        </button>
-
-        {/* OFFLINE ACTION QUEUE TRIGGER BUTTON */}
-        <button
-          type="button"
-          id="btn-topbar-action-queue"
-          onClick={toggleActionQueueDrawer}
-          aria-label="Toggle Action Queue"
-          title={`Action Queue: ${queueCount} pending offline action(s)`}
-          className={`relative h-9 px-2.5 sm:px-3 rounded-xl border transition-all duration-200 flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 ${
-            queueCount > 0
-              ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-500/40'
-              : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-          <span className="hidden sm:inline text-xs font-bold font-heading">
-            Queue
-          </span>
-          {queueCount > 0 && (
+        {/* OFFLINE ACTION QUEUE TRIGGER BUTTON (RENDER ONLY WHEN QUEUE IS NOT EMPTY) */}
+        {queueCount > 0 && (
+          <button
+            type="button"
+            id="btn-topbar-action-queue"
+            onClick={toggleActionQueueDrawer}
+            aria-label="Toggle Action Queue"
+            title={`Action Queue: ${queueCount} pending offline action(s)`}
+            className="relative h-9 px-2.5 sm:px-3 rounded-xl border transition-all duration-200 flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-500/40"
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span className="hidden sm:inline text-xs font-bold font-heading">
+              Queue
+            </span>
             <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-900 text-[9px] font-bold font-mono flex items-center justify-center shadow-xs">
               {queueCount}
             </span>
-          )}
-        </button>
+          </button>
+        )}
 
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (
@@ -1433,4 +1393,4 @@ export const Topbar: React.FC<TopbarProps> = ({
   );
 };
 
-export default Topbar;
+export default Topbar;  

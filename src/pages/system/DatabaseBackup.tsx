@@ -381,12 +381,21 @@ export const DatabaseBackup: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+ useEffect(() => {
     fetchBackups();
     if (fetchSafetyBackup) {
       fetchSafetyBackup();
     }
-  }, []);
+
+    const handleBackupCommitted = () => {
+      fetchBackups();
+    };
+
+    window.addEventListener('backup-committed', handleBackupCommitted);
+    return () => {
+      window.removeEventListener('backup-committed', handleBackupCommitted);
+    };
+  }, [fetchSafetyBackup]);
 
   useEffect(() => {
     if (!isRestoreModalOpen) return;
@@ -608,24 +617,28 @@ export const DatabaseBackup: React.FC = () => {
       );
       if (dumpErr) throw dumpErr;
 
-      const safetyFilename = `safety_${Date.now()}.json`;
+       const safetyFilename = `safety_${Date.now()}.json`;
       const safetyBlob = new Blob([JSON.stringify(currentDump, null, 2)], {
         type: 'application/json',
       });
 
-      await supabase.storage
+      const { error: safetyUploadError } = await supabase.storage
         .from('backups')
         .upload(safetyFilename, safetyBlob, {
           contentType: 'application/json',
         });
+      if (safetyUploadError) throw safetyUploadError;
 
-      await supabase.from('database_backups').insert({
-        filename: safetyFilename,
-        notes: 'Pre-Restore Backup (Auto-Safety)',
-        type: 'safety',
-        size_bytes: safetyBlob.size,
-        payload: currentDump,
-      });
+      const { error: safetyInsertError } = await supabase
+        .from('database_backups')
+        .insert({
+          filename: safetyFilename,
+          notes: 'Pre-Restore Backup (Auto-Safety)',
+          type: 'safety',
+          size_bytes: safetyBlob.size,
+          payload: currentDump,
+        });
+      if (safetyInsertError) throw safetyInsertError;
 
       let backupJson: any = null;
       const { data: fullRecord } = await supabase

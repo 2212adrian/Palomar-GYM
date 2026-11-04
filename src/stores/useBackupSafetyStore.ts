@@ -80,7 +80,7 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
     };
   },
 
-  revertRestoration: async () => {
+   revertRestoration: async () => {
     const safety = get().safetyBackup;
     if (!safety) return;
 
@@ -88,13 +88,24 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
       set({ isVerifying: true, verifyAction: 'reverting' });
       toast.info('Reverting database back to original state...');
 
-      const { data: fileBlob, error: downloadErr } = await supabase.storage
-        .from('backups')
-        .download(safety.filename);
+      let safetyJson: any = null;
+      const { data: fullRecord } = await supabase
+        .from('database_backups')
+        .select('payload')
+        .eq('id', safety.id)
+        .single();
 
-      if (downloadErr || !fileBlob) throw downloadErr;
+      if (fullRecord?.payload) {
+        safetyJson = fullRecord.payload;
+      } else {
+        const { data: fileBlob, error: downloadErr } = await supabase.storage
+          .from('backups')
+          .download(safety.filename);
 
-      const safetyJson = JSON.parse(await fileBlob.text());
+        if (downloadErr || !fileBlob) throw downloadErr;
+        safetyJson = JSON.parse(await fileBlob.text());
+      }
+
       const { error: restoreError } = await supabase.rpc(
         'restore_database_from_payload',
         { backup_payload: safetyJson }
