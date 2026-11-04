@@ -1,7 +1,7 @@
 // src/lib/backgroundSyncService.ts
 import { toast } from 'react-toastify';
 import { Network } from '@capacitor/network';
-import { supabase } from './supabase/client';
+import { supabase } from './supabase/client'; 
 import { useCashSessionStore } from '../stores/useCashSessionStore';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -514,7 +514,6 @@ export function initBackgroundSyncService(): () => void {
     isCurrentlyOffline = false;
 
     try {
-      const wasSuspended = useCashSessionStore.getState().wasSuspendedByOffline;
 
       // 1. Restore cash session state
       await useCashSessionStore.getState().restoreSessionAfterOnline();
