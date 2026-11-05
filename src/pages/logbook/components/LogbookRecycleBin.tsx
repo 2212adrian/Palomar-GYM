@@ -656,8 +656,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                       onClick={() => toggleGroupSelection(stack)}
                       className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
                         groupSelected
-                          ? 'bg-blue-500/10'
-                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800/60'
+                          ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
+                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -735,8 +735,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                               onClick={() => toggleItemSelection(subItem.id)}
                               className={`p-2.5 pl-9 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
                                 subSelected
-                                  ? 'bg-blue-500/10'
-                                  : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
+                                  ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
+                                  : 'hover:bg-slate-100/70 dark:hover:bg-zinc-800/60'
                               }`}
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
@@ -787,8 +787,8 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                     onClick={() => toggleItemSelection(tx.id)}
                     className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-blue-500/10 border-blue-500'
-                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 border-(--border-color)'
+                        ? 'bg-blue-500/10 border-blue-500 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
+                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border-(--border-color)'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">

@@ -26,6 +26,7 @@ import {
   Trash2,
   Lock,
   RefreshCw,
+  Boxes,
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -1438,6 +1439,20 @@ export const Sales: React.FC = () => {
 
             <Button
               onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('trigger-product-stock-movements')
+                )
+              }
+              title="View restocking and stock movement audit log"
+              variant="secondary"
+              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap cursor-pointer"
+            >
+              <Boxes className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-emerald-500 shrink-0" />
+              <span>STOCK MOVEMENTS</span>
+            </Button>
+
+            <Button
+              onClick={() =>
                 window.dispatchEvent(new CustomEvent('trigger-product-print'))
               }
               variant="secondary"
@@ -1795,58 +1810,81 @@ export const Sales: React.FC = () => {
                   tx: any,
                   isClosedSession: boolean = false
                 ) => {
-                  const isNew = tx.id === newlyAddedId;
-                  const isDeleting = deletingIds.includes(tx.id);
+                  const strId = String(tx.id);
+                  const isNew = strId === newlyAddedId;
+                  const isDeleting = deletingIds.includes(strId);
                   const isStaffReadOnlyClosed = isClosedSession && role === 'staff';
 
                   return (
                     <motion.div
-                      key={tx.id}
-                      layout
-                      initial={{
-                        opacity: 0,
-                        y: -15,
-                        scale: 0.96,
-                        boxShadow:
-                          '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
-                      }}
+                      key={strId}
+                      layout={!isBatterySaver}
+                      initial={
+                        isBatterySaver
+                          ? false
+                          : isNew
+                            ? {
+                                opacity: 0,
+                                y: -15,
+                                scale: 0.96,
+                                boxShadow:
+                                  '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
+                              }
+                            : {
+                                opacity: 0,
+                                y: -4,
+                                scale: 1,
+                                boxShadow:
+                                  '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                              }
+                      }
                       animate={
-                        isDeleting
-                          ? {
+                        isBatterySaver
+                          ? { opacity: isDeleting ? 0 : 1 }
+                          : isDeleting
+                            ? {
+                                opacity: 0,
+                                scale: 0.92,
+                                y: -5,
+                                boxShadow:
+                                  '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
+                                filter: 'brightness(0.9)',
+                              }
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                scale: 1,
+                                boxShadow: isNew
+                                  ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                  : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                              }
+                      }
+                      exit={
+                        isBatterySaver
+                          ? { opacity: 0 }
+                          : {
                               opacity: 0,
-                              scale: 0.92,
-                              y: -5,
+                              scale: 0.9,
+                              y: -10,
                               boxShadow:
                                 '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                              filter: 'brightness(0.9)',
-                            }
-                          : {
-                              opacity: 1,
-                              y: 0,
-                              scale: 1,
-                              boxShadow: isNew
-                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
                             }
                       }
-                      exit={{
-                        opacity: 0,
-                        scale: 0.9,
-                        y: -10,
-                        boxShadow:
-                          '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                      }}
-                      transition={{
-                        layout: {
-                          duration: 0.35,
-                          ease: [0.16, 1, 0.3, 1],
-                        },
-                        boxShadow: {
-                          duration: isDeleting ? 0.15 : 1.5,
-                          ease: 'easeOut',
-                        },
-                        opacity: { duration: isDeleting ? 0.38 : 0.3 },
-                      }}
+                      transition={
+                        isBatterySaver
+                          ? { duration: 0 }
+                          : {
+                              layout: {
+                                duration: 0.35,
+                                ease: [0.16, 1, 0.3, 1],
+                              },
+                              boxShadow: {
+                                duration: isDeleting ? 0.15 : isNew ? 1.5 : 0,
+                                ease: 'easeOut',
+                              },
+                              opacity: { duration: isDeleting ? 0.38 : 0.2 },
+                            }
+                      }
                       className="rounded-2xl transition-all overflow-hidden"
                     >
                       <TimelineCard

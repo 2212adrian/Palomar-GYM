@@ -432,3 +432,38 @@ export async function setCachedMembersToIndexedDB(members: any[]): Promise<void>
     store.put({ key: 'cached_members_list', data: members, updatedAt: Date.now() });
   } catch {}
 }
+
+/**
+ * Completely clears all offline vault data from IndexedDB
+ */
+export async function clearVaultDatabase(): Promise<void> {
+  cachedCryptoKey = null;
+  cachedSalt = null;
+  if (typeof window === 'undefined' || !window.indexedDB) return;
+
+  try {
+    const db = await openVaultDB();
+    const storeNames = Array.from(db.objectStoreNames);
+    if (storeNames.length > 0) {
+      const tx = db.transaction(storeNames, 'readwrite');
+      storeNames.forEach((name) => {
+        try {
+          tx.objectStore(name).clear();
+        } catch {}
+      });
+      await new Promise<void>((resolve) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+    db.close();
+  } catch (err) {
+    try {
+      indexedDB.deleteDatabase(DB_NAME);
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('palomar-action-queue-changed'));
+  }
+}

@@ -2467,7 +2467,7 @@ export const LogbookPage: React.FC = () => {
                   }
                 });
 
-                const renderTimelineCard = (
+               const renderTimelineCard = (
                   log: LogRecord,
                   isClosedSession: boolean = false
                 ) => {
@@ -2483,13 +2483,21 @@ export const LogbookPage: React.FC = () => {
                       initial={
                         isBatterySaver
                           ? false
-                          : {
-                              opacity: 0,
-                              y: -15,
-                              scale: 0.96,
-                              boxShadow:
-                                '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
-                            }
+                          : isNew
+                            ? {
+                                opacity: 0,
+                                y: -15,
+                                scale: 0.96,
+                                boxShadow:
+                                  '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.5)',
+                              }
+                            : {
+                                opacity: 0,
+                                y: -4,
+                                scale: 1,
+                                boxShadow:
+                                  '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                              }
                       }
                       animate={
                         isBatterySaver
@@ -2512,17 +2520,6 @@ export const LogbookPage: React.FC = () => {
                                   : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
                               }
                       }
-                      exit={
-                        isBatterySaver
-                          ? { opacity: 0 }
-                          : {
-                              opacity: 0,
-                              scale: 0.9,
-                              y: -10,
-                              boxShadow:
-                                '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                            }
-                      }
                       transition={
                         isBatterySaver
                           ? { duration: 0 }
@@ -2532,10 +2529,10 @@ export const LogbookPage: React.FC = () => {
                                 ease: [0.16, 1, 0.3, 1],
                               },
                               boxShadow: {
-                                duration: isDeleting ? 0.15 : 1.5,
+                                duration: isDeleting ? 0.15 : isNew ? 1.5 : 0,
                                 ease: 'easeOut',
                               },
-                              opacity: { duration: isDeleting ? 0.38 : 0.3 },
+                              opacity: { duration: isDeleting ? 0.38 : 0.2 },
                             }
                       }
                       className="rounded-2xl transition-all overflow-hidden"

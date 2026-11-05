@@ -7,6 +7,7 @@ import { Browser } from '@capacitor/browser';
 import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { isSuperAdmin } from '../constants/auth'; // Centralized helper
+import { clearSensitiveAppData } from '../lib/cacheUtils';
 
 export interface UserProfile {
   id: string;
@@ -258,11 +259,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const currentUserId = get().user?.id;
       clearLocalActiveSessionId(currentUserId);
 
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-        sessionStorage.removeItem('palomar_greeting_shown');
-      }
-
       try {
         // Use scope: 'local' so the invalidated device only clears its own local tokens
         // without revoking the new device's active session on the server.
@@ -280,6 +276,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         activeProfileChannel = null;
       }
       activeProfileUserId = null;
+
+      await clearSensitiveAppData();
 
       set({
         user: null,
@@ -448,59 +446,57 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const cachedFallbackProfile = getCachedProfile();
         const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
-        if (!isSuperAdminUser) {
-          if (isOffline && cachedFallbackProfile) {
-            dbProfile = cachedFallbackProfile;
-          } else {
-            try {
-              const { data, error: dbError } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', activeUser.id)
-                .maybeSingle();
+       if (isOffline && cachedFallbackProfile) {
+          dbProfile = cachedFallbackProfile;
+        } else {
+          try {
+            const { data, error: dbError } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', activeUser.id)
+              .maybeSingle();
 
-              if (!dbError && data) {
-                dbProfile = data;
-              } else if (cachedFallbackProfile) {
-                dbProfile = cachedFallbackProfile;
-              } else if (!data && !dbError) {
-                // Auto-create missing profile row if user was registered via auth directly
-                try {
-                  const autoRole = (
-                    activeUser.app_metadata?.role ||
-                    activeUser.user_metadata?.role ||
-                    'admin'
-                  ).toLowerCase();
-                  const { data: createdProfile } = await supabase
-                    .from('profiles')
-                    .insert({
-                      id: activeUser.id,
-                      username:
-                        activeUser.user_metadata?.full_name ||
-                        activeUser.user_metadata?.username ||
-                        activeUser.email?.split('@')[0] ||
-                        'User',
-                      role: autoRole === 'staff' ? 'staff' : 'admin',
-                      status: 'active',
-                    })
-                    .select()
-                    .maybeSingle();
-
-                  if (createdProfile) {
-                    dbProfile = createdProfile;
-                  }
-                } catch {
-                  // Ignore background insertion error, proceed with auth metadata fallback
-                }
-              }
-            } catch (fetchErr) {
+            if (!dbError && data) {
+              dbProfile = data;
+            } else if (cachedFallbackProfile) {
               dbProfile = cachedFallbackProfile;
-              if (!isOffline) {
-                console.warn(
-                  'Could not load profile from database, falling back to cached profile:',
-                  fetchErr
-                );
+            } else if (!data && !dbError && !isSuperAdminUser) {
+              // Auto-create missing profile row if user was registered via auth directly
+              try {
+                const autoRole = (
+                  activeUser.app_metadata?.role ||
+                  activeUser.user_metadata?.role ||
+                  'admin'
+                ).toLowerCase();
+                const { data: createdProfile } = await supabase
+                  .from('profiles')
+                  .insert({
+                    id: activeUser.id,
+                    username:
+                      activeUser.user_metadata?.full_name ||
+                      activeUser.user_metadata?.username ||
+                      activeUser.email?.split('@')[0] ||
+                      'User',
+                    role: autoRole === 'staff' ? 'staff' : 'admin',
+                    status: 'active',
+                  })
+                  .select()
+                  .maybeSingle();
+
+                if (createdProfile) {
+                  dbProfile = createdProfile;
+                }
+              } catch {
+                // Ignore background insertion error, proceed with auth metadata fallback
               }
+            }
+          } catch (fetchErr) {
+            dbProfile = cachedFallbackProfile;
+            if (!isOffline) {
+              console.warn(
+                'Could not load profile from database, falling back to cached profile:',
+                fetchErr
+              );
             }
           }
         }
@@ -518,6 +514,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             activeProfileChannel = null;
           }
           activeProfileUserId = null;
+          await clearSensitiveAppData();
           set({
             user: null,
             profile: null,
@@ -663,10 +660,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           status: effectiveStatus as 'active' | 'pending' | 'inactive',
           avatar_url: localAvatarBlobUrl || cachedFallbackProfile?.avatar_url || '',
           email_verification_enabled:
-            dbProfile?.email_verification_enabled ??
-            cachedFallbackProfile?.email_verification_enabled ??
-            activeUser.user_metadata?.email_verification_enabled ??
-            false,
+            dbProfile?.email_verification_enabled !== undefined &&
+            dbProfile?.email_verification_enabled !== null
+              ? Boolean(dbProfile.email_verification_enabled)
+              : activeUser.user_metadata?.email_verification_enabled !== undefined &&
+                activeUser.user_metadata?.email_verification_enabled !== null
+                ? Boolean(activeUser.user_metadata.email_verification_enabled)
+                : Boolean(cachedFallbackProfile?.email_verification_enabled ?? false),
         };
 
         try {
@@ -690,19 +690,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           activeProfileChannel = null;
         }
         activeProfileUserId = null;
-        try {
-          localStorage.removeItem('palomar_cached_profile');
-        } catch {}
+        await clearSensitiveAppData();
         set({ user: null, profile: null, loading: false, initialized: true });
       }
     } catch (err: any) {
       const isOfflineNetwork = typeof navigator !== 'undefined' && !navigator.onLine;
       if (!isOfflineNetwork) {
         console.error('Session check failed:', err.message);
+        await clearSensitiveAppData();
       }
       set({
         user: null,
-        profile: getCachedProfile(),
+        profile: isOfflineNetwork ? getCachedProfile() : null,
         loading: false,
         initialized: true,
         error: isOfflineNetwork ? null : err.message,
@@ -747,10 +746,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentUserId = get().user?.id;
     set({ loading: true });
     clearLocalActiveSessionId(currentUserId);
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-      localStorage.removeItem('palomar_cached_profile');
-    }
     await supabase.auth.signOut({ scope: 'local' });
     if (activeAvatarObjectUrl) {
       URL.revokeObjectURL(activeAvatarObjectUrl);
@@ -761,6 +756,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       activeProfileChannel = null;
     }
     activeProfileUserId = null;
+    await clearSensitiveAppData();
     set({ user: null, profile: null, loading: false, error: null });
   },
 }));
@@ -788,9 +784,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       initialized: true,
     });
   } else if (event === 'SIGNED_OUT') {
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('cash_session_closed_banner_dismissed');
-    }
+    clearSensitiveAppData();
     // Clear cached session parameters
     useAuthStore.setState({
       user: null,
@@ -842,6 +836,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         useAuthStore.setState({ user: session.user, loading: false, initialized: true });
       }
     } else if (event === 'INITIAL_SESSION' && !hasStoredAuthSession()) {
+      clearSensitiveAppData();
       useAuthStore.setState({ loading: false, initialized: true });
     }
   }

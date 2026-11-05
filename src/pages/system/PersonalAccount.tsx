@@ -190,6 +190,9 @@ export const PersonalAccount: React.FC = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isToggling2FA, setIsToggling2FA] = useState(false);
   const [show2FAInfoModal, setShow2FAInfoModal] = useState(false);
+  const [isDisable2FAModalOpen, setIsDisable2FAModalOpen] = useState(false);
+  const [disable2FAPassword, setDisable2FAPassword] = useState('');
+  const [showDisable2FAPassword, setShowDisable2FAPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -198,22 +201,30 @@ export const PersonalAccount: React.FC = () => {
     }
   }, [profile?.username]);
 
-  const is2FAEnabled =
+  const current2FAState = Boolean(
     profile?.email_verification_enabled ??
-    user?.user_metadata?.email_verification_enabled ??
-    false;
+      user?.user_metadata?.email_verification_enabled ??
+      false
+  );
+  const [is2FAEnabled, setIs2FAEnabled] = useState<boolean>(current2FAState);
+
+  useEffect(() => {
+    setIs2FAEnabled(
+      Boolean(
+        profile?.email_verification_enabled ??
+          user?.user_metadata?.email_verification_enabled ??
+          false
+      )
+    );
+  }, [
+    profile?.email_verification_enabled,
+    user?.user_metadata?.email_verification_enabled,
+  ]);
+
   const isNonEmailAccount =
     user?.email?.endsWith('@palomargym.noemail') ?? false;
 
-  const handleToggle2FA = async () => {
-    if (isNonEmailAccount) {
-      toast.warn(
-        'Email verification requires a standard external email address. This account uses a local username handle.'
-      );
-      return;
-    }
-
-    const nextState = !is2FAEnabled;
+  const executeToggle2FA = async (nextState: boolean) => {
     try {
       setIsToggling2FA(true);
 
@@ -232,6 +243,34 @@ export const PersonalAccount: React.FC = () => {
         }
       }
 
+      setIs2FAEnabled(nextState);
+
+      useAuthStore.setState((state) => {
+        const updatedProfile = state.profile
+          ? { ...state.profile, email_verification_enabled: nextState }
+          : null;
+        if (updatedProfile) {
+          try {
+            localStorage.setItem(
+              'palomar_cached_profile',
+              JSON.stringify(updatedProfile)
+            );
+          } catch {}
+        }
+        return {
+          user: state.user
+            ? {
+                ...state.user,
+                user_metadata: {
+                  ...state.user.user_metadata,
+                  email_verification_enabled: nextState,
+                },
+              }
+            : null,
+          profile: updatedProfile,
+        };
+      });
+
       await logAudit(
         '2FA_SETTING_CHANGED',
         `User ${nextState ? 'enabled' : 'disabled'} 6-digit email verification after login.`,
@@ -245,10 +284,53 @@ export const PersonalAccount: React.FC = () => {
           ? 'Email verification after login is now ENABLED.'
           : 'Email verification after login has been DISABLED.'
       );
+      setIsDisable2FAModalOpen(false);
+      setDisable2FAPassword('');
+      setShowDisable2FAPassword(false);
     } catch (err: any) {
       toast.error(
         err.message || 'Failed to update email verification configuration.'
       );
+    } finally {
+      setIsToggling2FA(false);
+    }
+  };
+
+  const handleToggle2FA = async () => {
+    if (isNonEmailAccount) {
+      toast.warn(
+        'Email verification requires a standard external email address. This account uses a local username handle.'
+      );
+      return;
+    }
+
+    if (is2FAEnabled) {
+      setDisable2FAPassword('');
+      setShowDisable2FAPassword(false);
+      setIsDisable2FAModalOpen(true);
+      return;
+    }
+
+    await executeToggle2FA(true);
+  };
+
+  const handleConfirmDisable2FA = async () => {
+    if (!disable2FAPassword.trim()) {
+      toast.error('Please enter your password to authorize this action.');
+      return;
+    }
+
+    try {
+      setIsToggling2FA(true);
+      const isValid = await verifyCurrentPassword(disable2FAPassword);
+      if (!isValid) {
+        toast.error('Authorization failed. Incorrect password.');
+        return;
+      }
+
+      await executeToggle2FA(false);
+    } catch {
+      toast.error('Authorization failed. Incorrect password.');
     } finally {
       setIsToggling2FA(false);
     }
@@ -1150,6 +1232,102 @@ export const PersonalAccount: React.FC = () => {
               className="w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors bg-(--color-primary) hover:opacity-95 text-white cursor-pointer border-(--color-primary)"
             >
               Confirm & Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirmation Modal: Password Verification for Disabling 2FA */}
+      <Modal
+        isOpen={isDisable2FAModalOpen}
+        onClose={() => {
+          if (!isToggling2FA) {
+            setIsDisable2FAModalOpen(false);
+            setDisable2FAPassword('');
+            setShowDisable2FAPassword(false);
+          }
+        }}
+        title="Disable Email Verification"
+      >
+        <div className="space-y-4 font-body text-left">
+          <div className="p-4 bg-rose-500/10 dark:bg-rose-500/5 border border-rose-500/30 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
+            <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8 shrink-0 text-rose-600 dark:text-rose-500 mt-0.5" />
+            <div className="space-y-1">
+              <span className="block font-heading tracking-wider uppercase text-[10px] text-rose-700 dark:text-rose-400 font-extrabold">
+                SECURITY WARNING
+              </span>
+              <span className="block text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                Disabling email verification lowers account protection. Any sign-in will only require your password. Please enter your account password to confirm this action.
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-1.5 pt-1">
+            <label
+              htmlFor="verifyDisable2FAPasswordInput"
+              className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+            >
+              <Lock className="w-3.5 h-3.5 text-rose-600 dark:text-rose-500" />
+              Confirm Account Password
+            </label>
+            <div className="relative">
+              <input
+                id="verifyDisable2FAPasswordInput"
+                type={showDisable2FAPassword ? 'text' : 'password'}
+                disabled={isToggling2FA}
+                placeholder="Enter your current password..."
+                value={disable2FAPassword}
+                onChange={(e) => setDisable2FAPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    disable2FAPassword.trim() &&
+                    !isToggling2FA
+                  ) {
+                    handleConfirmDisable2FA();
+                  }
+                }}
+                className="w-full pl-4 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all font-medium disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => setShowDisable2FAPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-(--color-text) transition-colors cursor-pointer p-1 focus:outline-none"
+                tabIndex={-1}
+                aria-label={
+                  showDisable2FAPassword ? 'Hide password' : 'Show password'
+                }
+              >
+                {showDisable2FAPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              disabled={isToggling2FA}
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center text-xs font-heading tracking-wider"
+              onClick={() => {
+                setIsDisable2FAModalOpen(false);
+                setDisable2FAPassword('');
+                setShowDisable2FAPassword(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmDisable2FA}
+              loading={isToggling2FA}
+              disabled={isToggling2FA || !disable2FAPassword.trim()}
+              loadingLabel="DISABLING..."
+              className="w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors bg-rose-600 hover:bg-rose-700 text-white cursor-pointer border-rose-600"
+            >
+              Confirm & Turn Off
             </Button>
           </div>
         </div>

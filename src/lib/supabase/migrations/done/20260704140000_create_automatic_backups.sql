@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.database_backups (
 );
 
 ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT NULL;
+ALTER TABLE public.database_backups ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_database_backups_type ON public.database_backups(type);
 CREATE INDEX IF NOT EXISTS idx_database_backups_created_at ON public.database_backups(created_at DESC);

@@ -254,28 +254,11 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       (log.categoryOrPlan || '').toLowerCase().includes('yearly') ||
       (log.categoryOrPlan || '').toLowerCase().includes('subscription');
 
-    let isWithin24Hours = true;
-    let hoursRemaining = 24;
-    if (isSubscription && log.timestamp) {
-      try {
-        const createdMs = new Date(log.timestamp).getTime();
-        const diffMs = Date.now() - createdMs;
-        const diffHours = diffMs / (1000 * 60 * 60);
-        isWithin24Hours = diffHours <= 24;
-        hoursRemaining = Math.max(0, Math.ceil(24 - diffHours));
-      } catch {
-        isWithin24Hours = true;
-      }
-    }
+    const effectiveCanDelete = isSubscription ? false : canDelete;
 
-    const effectiveCanDelete = isSubscription
-      ? canDelete && isWithin24Hours
-      : canDelete;
-
-    const effectiveDeleteDisabledReason =
-      isSubscription && !isWithin24Hours
-        ? 'Subscription void window expired (24h limit reached)'
-        : deleteDisabledReason;
+    const effectiveDeleteDisabledReason = isSubscription
+      ? 'New membership enrollments and subscriptions cannot be deleted from the logbook.'
+      : deleteDisabledReason;
 
     const syncStatus = log.sync_status || 'synced';
 
@@ -288,8 +271,6 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       formattedInTime,
       planLabel,
       isSubscription,
-      isWithin24Hours,
-      hoursRemaining,
       effectiveCanDelete,
       effectiveDeleteDisabledReason,
       syncStatus,
@@ -399,7 +380,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
           </motion.div>
         )}
 
-        {(canDelete || !deleteDisabledReason) && (
+        {!attendanceMeta?.isSubscription && (canDelete || !deleteDisabledReason) && (
           <motion.div
             style={{ opacity: removeOpacity }}
             className="absolute inset-y-0 right-0 bg-rose-600 flex items-center justify-end pr-6 text-white text-xs font-heading tracking-wider font-bold w-1/2"
@@ -412,19 +393,19 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       {/* Main card */}
       <motion.div
         style={{ x }}
-        drag={canPrint || (canDelete && !deleteDisabledReason) ? 'x' : false}
+        drag={canPrint || (!attendanceMeta?.isSubscription && canDelete && !deleteDisabledReason) ? 'x' : false}
         dragConstraints={{
-          left: canDelete && !deleteDisabledReason ? -100 : 0,
+          left: !attendanceMeta?.isSubscription && canDelete && !deleteDisabledReason ? -100 : 0,
           right: canPrint ? 100 : 0,
         }}
         dragElastic={{
-          left: canDelete && !deleteDisabledReason ? 0.2 : 0,
+          left: !attendanceMeta?.isSubscription && canDelete && !deleteDisabledReason ? 0.2 : 0,
           right: canPrint ? 0.2 : 0,
         }}
         dragSnapToOrigin={true}
         dragTransition={{ bounceStiffness: 500, bounceDamping: 32 }}
         onDragEnd={(e, info) => {
-          if ((!canDelete || deleteDisabledReason) && info.offset.x < -40) {
+          if ((attendanceMeta?.isSubscription || !canDelete || deleteDisabledReason) && info.offset.x < -40) {
             return;
           }
           if (!canPrint && info.offset.x > 40) {
@@ -514,26 +495,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     </span>
                   )}
 
-                  {/* 24-Hour Subscription Void Window Indicator */}
-                  {attendanceMeta.isSubscription && (
-                    <span
-                      className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${
-                        attendanceMeta.isWithin24Hours
-                          ? 'text-emerald-700 bg-emerald-50 border-emerald-300 dark:text-emerald-300 dark:bg-emerald-950/60 dark:border-emerald-700'
-                          : 'text-slate-500 bg-slate-100 border-slate-300 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700 opacity-80'
-                      }`}
-                      title={
-                        attendanceMeta.isWithin24Hours
-                          ? `Voidable within 24 hours of creation (${attendanceMeta.hoursRemaining}h remaining)`
-                          : 'Subscription locked: 24-hour void window has expired'
-                      }
-                    >
-                      {attendanceMeta.isWithin24Hours
-                        ? `VOIDABLE (${attendanceMeta.hoursRemaining}h)`
-                        : 'LOCKED (24h+)'}
-                    </span>
-                  )}
-                </div>
+                  </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span
@@ -624,7 +586,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                     <Printer className="w-4 h-4 stroke-[2]" />
                   </button>
 
-                  {(attendanceMeta.effectiveCanDelete || attendanceMeta.effectiveDeleteDisabledReason) && (
+                  {!attendanceMeta.isSubscription && (attendanceMeta.effectiveCanDelete || attendanceMeta.effectiveDeleteDisabledReason) && (
                     <button
                       type="button"
                       disabled={!attendanceMeta.effectiveCanDelete}

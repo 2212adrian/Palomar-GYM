@@ -1,3 +1,4 @@
+// src/pages/members/memberService.ts
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { assertActiveCashSession } from '../../hooks/useSessionLock';

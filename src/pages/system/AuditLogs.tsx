@@ -1,3 +1,4 @@
+// src/pages/system/AuditLogs.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
@@ -75,6 +76,22 @@ export const AuditLogs: React.FC = () => {
 
   const formatActionName = (action: string): string => {
     const act = action.toUpperCase();
+    // SuperAdmin Terminal Actions
+    if (
+      act.includes('SUPERADMIN_TERMINAL_SALE') ||
+      act.includes('SUPERADMIN_SALE')
+    )
+      return 'SuperAdmin Terminal Sale Created';
+    if (
+      act.includes('SUPERADMIN_SUBSCRIPTION_DROPPED') ||
+      act.includes('SUBSCRIPTION_DROPPED')
+    )
+      return 'SuperAdmin Dropped Member Subscription';
+    if (act.includes('SUPERADMIN_AUDIT_PURGE'))
+      return 'SuperAdmin Purged Audit Storage';
+    if (act.includes('SUPERADMIN'))
+      return 'SuperAdmin Critical Action';
+
     // Cash Management
     if (act.includes('CASH_SESSION_OPEN') || act.includes('OPEN_DRAWER'))
       return 'Opened Cash Drawer Session';
@@ -145,7 +162,8 @@ export const AuditLogs: React.FC = () => {
     if (
       act.includes('MEMBER_REMOVED') ||
       act.includes('MEMBER_DELETE') ||
-      act.includes('MEMBER_DEACTIVATED')
+      act.includes('MEMBER_DEACTIVATED') ||
+      act.includes('MEMBER_ARCHIVED')
     )
       return 'Moved Member to Recycle Bin';
     if (act.includes('MEMBER_RESTORED'))
@@ -295,12 +313,17 @@ export const AuditLogs: React.FC = () => {
   ): 'info' | 'warning' | 'critical' => {
     const act = action.toUpperCase();
     if (
+      act.includes('SUPERADMIN') ||
+      act.includes('TERMINAL') ||
+      act.includes('SUBSCRIPTION_DROPPED') ||
+      act.includes('SUBSCRIPTION_VOIDED') ||
       act.includes('DELETE') ||
       act.includes('PURGE') ||
       act.includes('RESTORE_DATABASE') ||
       act.includes('REMOVE') ||
       act.includes('DEACTIVATE') ||
       act.includes('SUSPEND') ||
+      act.includes('ARCHIVE') ||
       act.includes('ONLINE_REGISTRATION_REJECTED')
     ) {
       return 'critical';
@@ -320,9 +343,12 @@ export const AuditLogs: React.FC = () => {
     return 'info';
   };
 
+
   const getActionIcon = (action: string, severity: string) => {
     const act = action.toUpperCase();
     const style = 'w-4 h-4';
+    if (act.includes('SUPERADMIN'))
+      return <AlertTriangle className={`${style} text-red-500`} />;
     if (
       act.includes('CASH') ||
       act.includes('DRAWER') ||

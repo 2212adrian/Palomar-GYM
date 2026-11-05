@@ -410,18 +410,27 @@ export const MembersList: React.FC<MembersListProps> = ({
     const cacheKey = 'members_sanitized_cache';
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const purgeCache = () => {
+      sessionStorage.removeItem(cacheKey);
+      try {
+        localStorage.removeItem(cacheKey);
+      } catch {
+        // ignore
+      }
+    };
+
     const invalidateAndRefresh = () => {
       if (isBatterySaver && document.hidden) return;
       if (isBatterySaver) {
         if (debounceTimer) return;
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
-          sessionStorage.removeItem(cacheKey);
+          purgeCache();
           fetchMembers(true);
         }, 10000);
         return;
       }
-      sessionStorage.removeItem(cacheKey);
+      purgeCache();
       fetchMembers(true);
     };
 
@@ -440,7 +449,22 @@ export const MembersList: React.FC<MembersListProps> = ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
-        invalidateAndRefresh
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE' && payload.new?.deleted_at) {
+            const deletedId = String(payload.new.id);
+            setMembers((prev) => prev.filter((m) => String(m.id) !== deletedId));
+            setSelectedMemberIds((prev) =>
+              prev.filter((id) => String(id) !== deletedId)
+            );
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            const deletedId = String(payload.old.id);
+            setMembers((prev) => prev.filter((m) => String(m.id) !== deletedId));
+            setSelectedMemberIds((prev) =>
+              prev.filter((id) => String(id) !== deletedId)
+            );
+          }
+          invalidateAndRefresh();
+        }
       )
       .on(
         'postgres_changes',
@@ -454,8 +478,21 @@ export const MembersList: React.FC<MembersListProps> = ({
       )
       .subscribe();
 
-    const handleRefresh = () => {
-      sessionStorage.removeItem(cacheKey);
+    const handleRefresh = (e?: Event) => {
+      const customEvent = e as CustomEvent<{ deletedId?: string }>;
+      const deletedId = customEvent?.detail?.deletedId;
+
+      purgeCache();
+
+      if (deletedId) {
+        setMembers((prev) =>
+          prev.filter((m) => m.id !== deletedId && m.member_id !== deletedId)
+        );
+        setSelectedMemberIds((prev) =>
+          prev.filter((id) => id !== deletedId)
+        );
+      }
+
       fetchMembers(true);
     };
     window.addEventListener('member-refresh', handleRefresh);
@@ -2547,7 +2584,27 @@ export const MembersList: React.FC<MembersListProps> = ({
           <MemberProfileView
             member={selectedProfileMember}
             onClose={() => setSelectedProfileMember(null)}
-            onMutationSuccess={fetchMembers}
+            onMutationSuccess={(deletedMemberId?: string) => {
+              const cacheKey = 'members_sanitized_cache';
+              sessionStorage.removeItem(cacheKey);
+              try {
+                localStorage.removeItem(cacheKey);
+              } catch {
+                // ignore
+              }
+              if (deletedMemberId) {
+                setMembers((prev) =>
+                  prev.filter(
+                    (m) =>
+                      m.id !== deletedMemberId && m.member_id !== deletedMemberId
+                  )
+                );
+                setSelectedMemberIds((prev) =>
+                  prev.filter((id) => id !== deletedMemberId)
+                );
+              }
+              fetchMembers(true);
+            }}
           />
         )}
       </AnimatePresence>

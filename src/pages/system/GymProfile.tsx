@@ -4,6 +4,13 @@ import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { toast } from 'react-toastify';
 import { compressImage } from '../../lib/imageCompressor';
+import defaultCarousel1 from '../../assets/1-carousel.webp';
+import defaultCarousel2 from '../../assets/2-carousel.webp';
+import defaultCarousel3 from '../../assets/3-carousel.webp';
+import defaultCarousel4 from '../../assets/4-carousel.webp';
+import defaultCarousel5 from '../../assets/5-carousel.webp';
+import defaultCarousel6 from '../../assets/6-carousel.webp';
+import defaultLogo from '../../assets/icon.png';
 import {
   Building,
   Upload,
@@ -13,6 +20,15 @@ import {
   ExternalLink,
   Lock,
 } from 'lucide-react';
+
+const DEFAULT_CAROUSEL_IMAGES = [
+  defaultCarousel1,
+  defaultCarousel2,
+  defaultCarousel3,
+  defaultCarousel4,
+  defaultCarousel5,
+  defaultCarousel6,
+];
 
 const DEFAULT_GYM_CONFIG = {
   gymName: 'WOLF PALOMAR GYM',
@@ -601,20 +617,25 @@ export const GymProfile: React.FC = () => {
               <div className="w-16 h-16 rounded-xl border border-slate-200 dark:border-white/10 flex items-center justify-center shrink-0 bg-white dark:bg-[#13161a] overflow-hidden">
                 {isLoading ? (
                   <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] animate-pulse" />
-                ) : gymLogo ? (
-                  <img
-                    src={gymLogo}
-                    alt="Logo preview"
-                    className="w-full h-full object-contain"
-                  />
                 ) : (
-                  <Building className="w-6 h-6 text-slate-400" />
+                  <img
+                    src={gymLogo || defaultLogo}
+                    alt="Logo preview"
+                    className="w-full h-full object-contain p-1"
+                  />
                 )}
               </div>
               <div className="text-center sm:text-left space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
-                  Gym Logo
-                </span>
+                <div className="flex items-center justify-center sm:justify-start gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
+                    Gym Logo
+                  </span>
+                  {!gymLogo && !isLoading && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400">
+                      Default
+                    </span>
+                  )}
+                </div>
                 <input
                   type="file"
                   id="logoUpload"
@@ -639,7 +660,7 @@ export const GymProfile: React.FC = () => {
                       onClick={() => setGymLogo('')}
                       className="px-3 py-1.5 border border-red-500/10 rounded-lg text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-500 hover:bg-red-500/20 cursor-pointer"
                     >
-                      Remove
+                      Reset to Default
                     </button>
                   )}
                 </div>
@@ -650,7 +671,7 @@ export const GymProfile: React.FC = () => {
             <div className="space-y-3.5 pt-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Carousel Images ({carouselImages.length} / 6)
+                  Carousel Images ({carouselImages.length > 0 ? `${carouselImages.length} / 6` : 'Default • 6 images'})
                 </label>
                 <input
                   type="file"
@@ -707,9 +728,27 @@ export const GymProfile: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <div className="py-8 border border-dashed border-slate-200 dark:border-white/10 rounded-xl text-center text-xs text-slate-400 font-medium leading-relaxed">
-                  No widescreen carousel images uploaded yet. <br />
-                  (Max 6 photos • Compressed to 2MB target).
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                    {DEFAULT_CAROUSEL_IMAGES.map((src, index) => (
+                      <div
+                        key={index}
+                        className="relative aspect-video rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-[#13161a] shadow-xs"
+                      >
+                        <img
+                          src={src}
+                          alt={`Default Carousel ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-black/60 text-white backdrop-blur-xs">
+                          Default {index + 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center font-medium">
+                    Showing system default carousel images. Click &quot;Add Photo&quot; to upload custom promotional images.
+                  </p>
                 </div>
               )}
             </div>

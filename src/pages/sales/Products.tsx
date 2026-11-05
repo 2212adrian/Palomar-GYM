@@ -22,6 +22,11 @@ import { isSuperAdmin } from '../../constants/auth';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useNotificationStore } from '../../stores/useNotificationStore';
 import { stagePendingTransaction } from '../../lib/offlineVault';
+import {
+  getCachedImageUrl,
+  getCachedImageUrlSync,
+  prefetchProductImages,
+} from '../../lib/cacheUtils';
 // Component imports
 import { BarcodeComponent } from './components/BarcodeComponent';
 import { ProductBulkActions } from './components/ProductBulkActions';
@@ -100,6 +105,80 @@ interface ProductDiff {
     status?: 'Active' | 'Inactive';
   };
 }
+
+interface ProductImageProps {
+  src?: string | null;
+  alt: string;
+  className?: string;
+  fallbackLetter?: string;
+  fallbackClassName?: string;
+}
+
+const ProductImage: React.FC<ProductImageProps> = ({
+  src,
+  alt,
+  className = '',
+  fallbackLetter,
+  fallbackClassName = '',
+}) => {
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(() => {
+    if (!src) return null;
+    const trimmed = src.trim();
+    if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+    return getCachedImageUrlSync(trimmed) || trimmed;
+  });
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setHasError(false);
+
+    if (!src || !src.trim()) {
+      setResolvedSrc(null);
+      return;
+    }
+
+    const trimmed = src.trim();
+    if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+      setResolvedSrc(trimmed);
+      return;
+    }
+
+    const cachedSync = getCachedImageUrlSync(trimmed);
+    if (cachedSync) {
+      setResolvedSrc(cachedSync);
+      return;
+    }
+
+    getCachedImageUrl(trimmed).then((cached) => {
+      if (!isCancelled && cached) {
+        setResolvedSrc(cached);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [src]);
+
+  if (!resolvedSrc || hasError) {
+    return (
+      <div className={fallbackClassName}>
+        {fallbackLetter || alt?.[0] || 'P'}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={resolvedSrc}
+      alt={alt}
+      onError={() => setHasError(true)}
+      className={className}
+      loading="lazy"
+    />
+  );
+};
 
 interface ProductsProps {
   hideHeaderActions?: boolean;
@@ -330,19 +409,29 @@ export const Products: React.FC<ProductsProps> = ({
       .fetchNotifications(user?.email, profile?.role, false);
   }, [stats, user?.email, profile?.role]);
 
+  // Eagerly pre-cache product images for offline persistence
+  useEffect(() => {
+    if (products.length > 0) {
+      prefetchProductImages(products.map((p) => p.image_url)).catch(() => {});
+    }
+  }, [products]);
+
   useEffect(() => {
     const handleCreate = () => handleCreateClick();
     const handlePrint = () => setShowPrintModal(true);
     const handleRecovery = () => setShowRecoveryModal(true);
+    const handleStockMovements = () => setShowStockMovementModal(true);
 
     window.addEventListener('trigger-product-create', handleCreate);
     window.addEventListener('trigger-product-print', handlePrint);
     window.addEventListener('trigger-product-recovery', handleRecovery);
+    window.addEventListener('trigger-product-stock-movements', handleStockMovements);
 
     return () => {
       window.removeEventListener('trigger-product-create', handleCreate);
       window.removeEventListener('trigger-product-print', handlePrint);
       window.removeEventListener('trigger-product-recovery', handleRecovery);
+      window.removeEventListener('trigger-product-stock-movements', handleStockMovements);
     };
   }, [products]);
 
@@ -543,6 +632,7 @@ export const Products: React.FC<ProductsProps> = ({
         .getPublicUrl(fileName);
 
       setFormImageUrl(urlData.publicUrl);
+      getCachedImageUrl(urlData.publicUrl).catch(() => {});
       toast.success(`Image processed successfully.`);
     } catch {
       toast.error('Image upload failed.');
@@ -1254,21 +1344,17 @@ export const Products: React.FC<ProductsProps> = ({
 
         return (
           <div className="flex items-center gap-3 py-1">
-            {item.image_url ? (
-              <img
-                src={item.image_url}
-                alt={item.product_name}
-                className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
-                  item.status === 'Inactive' || isDeleted
-                    ? 'grayscale opacity-60'
-                    : ''
-                }`}
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-lg shadow-inner shrink-0">
-                {item.product_name[0]}
-              </div>
-            )}
+            <ProductImage
+              src={item.image_url}
+              alt={item.product_name}
+              className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
+                item.status === 'Inactive' || isDeleted
+                  ? 'grayscale opacity-60'
+                  : ''
+              }`}
+              fallbackLetter={item.product_name[0]}
+              fallbackClassName="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-lg shadow-inner shrink-0"
+            />
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -1561,19 +1647,6 @@ export const Products: React.FC<ProductsProps> = ({
       {/* ADMIN EXCLUSIVE INDICATION GUIDE */}
       {isAdmin && <IndicationGuideBanner topicId="products" className="mb-2" />}
 
-      {/* Action shortcut: Stock Movements */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-        <button
-          type="button"
-          onClick={() => setShowStockMovementModal(true)}
-          className="flex items-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/30 text-xs font-heading font-extrabold tracking-wider uppercase rounded-xl transition-all cursor-pointer shrink-0 shadow-xs active:scale-95"
-          title="View all stock movements & inventory ledger"
-        >
-          <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <span>Stock Movements</span>
-        </button>
-      </div>
-
       {/* Search and Status Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-(--bg-card) p-3 rounded-xl border border-(--border-color) shadow-xs">
         <div className="relative flex-1">
@@ -1846,21 +1919,17 @@ export const Products: React.FC<ProductsProps> = ({
 
                     <div className="flex items-center justify-between gap-3 min-h-12 text-xs font-semibold">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {product.image_url ? (
-                          <img
-                            src={product.image_url}
-                            alt={product.product_name}
-                            className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
-                              isHidden || isDeleted
-                                ? 'grayscale opacity-65'
-                                : ''
-                            }`}
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0">
-                            {product.product_name[0]}
-                          </div>
-                        )}
+                        <ProductImage
+                          src={product.image_url}
+                          alt={product.product_name}
+                          className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
+                            isHidden || isDeleted
+                              ? 'grayscale opacity-65'
+                              : ''
+                          }`}
+                          fallbackLetter={product.product_name[0]}
+                          fallbackClassName="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0"
+                        />
 
                         <div className="min-w-0 flex-1">
                           <h4
@@ -2084,17 +2153,13 @@ export const Products: React.FC<ProductsProps> = ({
                   </div>
 
                   <div className="p-4 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner">
-                    {productToDelete.image_url ? (
-                      <img
-                        src={productToDelete.image_url}
-                        alt={productToDelete.product_name}
-                        className="w-16 h-16 rounded-xl object-cover border border-(--border-color) shadow-sm"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-lg uppercase shadow-inner">
-                        {productToDelete.product_name[0]}
-                      </div>
-                    )}
+                    <ProductImage
+                      src={productToDelete.image_url}
+                      alt={productToDelete.product_name}
+                      className="w-16 h-16 rounded-xl object-cover border border-(--border-color) shadow-sm shrink-0"
+                      fallbackLetter={productToDelete.product_name[0]}
+                      fallbackClassName="w-16 h-16 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-heading text-lg uppercase shadow-inner shrink-0"
+                    />
 
                     <div className="min-w-0 flex-1 space-y-1">
                       <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block leading-none">
@@ -2212,17 +2277,13 @@ export const Products: React.FC<ProductsProps> = ({
                       key={productToDelete.id}
                       className="p-3 bg-slate-100 dark:bg-[#1e232d] border border-(--border-color) rounded-2xl flex items-center gap-4 text-left shadow-inner"
                     >
-                      {productToDelete.image_url ? (
-                        <img
-                          src={productToDelete.image_url}
-                          alt={productToDelete.product_name}
-                          className="w-12 h-12 rounded-xl object-cover border border-(--border-color) shadow-sm"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-heading text-lg uppercase shadow-inner">
-                          {productToDelete.product_name[0]}
-                        </div>
-                      )}
+                      <ProductImage
+                        src={productToDelete.image_url}
+                        alt={productToDelete.product_name}
+                        className="w-12 h-12 rounded-xl object-cover border border-(--border-color) shadow-sm shrink-0"
+                        fallbackLetter={productToDelete.product_name[0]}
+                        fallbackClassName="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-450 font-heading text-lg uppercase shadow-inner shrink-0"
+                      />
 
                       <div className="min-w-0 flex-1 space-y-1">
                         <span className="text-[9px] font-heading font-black tracking-widest text-rose-500 uppercase block leading-none">
@@ -2435,6 +2496,17 @@ export const Products: React.FC<ProductsProps> = ({
                   title="Recycle Bin"
                 >
                   <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowStockMovementModal(true)}
+                  className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
+                  title="Stock Movements"
+                >
+                  <Boxes className="w-4 h-4" />
                 </button>
               )}
 

@@ -575,6 +575,8 @@ export const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   useEffect(() => {
+    if (isPreview) return;
+
     // Only auto-redirect if user was ALREADY logged in before arriving at this screen
     // and not currently in the login submission or greeting animation
     if (user && !isSubmitting && !isLoggingIn && !showGreetingModal) {
@@ -583,11 +585,9 @@ export const Login: React.FC = () => {
         sessionStorage.getItem('palomar_greeting_shown') === 'true';
 
       if (isGreetingShown) {
-        if (!isPreview || !isAdmin) {
-          const defaultTarget = !isAdmin ? '/sales' : '/dashboard';
-          const target = safeFrom !== '/dashboard' ? safeFrom : defaultTarget;
-          navigate(target, { replace: true });
-        }
+        const defaultTarget = !isAdmin ? '/sales' : '/dashboard';
+        const target = safeFrom !== '/dashboard' ? safeFrom : defaultTarget;
+        navigate(target, { replace: true });
       }
     }
   }, [
@@ -696,26 +696,13 @@ export const Login: React.FC = () => {
     register: registerRecovery,
     handleSubmit: handleRecoverySubmit,
     setValue: setRecoveryValue,
-    watch: watchRecovery,
     formState: { errors: recoveryErrors, touchedFields: touchedRecovery },
   } = useForm<RecoveryFormValues>({
     resolver: zodResolver(recoverySchema),
     defaultValues: { email: '' },
   });
 
-  const watchIdentifier = watchLogin('usernameOrEmail');
-  const watchPassword = watchLogin('password');
   const watchAgreement = watchLogin('agree');
-  const watchRecoveryEmail = watchRecovery('email');
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (watchIdentifier && watchIdentifier.trim()) {
-      localStorage.setItem('palomar_remembered_login', watchIdentifier.trim());
-    } else {
-      localStorage.removeItem('palomar_remembered_login');
-    }
-  }, [watchIdentifier]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -748,13 +735,6 @@ export const Login: React.FC = () => {
       );
     };
   }, [setLoginValue]);
-
-  const dynamicLabel = useMemo(() => {
-    if (!watchIdentifier || watchIdentifier.trim().length === 0) {
-      return 'Username / Email Address';
-    }
-    return watchIdentifier.includes('@') ? 'Email Address' : 'Username';
-  }, [watchIdentifier]);
 
   useEffect(() => {
     sessionStorage.removeItem('outroActive');
@@ -1042,16 +1022,6 @@ export const Login: React.FC = () => {
     setTimeout(() => setter(false), 500);
   };
 
-  const normaliseEmail = (
-    val: string,
-    setter: (field: any, val: string, opts?: any) => void,
-    field: any
-  ) => {
-    if (val && !val.includes('@')) {
-      setter(field, `${val.trim()}@gmail.com`, { shouldValidate: true });
-    }
-  };
-
   const resetRecovery = () => {
     setRecoveryEmail('');
     setRecoveryError(null);
@@ -1166,6 +1136,15 @@ export const Login: React.FC = () => {
 
       resetFailedAttempts();
       setFailedAttempts(0);
+
+      if (typeof window !== 'undefined') {
+        const rawLogin = data.usernameOrEmail?.trim();
+        if (rawLogin) {
+          localStorage.setItem('palomar_remembered_login', rawLogin);
+        } else {
+          localStorage.removeItem('palomar_remembered_login');
+        }
+      }
 
       const loggedInUser = (await supabase.auth.getUser()).data.user;
       const { data: dbProfile } = await supabase
@@ -1696,8 +1675,17 @@ export const Login: React.FC = () => {
 
   const handlePreRecoverySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    normaliseEmail(watchRecoveryEmail, setRecoveryValue, 'email');
-    handleRecoverySubmit(onRecoverySubmit, onInvalidRecoverySubmit)(e);
+    handleRecoverySubmit(
+      (data) => {
+        let finalEmail = data.email?.trim() || '';
+        if (finalEmail && !finalEmail.includes('@')) {
+          finalEmail = `${finalEmail}@gmail.com`;
+          setRecoveryValue('email', finalEmail, { shouldValidate: true });
+        }
+        return onRecoverySubmit({ email: finalEmail });
+      },
+      onInvalidRecoverySubmit
+    )(e);
   };
 
   const handleBackToLoginClick = () => {
@@ -1755,14 +1743,17 @@ export const Login: React.FC = () => {
           <Input
             {...registerLogin('usernameOrEmail')}
             type="text"
-            label={dynamicLabel}
+            label="Username / Email Address"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             icon={
               <User className="w-4 h-4 text-slate-400 dark:text-slate-400" />
             }
             error={!!loginErrors.usernameOrEmail}
             shake={shakeEmail}
             touched={touchedLogin.usernameOrEmail}
-            isPopulated={!!watchIdentifier}
             disabled={isSubmitting || isLoggingIn}
             className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
           />
@@ -1773,13 +1764,16 @@ export const Login: React.FC = () => {
             {...registerLogin('password')}
             type={showPassword ? 'text' : 'password'}
             label="Password"
+            autoComplete="current-password"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             icon={
               <Lock className="w-4 h-4 text-slate-400 dark:text-slate-400" />
             }
             error={!!loginErrors.password}
             shake={shakePassword}
             touched={touchedLogin.password}
-            isPopulated={!!watchPassword}
             disabled={isSubmitting || isLoggingIn}
             className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
             rightElement={
@@ -1965,13 +1959,16 @@ export const Login: React.FC = () => {
                   {...registerRecovery('email')}
                   type="email"
                   label="Email Address"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   icon={
                     <Mail className="w-4 h-4 text-slate-400 dark:text-slate-400" />
                   }
                   error={!!recoveryErrors.email}
                   shake={shakeRecovery}
                   touched={touchedRecovery.email}
-                  isPopulated={!!watchRecoveryEmail}
                   disabled={isRecoverySubmitting}
                   className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
                 />

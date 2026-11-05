@@ -122,8 +122,10 @@ const FallbackEntry: React.FC = () => {
 const LoginRouteGuard: React.FC = () => {
   const { user, profile, initialized, loading } = useAuthStore();
   const location = useLocation();
+  const isPreview =
+    new URLSearchParams(location.search).get('preview') === 'true';
 
-  if (!initialized || loading || (hasStoredAuthSession() && !user)) {
+  if (!isPreview && (!initialized || loading || (hasStoredAuthSession() && !user))) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
@@ -133,7 +135,7 @@ const LoginRouteGuard: React.FC = () => {
 
   // Only auto-redirect away from /login if user is already authenticated AND
   // greeting has already been completed in this session (e.g. direct URL visit)
-  if (user) {
+  if (user && !isPreview) {
     const isGreetingShown =
       typeof window !== 'undefined' &&
       sessionStorage.getItem('palomar_greeting_shown') === 'true';

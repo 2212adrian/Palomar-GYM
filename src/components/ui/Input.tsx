@@ -1,5 +1,5 @@
 //src/components/ui/Input.tsx
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useState, useEffect } from 'react';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -19,15 +19,45 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       error,
       shake,
       touched,
-      isPopulated,
+      isPopulated: controlledIsPopulated,
       rightElement,
       className = '',
+      onChange,
+      autoCapitalize = 'none',
+      autoCorrect = 'off',
+      spellCheck = false,
       ...props
     },
     ref
   ) => {
-    // Semantic Border Classes
-    // Red = incorrect, Green = valid input, Yellow = touched empty warning, Default/Blue on focus
+    const [internalPopulated, setInternalPopulated] = useState<boolean>(() => {
+      if (props.value !== undefined) {
+        return String(props.value).length > 0;
+      }
+      if (props.defaultValue !== undefined) {
+        return String(props.defaultValue).length > 0;
+      }
+      return false;
+    });
+
+    useEffect(() => {
+      if (props.value !== undefined) {
+        setInternalPopulated(String(props.value).length > 0);
+      }
+    }, [props.value]);
+
+    const isPopulated =
+      controlledIsPopulated !== undefined
+        ? controlledIsPopulated
+        : internalPopulated;
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (controlledIsPopulated === undefined) {
+        setInternalPopulated(e.target.value.length > 0);
+      }
+      onChange?.(e);
+    };
+
     const getBorderClass = () => {
       if (error || shake) {
         return 'border-red-500 focus:border-red-500 focus:ring-red-500/20';
@@ -46,6 +76,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           placeholder=" "
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          spellCheck={spellCheck}
+          onChange={handleChange}
           className={`field-input ${getBorderClass()} ${shake ? 'shake-error' : ''} ${className}`}
           {...props}
         />

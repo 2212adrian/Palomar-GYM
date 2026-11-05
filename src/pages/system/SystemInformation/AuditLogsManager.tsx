@@ -1,3 +1,4 @@
+// src/pages/system/SystemInformation/AuditLogsManager.tsx
 import React, { useState } from 'react';
 import { Table, type Column } from '../../../components/ui/Table';
 import { Modal } from '../../../components/ui/Modal';
@@ -86,16 +87,29 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
       key: 'action',
       header: 'Event & Operator',
       sortable: true,
-      render: (item) => (
-        <div className="space-y-1 py-1 text-left">
-          <span className="font-mono text-xs font-black text-blue-600 dark:text-red-400 block">
-            {item.action}
-          </span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/10">
-            {item.actor_username || 'System'}
-          </span>
-        </div>
-      ),
+      render: (item) => {
+        const isSuperAdminAction =
+          item.action?.toUpperCase().includes('SUPERADMIN') ||
+          item.action?.toUpperCase().includes('TERMINAL');
+
+        return (
+          <div className="space-y-1 py-1 text-left">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-mono text-xs font-black text-blue-600 dark:text-red-400 block">
+                {item.action}
+              </span>
+              {isSuperAdminAction && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                  Critical
+                </span>
+              )}
+            </div>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/10">
+              {item.actor_username || 'System'}
+            </span>
+          </div>
+        );
+      },
     },
     {
       key: 'details',

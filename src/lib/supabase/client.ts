@@ -204,13 +204,15 @@ export const supabase = createClient(
   }
 );
 
+import { clearSensitiveAppData } from '../cacheUtils';
+
 // AUTOMATIC LOGOUT CLEANUP:
-// Clears ALL sessionStorage (Logbook, Sales, etc.) on logout
-// while keeping localStorage (theme, user preferences, offline config) completely safe.
+// Clears IndexedDB, sessionStorage, cookies, Cache Storage, and sensitive localStorage items
+// while preserving user preferences (theme, agreement, notifications, camera ID).
 if (typeof window !== 'undefined') {
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
-      sessionStorage.clear();
+      clearSensitiveAppData();
     }
   });
 }
