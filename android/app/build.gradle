@@ -1,5 +1,6 @@
-apply plugin: 'com.android.application'
 import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
 
 // ─── AUTO-SYNC VERSION FROM PACKAGE.JSON ───
 def pkgVersionName = "1.0.0"
@@ -7,7 +8,7 @@ def pkgVersionCode = 1
 try {
     def pkgFile = new File(rootDir, "../package.json")
     if (pkgFile.exists()) {
-        def pkg = new JsonSlurper().parseText(pkgFile.text)
+        def pkg = new groovy.json.JsonSlurper().parseText(pkgFile.text)
         if (pkg.version) {
             pkgVersionName = pkg.version.toString()
             def cleanVer = pkgVersionName.tokenize('-')[0].tokenize('.')
