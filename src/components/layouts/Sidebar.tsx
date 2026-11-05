@@ -26,14 +26,15 @@ import {
 } from '../../stores/useNotificationStore';
 import { useGuideStore } from '../../stores/useGuideStore';
 import { SIDEBAR_NAV_STRUCTURE } from '../../constants/navigation';
+import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { getInstalledAppVersion } from '../../lib/appUpdateService';
 
 // Package version retrieval matching Login.tsx reference
 import pkg from '../../../package.json';
 
 // Texture imports for background accent layers
 import axiomTexture from '../../assets/textures/hexagons.svg';
-
-const APP_VERSION = pkg.version || '0.25.3';
 
 import { SidebarProfileFlipper } from './SidebarProfileFlipper';
 
@@ -151,6 +152,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
   const { openGuide } = useGuideStore();
+  const [appVersion, setAppVersion] = useState<string>(pkg.version || '0.25.3');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveVersion = async () => {
+      try {
+        const info = await getInstalledAppVersion(pkg.version || '0.25.3');
+        if (isMounted && info?.version) {
+          setAppVersion(info.version);
+        }
+      } catch {}
+    };
+
+    resolveVersion();
+
+    let stateListener: any;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          resolveVersion();
+        }
+      }).then((handle) => {
+        stateListener = handle;
+      });
+    }
+
+    return () => {
+      isMounted = false;
+      if (stateListener) {
+        stateListener.remove();
+      }
+    };
+  }, []);
 
   // Real-time Notification Store
   const {
@@ -484,7 +519,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       WOLF PALOMAR GYM
                     </span>
                     <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                      v{APP_VERSION}
+                      v{appVersion}
                     </span>
                   </div>
                 </div>
@@ -1009,7 +1044,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         WOLF PALOMAR GYM
                       </span>
                       <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                        v{APP_VERSION}
+                        v{appVersion}
                       </span>
                     </div>
                   </div>

@@ -41,18 +41,8 @@ export const VersionUpdateManager: React.FC = () => {
       console.warn('[VersionUpdateManager] Cache purge error:', err);
     }
 
-    // Reload native webview using Capacitor reload if available, else window.location.reload
-    let reloadedViaCapacitor = false;
-    try {
-      if (typeof (Capacitor as any).reload === 'function') {
-        (Capacitor as any).reload();
-        reloadedViaCapacitor = true;
-      }
-    } catch {}
-
-    if (!reloadedViaCapacitor) {
-      window.location.reload();
-    }
+    const cleanBaseUrl = window.location.origin + window.location.pathname;
+    window.location.replace(`${cleanBaseUrl}?reload=${Date.now()}`);
   }, []);
 
   const checkVersionMismatch = useCallback(async () => {
