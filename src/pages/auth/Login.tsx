@@ -302,14 +302,6 @@ export const Login: React.FC = () => {
     user?.app_metadata?.role === 'admin' ||
     isSuperAdmin(user?.email);
 
-  useEffect(() => {
-    if (user) {
-      if (!isPreview || !isAdmin) {
-        navigate(safeFrom, { replace: true });
-      }
-    }
-  }, [user, navigate, safeFrom, isPreview, isAdmin]);
-
   const [gymConfig, setGymConfig] = useState<any>(null);
 
   const activeGymAddress =
@@ -581,6 +573,33 @@ export const Login: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Only auto-redirect if user was ALREADY logged in before arriving at this screen
+    // and not currently in the login submission or greeting animation
+    if (user && !isSubmitting && !isLoggingIn && !showGreetingModal) {
+      const isGreetingShown =
+        typeof window !== 'undefined' &&
+        sessionStorage.getItem('palomar_greeting_shown') === 'true';
+
+      if (isGreetingShown) {
+        if (!isPreview || !isAdmin) {
+          const defaultTarget = !isAdmin ? '/sales' : '/dashboard';
+          const target = safeFrom !== '/dashboard' ? safeFrom : defaultTarget;
+          navigate(target, { replace: true });
+        }
+      }
+    }
+  }, [
+    user,
+    navigate,
+    safeFrom,
+    isPreview,
+    isAdmin,
+    isSubmitting,
+    isLoggingIn,
+    showGreetingModal,
+  ]);
 
   const [shakeEmail, setShakeEmail] = useState<boolean>(false);
   const [shakePassword, setShakePassword] = useState<boolean>(false);
@@ -1248,15 +1267,15 @@ export const Login: React.FC = () => {
         loggedInUser?.id ?? undefined
       );
 
-      await claimActiveSession(loggedInUser?.id);
-      setLoginInProgress(false);
-      await checkSession();
-
       const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
 
       // ── TRIGGER SLANTED DIVIDER EXPANSION & GREETINGS MODAL ──
       dismissVirtualKeyboard();
       triggerGreetingAndNavigate(calculatedRoute, targetName, dbProfile?.role);
+
+      await claimActiveSession(loggedInUser?.id);
+      setLoginInProgress(false);
+      await checkSession();
     } catch (err: any) {
       setIsLoggingIn(false);
       const errMsg = String(err?.message || '').toLowerCase();
@@ -1409,17 +1428,17 @@ export const Login: React.FC = () => {
         twoFactorUserId || undefined
       );
 
-      sessionStorage.removeItem('palomar_2fa_pending');
-      await claimActiveSession(twoFactorUserId || undefined);
-      setLoginInProgress(false);
-      await checkSession();
-
       // Launch the greeting modal upon 2FA success
       triggerGreetingAndNavigate(
         twoFactorTargetRoute,
         twoFactorTargetName,
         'staff'
       );
+
+      sessionStorage.removeItem('palomar_2fa_pending');
+      await claimActiveSession(twoFactorUserId || undefined);
+      setLoginInProgress(false);
+      await checkSession();
     } catch (err: any) {
       triggerShake(setShake2FA);
       setTwoFactorAttempts((prev) => {

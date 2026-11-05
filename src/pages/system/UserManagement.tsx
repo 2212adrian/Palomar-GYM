@@ -126,6 +126,7 @@ export const UserManagement: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<
     'all' | 'admin' | 'staff' | 'online' | 'offline' | 'pending' | 'disabled'
   >('all');
+  const [mobileSearch, setMobileSearch] = useState<string>('');
 
   // Credential Handover Modal state
   const [createdAccount, setCreatedAccount] = useState<CreatedAccountInfo | null>(null);
@@ -247,7 +248,11 @@ export const UserManagement: React.FC = () => {
 
         const payload: Record<string, any> = {};
         if (draft.role !== undefined) payload.role = draft.role;
-        if (draft.status !== undefined) payload.status = draft.status;
+        if (draft.status !== undefined) {
+          // Database enum public.user_status is ('active', 'pending', 'inactive')
+          // Map UI 'disabled' to DB 'inactive' to prevent invalid input value error
+          payload.status = draft.status === 'disabled' ? 'inactive' : draft.status;
+        }
 
         const { error } = await supabase
           .from('profiles')
@@ -740,7 +745,11 @@ export const UserManagement: React.FC = () => {
     setDrafts((prev) => {
       const draft = prev[targetId] || {};
       const targetUser = usersList.find((u) => u.id === targetId);
-      const originalStatus = targetUser?.status || 'active';
+      const originalDbStatus = targetUser?.status || 'active';
+      const originalNormalizedStatus =
+        originalDbStatus === 'inactive' || originalDbStatus === 'disabled'
+          ? 'disabled'
+          : originalDbStatus;
 
       const effectiveCurrent = draft.status || currentStatus;
       const isCurrentlyDisabled =
@@ -752,7 +761,7 @@ export const UserManagement: React.FC = () => {
       const updatedDraft: DraftChange = { ...draft, status: nextStatus };
 
       if (
-        updatedDraft.status === originalStatus &&
+        updatedDraft.status === originalNormalizedStatus &&
         (updatedDraft.role === undefined ||
           updatedDraft.role === (targetUser?.role || 'staff'))
       ) {
@@ -906,6 +915,17 @@ export const UserManagement: React.FC = () => {
     if (activeFilter === 'disabled') return compStatus === 'disabled';
     return true;
   });
+
+  const mobileDisplayUsers = React.useMemo(() => {
+    if (!mobileSearch.trim()) return filteredUsers;
+    const q = mobileSearch.trim().toLowerCase();
+    return filteredUsers.filter((u) => {
+      const uname = (u.username || '').toLowerCase();
+      const umail = (u.email || '').toLowerCase();
+      const urole = (u.role || '').toLowerCase();
+      return uname.includes(q) || umail.includes(q) || urole.includes(q);
+    });
+  }, [filteredUsers, mobileSearch]);
 
   const columns: Column<any>[] = [
     {
@@ -1320,8 +1340,8 @@ export const UserManagement: React.FC = () => {
         })}
       </div>
 
-      {/* Table Container */}
-      <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
+      {/* Desktop Table View */}
+      <div className="hidden sm:block p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
         <Table<any>
           data={filteredUsers}
           columns={columns}
@@ -1333,6 +1353,272 @@ export const UserManagement: React.FC = () => {
           loading={isLoadingUsers}
           loadingLabel="Retrieving system user profiles..."
         />
+      </div>
+
+      {/* Mobile Responsive Cards View */}
+      <div className="block sm:hidden space-y-3">
+        {/* Mobile Search Input */}
+        <div className="relative w-full">
+          <input
+            type="text"
+            value={mobileSearch}
+            onChange={(e) => setMobileSearch(e.target.value)}
+            placeholder="Search accounts by name, email, or role..."
+            className="w-full pl-9 pr-4 py-2 border border-(--border-color) rounded-xl bg-(--bg-card) text-xs text-(--color-text) placeholder:text-slate-400 outline-none focus:border-slate-400 transition-all font-medium"
+          />
+          <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        </div>
+
+        {isLoadingUsers ? (
+          <div className="p-8 text-center text-xs text-slate-400 font-mono flex items-center justify-center gap-2 bg-(--bg-card) rounded-2xl border border-(--border-color)">
+            <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+            <span>Retrieving system user profiles...</span>
+          </div>
+        ) : mobileDisplayUsers.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400 font-mono bg-(--bg-card) rounded-2xl border border-(--border-color)">
+            No matching system accounts found.
+          </div>
+        ) : (
+          mobileDisplayUsers.map((u) => {
+            const isSelfUser = u.id === user?.id;
+            const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
+            const isNoEmail = displayEmail.endsWith('@palomargym.noemail');
+            const compStatus = getComputedUserStatus(u);
+            const draft = drafts[u.id];
+            const isStatusModified = draft && draft.status !== undefined;
+            const isRoleModified =
+              draft && draft.role !== undefined && draft.role !== u.role;
+            const isAccountDisabled = compStatus === 'disabled';
+
+            const rawRole = u.role || 'staff';
+            const effectiveBaseRole =
+              rawRole.toLowerCase() === 'superadmin' ? 'admin' : rawRole;
+            const currentRole = draft?.role || effectiveBaseRole;
+            const isTargetSuperAdmin =
+              isSuperAdminAccount(u) || isSuperAdminRow(displayEmail);
+
+            return (
+              <div
+                key={u.id || u.username}
+                className={`p-4 rounded-2xl border transition-all bg-(--bg-card) shadow-xs ${
+                  isAccountDisabled
+                    ? 'border-red-500/25 dark:border-red-500/30'
+                    : 'border-(--border-color)'
+                }`}
+              >
+                {/* Header Row: Avatar, Username, Email, Role */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-(--bg-input) flex items-center justify-center text-xs border border-(--border-color) shrink-0">
+                      <AvatarImage src={u.avatar_url} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-sm text-(--color-text) truncate block">
+                          {u.username || 'System Account'}
+                        </span>
+                        {isSelfUser && (
+                          <span className="text-[8px] bg-(--color-primary) text-white rounded px-1.5 py-0.5 font-mono uppercase font-bold tracking-wider">
+                            YOU
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="font-mono text-[11px] truncate block text-slate-400 max-w-[170px]">
+                          {displayEmail}
+                        </span>
+                        {isNoEmail && (
+                          <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 py-0.2 rounded font-mono font-semibold shrink-0">
+                            Local
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Role Badge / Draft Toggle */}
+                  <div className="shrink-0">
+                    {isTargetSuperAdmin ? (
+                      <span className="text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
+                        SUPERADMIN
+                      </span>
+                    ) : isSelfUser ? (
+                      <span
+                        className={`text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase font-bold ${
+                          effectiveBaseRole === 'admin'
+                            ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                        }`}
+                      >
+                        {effectiveBaseRole}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleToggleUserRole(u.id, effectiveBaseRole as any)
+                        }
+                        className="hover:opacity-85 cursor-pointer transition-opacity"
+                        title="Click to toggle account role draft"
+                      >
+                        {isRoleModified ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-heading tracking-widest px-2 py-0.5 rounded-full uppercase opacity-40 line-through bg-slate-500/10 text-slate-400">
+                              {effectiveBaseRole}
+                            </span>
+                            <span className="text-[10px] text-blue-500 font-bold">
+                              →
+                            </span>
+                            <span
+                              className={`text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase font-bold ${
+                                currentRole === 'admin'
+                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                  : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              }`}
+                            >
+                              {currentRole}
+                            </span>
+                          </div>
+                        ) : (
+                          <span
+                            className={`text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase font-bold ${
+                              currentRole === 'admin'
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            }`}
+                          >
+                            {currentRole}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status & Presence Divider Row */}
+                <div className="mt-3 pt-3 border-t border-(--border-color) flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-heading uppercase tracking-wider text-slate-400 font-bold">
+                      Status:
+                    </span>
+                    {compStatus === 'disabled' && (
+                      <span className="flex items-center gap-1.5 text-xs text-rose-500 font-semibold font-mono">
+                        <span className="w-2 h-2 bg-rose-500 rounded-full shrink-0" />
+                        <span>Disabled</span>
+                      </span>
+                    )}
+                    {compStatus === 'pending' && (
+                      <span className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold font-mono">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0" />
+                        <span>Pending</span>
+                      </span>
+                    )}
+                    {compStatus === 'online' && (
+                      <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-semibold font-mono">
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </span>
+                        <span>Online</span>
+                      </span>
+                    )}
+                    {compStatus === 'offline' && (
+                      <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 font-semibold font-mono">
+                        <span className="w-2 h-2 bg-slate-400 dark:bg-slate-500 rounded-full shrink-0" />
+                        <span>Offline</span>
+                      </span>
+                    )}
+                    {isStatusModified && (
+                      <span className="text-[9px] text-blue-500 font-bold font-mono">
+                        (Draft)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Toggle Switch */}
+                  {!isSelfUser && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleToggleUserStatus(
+                          u.id,
+                          compStatus,
+                          u.role || 'staff'
+                        )
+                      }
+                      title={
+                        isAccountDisabled
+                          ? 'Account is Disabled. Click to enable access.'
+                          : 'Account is Enabled. Click to disable (locks out login).'
+                      }
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isAccountDisabled
+                          ? 'bg-slate-300 dark:bg-slate-700'
+                          : 'bg-emerald-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                          isAccountDisabled ? 'translate-x-0.5' : 'translate-x-4'
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {/* Mobile Action Buttons Row */}
+                <div className="mt-3 pt-2.5 border-t border-(--border-color) flex items-center justify-between gap-2">
+                  {isSelfUser ? (
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Active Session (Signed In)
+                    </span>
+                  ) : (
+                    <div className="flex items-center justify-end gap-2 w-full">
+                      {!isTargetSuperAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditProfile(u)}
+                          className="flex-1 py-1.5 px-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleSendResetPassword(u)}
+                        disabled={isSendingReset === u.id || isNoEmail}
+                        className="flex-1 py-1.5 px-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer"
+                      >
+                        {isSendingReset === u.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                        ) : (
+                          <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                        )}
+                        <span>Reset</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUserClick(u)}
+                        disabled={isDeletingUser === u.id}
+                        className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer"
+                      >
+                        {isDeletingUser === u.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Inline Floating Save / Discard Bar for Local Draft Changes */}

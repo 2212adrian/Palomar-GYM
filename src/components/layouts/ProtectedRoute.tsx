@@ -17,9 +17,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const location = useLocation();
 
   const isSuperAdminUser = isSuperAdmin(user?.email);
-  const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
+  // Wait if user exists but profile is still hydrating (for non-superadmin)
+  const isProfileLoading = Boolean(user && !isSuperAdminUser && !profile);
 
-  if (!initialized || loading || (hasStoredAuthSession() && !user)) {
+  if (!initialized || loading || isProfileLoading || (hasStoredAuthSession() && !user)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent"></div>
@@ -32,11 +33,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to={redirectTarget} state={{ from: location }} replace />;
   }
 
+  const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
   const userStatus = isSuperAdminUser
     ? 'active'
     : profile?.status || user?.user_metadata?.status;
 
-  if (userStatus === 'inactive') {
+  if (userStatus === 'inactive' || userStatus === 'disabled') {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-white dark:bg-[#0f1012] p-4 text-center font-body select-none">
         <div className="max-w-md w-full bg-slate-50 dark:bg-[#141414] border border-slate-200 dark:border-white/5 rounded-3xl p-8 shadow-2xl space-y-6">

@@ -31,6 +31,7 @@ import {
   Undo2,
   ShieldCheck,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 
 const MIN_ALLOWED_DATE = '2024-01-01';
@@ -57,6 +58,7 @@ export const DatabaseBackup: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
+  const [mobileBackupSearch, setMobileBackupSearch] = useState<string>('');
 
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
@@ -743,6 +745,19 @@ export const DatabaseBackup: React.FC = () => {
     return b.type === selectedTypeFilter;
   });
 
+  const mobileDisplayBackups = useMemo(() => {
+    let list = filteredBackups;
+    if (mobileBackupSearch.trim()) {
+      const q = mobileBackupSearch.trim().toLowerCase();
+      list = list.filter((b) => {
+        const fn = (b.filename || '').toLowerCase();
+        const nt = (b.notes || '').toLowerCase();
+        return fn.includes(q) || nt.includes(q);
+      });
+    }
+    return list;
+  }, [filteredBackups, mobileBackupSearch]);
+
   const manualBackupsCount = backups.filter((b) => b.type === 'manual').length;
   const autoBackupsCount = backups.filter((b) => b.type === 'auto').length;
   const archivedBackupsCount = backups.filter(
@@ -1309,6 +1324,8 @@ export const DatabaseBackup: React.FC = () => {
         <div className="relative w-full md:max-w-xs">
           <input
             type="text"
+            value={mobileBackupSearch}
+            onChange={(e) => setMobileBackupSearch(e.target.value)}
             placeholder="Search backups..."
             className="w-full pl-9 pr-4 py-2 border border-(--border-color) rounded-xl bg-(--bg-page) text-sm text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-slate-400 transition-all font-medium"
           />
@@ -1316,8 +1333,8 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Table */}
-      <div className="p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
+      {/* Main Table (Desktop & Tablet) */}
+      <div className="hidden sm:block p-1 rounded-2xl border border-(--border-color) bg-(--bg-card) overflow-x-auto lg:overflow-x-visible w-full">
         <Table<BackupItem>
           data={filteredBackups}
           columns={columns}
@@ -1329,6 +1346,151 @@ export const DatabaseBackup: React.FC = () => {
           loading={isLoading}
           loadingLabel="Loading backup records..."
         />
+      </div>
+
+      {/* Mobile Responsive Cards View */}
+      <div className="block sm:hidden space-y-3">
+        {isLoading ? (
+          <div className="p-8 text-center text-xs text-slate-400 font-mono flex items-center justify-center gap-2 bg-(--bg-card) rounded-2xl border border-(--border-color)">
+            <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+            <span>Loading backup records...</span>
+          </div>
+        ) : mobileDisplayBackups.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400 font-mono bg-(--bg-card) rounded-2xl border border-(--border-color)">
+            No matching backup records found.
+          </div>
+        ) : (
+          mobileDisplayBackups.map((b) => {
+            const diffMs =
+              new Date().getTime() - new Date(b.created_at).getTime();
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+            let friendlyAge = 'Just now';
+            if (diffMins >= 1 && diffMins < 60) {
+              friendlyAge = `${diffMins} mins ago`;
+            } else if (diffHours >= 1 && diffHours < 24) {
+              friendlyAge = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            } else if (diffDays >= 1) {
+              friendlyAge = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+            }
+
+            const dateObj = new Date(b.created_at);
+            const phtTimeStr = dateObj.toLocaleTimeString('en-US', {
+              timeZone: 'Asia/Manila',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+            const phtDateStr = dateObj.toLocaleDateString('en-US', {
+              timeZone: 'Asia/Manila',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            });
+
+            const isManualBackup = b.type === 'manual';
+            const isArchived = b.type === 'archived';
+
+            return (
+              <div
+                key={b.id}
+                className="p-4 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-3 shadow-xs text-left"
+              >
+                {/* Header: Icon, Date Title & PHT timestamp */}
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 shrink-0">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-bold text-(--color-text) truncate block">
+                      Backup from {phtDateStr}
+                    </h4>
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      {phtTimeStr} (PHT)
+                    </p>
+                    {b.notes && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic font-medium line-clamp-2">
+                        "{b.notes}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Badges Row: TYPE, AGE, SIZE */}
+                <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-(--border-color)">
+                  {isArchived ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-500/10 text-[9px] text-amber-500 border border-amber-500/20 rounded-full font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      ARCHIVED
+                    </span>
+                  ) : isManualBackup ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-500/10 text-[9px] text-emerald-500 border border-emerald-500/20 rounded-full font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      MANUAL
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-500/10 text-[9px] text-blue-500 border border-blue-500/20 rounded-full font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      AUTO
+                    </span>
+                  )}
+
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded-full text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                    <Calendar className="w-3 h-3 text-slate-400" />
+                    {friendlyAge}
+                  </span>
+
+                  <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded-full text-[10px] text-slate-600 dark:text-slate-300 font-mono font-semibold">
+                    {formatSize(b.size_bytes)}
+                  </span>
+                </div>
+
+                {/* Actions Row */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-(--border-color)">
+                  {b.type !== 'archived' ? (
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveBackup(b.id)}
+                      className="flex-1 py-1.5 px-2 bg-amber-500/10 hover:bg-amber-500 text-amber-600 dark:text-amber-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-amber-500/20 flex items-center justify-center gap-1"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>Archive</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleUnarchiveBackup(b.id)}
+                      className="flex-1 py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-600 text-emerald-600 dark:text-emerald-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-emerald-500/20 flex items-center justify-center gap-1"
+                    >
+                      <Archive className="w-3.5 h-3.5 rotate-180" />
+                      <span>Unarchive</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={!!safetyBackupPoint}
+                    onClick={() => handleRestoreClick(b)}
+                    className="flex-1 py-1.5 px-3 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-not-allowed shadow-xs text-center"
+                  >
+                    RESTORE
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteBackup(b)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                    title="Delete this backup"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Warning Box */}

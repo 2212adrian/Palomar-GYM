@@ -17,6 +17,7 @@ import { SystemLayout } from '../components/layouts/SystemLayout';
 import { DownloadPage } from '../pages/download/DownloadPage';
 
 import { useAuthStore, hasStoredAuthSession } from '../stores/authStore';
+import { isSuperAdmin } from '../constants/auth';
 
 // Mount actual pages instead of placeholders
 import Settings from '../pages/system/Settings';
@@ -65,7 +66,7 @@ export const isAppOrPWA = (): boolean => {
  * 3. Directs authenticated users to /dashboard, or unauthenticated users to /login.
  */
 const RootEntry: React.FC = () => {
-  const { user, initialized, loading } = useAuthStore();
+  const { user, profile, initialized, loading } = useAuthStore();
 
   if (typeof window !== 'undefined') {
     const hash = window.location.hash;
@@ -101,7 +102,10 @@ const RootEntry: React.FC = () => {
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    const isSuperAdminUser = isSuperAdmin(user.email);
+    const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
+    const target = effectiveRole === 'staff' ? '/sales' : '/dashboard';
+    return <Navigate to={target} replace />;
   }
 
   return <Navigate to="/login" replace />;
@@ -116,7 +120,8 @@ const FallbackEntry: React.FC = () => {
 };
 
 const LoginRouteGuard: React.FC = () => {
-  const { user, initialized, loading } = useAuthStore();
+  const { user, profile, initialized, loading } = useAuthStore();
+  const location = useLocation();
 
   if (!initialized || loading || (hasStoredAuthSession() && !user)) {
     return (
@@ -126,8 +131,22 @@ const LoginRouteGuard: React.FC = () => {
     );
   }
 
+  // Only auto-redirect away from /login if user is already authenticated AND
+  // greeting has already been completed in this session (e.g. direct URL visit)
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    const isGreetingShown =
+      typeof window !== 'undefined' &&
+      sessionStorage.getItem('palomar_greeting_shown') === 'true';
+
+    if (isGreetingShown) {
+      const isSuperAdminUser = isSuperAdmin(user.email);
+      const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
+      const fromPath = (location.state as any)?.from?.pathname;
+      const defaultTarget = effectiveRole === 'staff' ? '/sales' : '/dashboard';
+      const target =
+        fromPath && fromPath !== '/login' ? fromPath : defaultTarget;
+      return <Navigate to={target} replace />;
+    }
   }
 
   return <Login />;
