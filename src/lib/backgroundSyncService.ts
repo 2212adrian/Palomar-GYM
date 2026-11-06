@@ -571,7 +571,7 @@ export function initBackgroundSyncService(): () => void {
       if (isSessionOpen || canOffline) {
         useCashSessionStore.getState().suspendSessionForOffline();
         toast.info(
-          'Internet disconnected. Active cash session active — offline transactions will be queued and encrypted locally.',
+          'No Internet Connection, please check your connection.',
           {
             toastId: 'offline-restricted',
             autoClose: 5000,

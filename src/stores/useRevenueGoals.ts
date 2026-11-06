@@ -9,6 +9,7 @@ import {
   endOfMonth,
   startOfYear,
   endOfYear,
+  format,
 } from 'date-fns';
 import { supabase } from '../lib/supabase/client';
 import { logAudit } from '../lib/supabase/audit';
@@ -22,6 +23,13 @@ export interface RevenueGoalsConfig {
   weekly: number;
   monthly: number;
   yearly: number;
+}
+
+export interface DateRangeInfo {
+  start: Date;
+  end: Date;
+  rangeLabel: string;
+  detailedLabel: string;
 }
 
 const DEFAULT_GOALS: RevenueGoalsConfig = {
@@ -136,20 +144,49 @@ export function useRevenueGoals() {
   };
 
   // Calculate Date Boundaries
-  const getDateRange = useCallback((tf: GoalTimeframe) => {
+  const getDateRange = useCallback((tf: GoalTimeframe): DateRangeInfo => {
     const now = new Date();
     switch (tf) {
-      case 'daily':
-        return { start: startOfDay(now), end: endOfDay(now) };
-      case 'weekly':
+      case 'daily': {
+        const start = startOfDay(now);
+        const end = endOfDay(now);
         return {
-          start: startOfWeek(now, { weekStartsOn: 1 }),
-          end: endOfWeek(now, { weekStartsOn: 1 }),
+          start,
+          end,
+          rangeLabel: format(now, 'MMMM d, yyyy (EEEE)'),
+          detailedLabel: `Calendar Day: ${format(now, 'EEEE, MMMM d, yyyy')}`,
         };
-      case 'monthly':
-        return { start: startOfMonth(now), end: endOfMonth(now) };
-      case 'yearly':
-        return { start: startOfYear(now), end: endOfYear(now) };
+      }
+      case 'weekly': {
+        const start = startOfWeek(now, { weekStartsOn: 1 });
+        const end = endOfWeek(now, { weekStartsOn: 1 });
+        return {
+          start,
+          end,
+          rangeLabel: `${format(start, 'MMM d')} – ${format(end, 'MMM d, yyyy')}`,
+          detailedLabel: `Calendar Week: ${format(start, 'EEE, MMM d')} – ${format(end, 'EEE, MMM d, yyyy')} (Mon to Sun)`,
+        };
+      }
+      case 'monthly': {
+        const start = startOfMonth(now);
+        const end = endOfMonth(now);
+        return {
+          start,
+          end,
+          rangeLabel: `${format(start, 'MMMM yyyy')} (${format(start, 'MMM d')} – ${format(end, 'MMM d')})`,
+          detailedLabel: `Calendar Month: ${format(start, 'MMMM 1')} – ${format(end, 'MMMM d, yyyy')}`,
+        };
+      }
+      case 'yearly': {
+        const start = startOfYear(now);
+        const end = endOfYear(now);
+        return {
+          start,
+          end,
+          rangeLabel: `Year ${format(now, 'yyyy')} (Jan 1 – Dec 31)`,
+          detailedLabel: `Calendar Year ${format(now, 'yyyy')}: Jan 1, ${format(now, 'yyyy')} – Dec 31, ${format(now, 'yyyy')}`,
+        };
+      }
     }
   }, []);
 
@@ -288,6 +325,7 @@ export function useRevenueGoals() {
       : 0;
   const remainingAmount = Math.max(0, currentGoalTarget - totalRevenue);
   const isGoalAchieved = totalRevenue >= currentGoalTarget;
+  const dateRange = getDateRange(timeframe);
 
   return {
     timeframe,
@@ -301,6 +339,7 @@ export function useRevenueGoals() {
     progressPercent,
     remainingAmount,
     isGoalAchieved,
+    dateRange,
     trend,
     isLoading,
     isAdmin,

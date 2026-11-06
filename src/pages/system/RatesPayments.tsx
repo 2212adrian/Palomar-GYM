@@ -218,6 +218,7 @@ export const RatesPayments: React.FC = () => {
     };
   }, []);
 
+  const [activeTab, setActiveTab] = useState<'rates' | 'preview'>('rates');
   const [previewPlan, setPreviewPlan] = useState<
     'monthly' | 'yearly' | 'regular_walkin' | 'student_walkin' | 'yearly_walkin'
   >('monthly');
@@ -377,7 +378,7 @@ export const RatesPayments: React.FC = () => {
       gcashFee: previewPaymentMethod === 'gcash' ? gcashFee : 0,
       paymentMethod: previewPaymentMethod,
       processedBy:
-        profile?.username || user?.user_metadata?.full_name || 'Staff Ryan',
+        profile?.username || user?.user_metadata?.full_name || 'GYM Family Contact 1',
       gymProfile: gymProfileData || undefined,
       ratesConfig: liveRatesConfig,
     };
@@ -395,19 +396,51 @@ export const RatesPayments: React.FC = () => {
         </p>
       </div>
 
+      {/* Mobile Responsive Switch Tabs */}
+      <div className="flex lg:hidden p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl select-none">
+        <button
+          type="button"
+          onClick={() => setActiveTab('rates')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'rates'
+              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              : 'text-slate-400 hover:text-(--color-text)'
+          }`}
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          <span>Adjust Rates</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('preview')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'preview'
+              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              : 'text-slate-400 hover:text-(--color-text)'
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5" />
+          <span>Live Receipt Preview</span>
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Side: Configuration Forms */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
+        <div
+          className={`lg:col-span-7 space-y-6 ${
+            activeTab === 'rates' ? 'block' : 'hidden lg:block'
+          }`}
+        >
+          <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-(--color-primary-light)" />
               Membership Plan Rates
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <div className="grid gap-1.5">
                 <label
                   htmlFor="monthlyRateInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   Monthly Plan Rate
                 </label>
@@ -415,7 +448,7 @@ export const RatesPayments: React.FC = () => {
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -427,7 +460,7 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -435,15 +468,15 @@ export const RatesPayments: React.FC = () => {
               <div className="grid gap-1.5">
                 <label
                   htmlFor="yearlyRateInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
-                  Yearly Registration Fee
+                  Yearly Registration
                 </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -455,7 +488,7 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -463,16 +496,16 @@ export const RatesPayments: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
+          <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
               <User className="w-4 h-4 text-(--color-primary-light)" />
               Walk-In Daily Fees
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="grid gap-1.5">
                 <label
                   htmlFor="regularWalkInInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   Regular Non-Member
                 </label>
@@ -480,7 +513,7 @@ export const RatesPayments: React.FC = () => {
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -492,7 +525,7 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -500,7 +533,7 @@ export const RatesPayments: React.FC = () => {
               <div className="grid gap-1.5">
                 <label
                   htmlFor="studentWalkInInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   Student Non-Member
                 </label>
@@ -508,7 +541,7 @@ export const RatesPayments: React.FC = () => {
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -520,15 +553,15 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1.5 col-span-2 sm:col-span-1">
                 <label
                   htmlFor="yearlyWalkInInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   Yearly Member Daily
                 </label>
@@ -536,7 +569,7 @@ export const RatesPayments: React.FC = () => {
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -548,7 +581,7 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -556,24 +589,24 @@ export const RatesPayments: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
+          <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-(--color-primary-light)" />
               Additional Charges
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <div className="grid gap-1.5">
                 <label
                   htmlFor="gcashFeeInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
-                  GCash Extra Charge
+                  GCash Surcharge
                 </label>
                 {isLoading ? (
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -583,7 +616,7 @@ export const RatesPayments: React.FC = () => {
                       onChange={(e) =>
                         setGcashFee(Math.max(0, parseInt(e.target.value) || 0))
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -591,7 +624,7 @@ export const RatesPayments: React.FC = () => {
               <div className="grid gap-1.5">
                 <label
                   htmlFor="newCardFeeInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   New Card Fee
                 </label>
@@ -599,7 +632,7 @@ export const RatesPayments: React.FC = () => {
                   <div className="h-10 bg-(--bg-page) rounded-lg border border-(--border-color) animate-pulse" />
                 ) : (
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-sm">
+                    <span className="absolute left-2.5 sm:left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold font-mono text-xs sm:text-sm">
                       ₱
                     </span>
                     <input
@@ -611,7 +644,7 @@ export const RatesPayments: React.FC = () => {
                           Math.max(0, parseInt(e.target.value) || 0)
                         )
                       }
-                      className="w-full pl-8 pr-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
+                      className="w-full pl-6 sm:pl-8 pr-2.5 sm:pr-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary)"
                     />
                   </div>
                 )}
@@ -619,7 +652,7 @@ export const RatesPayments: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
+          <div className="p-4 sm:p-5 bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
                 <Percent className="w-4 h-4 text-(--color-primary-light)" />
@@ -643,11 +676,11 @@ export const RatesPayments: React.FC = () => {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="grid gap-1.5">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 pt-2">
+              <div className="grid gap-1.5 col-span-2 sm:col-span-1">
                 <label
                   htmlFor="vatPercentageInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-400"
+                  className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 truncate"
                 >
                   VAT Percentage (%)
                 </label>
@@ -664,7 +697,7 @@ export const RatesPayments: React.FC = () => {
                         Math.max(0, parseInt(e.target.value) || 0)
                       )
                     }
-                    className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) disabled:opacity-50"
+                    className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border border-(--border-color) rounded-lg text-xs sm:text-sm bg-(--bg-page) font-mono outline-none focus:ring-1 focus:ring-(--color-primary) disabled:opacity-50"
                   />
                 )}
               </div>
@@ -673,8 +706,12 @@ export const RatesPayments: React.FC = () => {
         </div>
 
         {/* Right Side: Interactive Payment Calculator & Unified Live Receipt Preview */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="p-6 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xs space-y-5 flex flex-col justify-between">
+        <div
+          className={`lg:col-span-5 space-y-6 ${
+            activeTab === 'preview' ? 'block' : 'hidden lg:block'
+          }`}
+        >
+          <div className="p-4 sm:p-6 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xs space-y-5 flex flex-col justify-between">
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">

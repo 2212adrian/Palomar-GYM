@@ -2563,11 +2563,9 @@ export const registrationService = {
       guardian_consent: reg.guardian_consent ?? null,
     };
 
-    const { data: inserted, error } = await supabase
+    const { error } = await supabase
       .from('online_registrations')
-      .insert([payload])
-      .select()
-      .single();
+      .insert([payload]);
 
     if (error) {
       console.error('Error submitting online registration:', error);
@@ -2575,9 +2573,9 @@ export const registrationService = {
     }
 
     return {
-      ...inserted,
+      ...(payload as any),
       preferred_plan:
-        inserted.preferred_plan === 'yearly'
+        payload.preferred_plan === 'yearly'
           ? 'Yearly Membership'
           : 'Monthly Membership',
     };
@@ -2649,6 +2647,9 @@ export const registrationService = {
       .update({
         status: 'Rejected',
         notes: reason,
+        deleted_by: user,
+        delete_reason: reason,
+        deleted_at: new Date().toISOString(),
       })
       .eq('id', regId);
 
@@ -2656,36 +2657,21 @@ export const registrationService = {
       console.error('Error rejecting registration:', error);
       throw new Error(error.message);
     }
-
-    await writeAudit(
-      'PRE_REG_REJECTED',
-      'Registrations',
-      user,
-      regId,
-      reason,
-      `Denied onboarding parameters.`
-    );
   },
 
   approve: async (regId: string, user: string): Promise<void> => {
     const { error } = await supabase
       .from('online_registrations')
-      .update({ status: 'Approved' })
+      .update({
+        status: 'Approved',
+        deleted_by: user,
+      })
       .eq('id', regId);
 
     if (error) {
       console.error('Error approving registration:', error);
       throw new Error(error.message);
     }
-
-    await writeAudit(
-      'PRE_REG_APPROVED',
-      'Registrations',
-      user,
-      regId,
-      undefined,
-      `Approved online registration ticket.`
-    );
   },
 };
 

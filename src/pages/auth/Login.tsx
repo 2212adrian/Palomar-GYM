@@ -307,12 +307,12 @@ export const Login: React.FC = () => {
   const activeGymAddress =
     gymConfig?.gymAddress ||
     '123 Sample Street, Barangay Central, Quezon City, Metro Manila';
-  const activeContactName1 = gymConfig?.contactName1 || 'Staff Ryan';
+  const activeContactName1 = gymConfig?.contactName1 || 'GYM Family Contact 1';
   const activeContactNumber1 = gymConfig?.contactNumber1 || '09762607481';
-  const activeContactName2 = gymConfig?.contactName2 || 'Admin Wolf';
+  const activeContactName2 = gymConfig?.contactName2 || 'GYM Family Contact 2';
   const activeContactNumber2 = gymConfig?.contactNumber2 || '09123456789';
   const activeEmailAddress =
-    gymConfig?.emailAddress || 'contact@wolfpalomargym.com';
+    gymConfig?.emailAddress || 'wolf.palomar@gmail.com';
 
   const [isAssetPreloaded, setIsAssetPreloaded] = useState<boolean>(false);
   const [isReady, setIsReady] = useState<boolean>(() => {

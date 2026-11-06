@@ -43,15 +43,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import type {
-  OnlineRegistration,
-  MembershipSettings,
-} from '../../../types/members';
-import {
-  registrationService,
-  settingsService,
-  DEFAULT_SETTINGS,
-} from '../memberService';
+import type { OnlineRegistration } from '../../../types/members';
+import { supabase } from '../../../lib/supabase/client';
+import { registrationService } from '../memberService';
 import {
   AgreementDocumentViewer,
   type AgreementDocument,
@@ -83,15 +77,18 @@ const calculateAge = (birthdayStr: string): number => {
 };
 
 const getNextManilaMidnightMs = (): number => {
-  const now = new Date();
-  const manilaDateStr = now.toLocaleDateString('en-US', {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
   });
-  const [month, day, year] = manilaDateStr.split('/').map(Number);
+  const parts = formatter.formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === 'year')?.value);
+  const month = Number(parts.find((p) => p.type === 'month')?.value);
+  const day = Number(parts.find((p) => p.type === 'day')?.value);
 
-  const midnightUtcMs =
-    Date.UTC(year, month - 1, day + 1, 0, 0, 0) - 8 * 60 * 60 * 1000;
-  return midnightUtcMs;
+  return Date.UTC(year, month - 1, day + 1, 0, 0, 0) - 8 * 60 * 60 * 1000;
 };
 
 // Zod Validation Schema
@@ -555,12 +552,64 @@ export const OnlineRegistrationPage: React.FC = () => {
   );
   const isRestoringDraft = useRef(false);
 
-  const [settings, setSettings] =
-    useState<MembershipSettings>(DEFAULT_SETTINGS);
+  const [rates, setRates] = useState<{
+    monthlyRate: number;
+    yearlyRate: number;
+    regularWalkIn: number;
+    yearlyWalkIn: number;
+  } | null>(null);
+  const [isRatesLoading, setIsRatesLoading] = useState<boolean>(true);
+  const [ratesError, setRatesError] = useState<boolean>(false);
+
+  const fetchLiveRates = useCallback(async () => {
+    setIsRatesLoading(true);
+    setRatesError(false);
+    try {
+      const { data, error } = await supabase
+        .from('rates_config')
+        .select('monthly_rate, yearly_rate, regular_walk_in, yearly_walk_in')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (
+        data &&
+        typeof data.monthly_rate === 'number' &&
+        typeof data.yearly_rate === 'number' &&
+        data.monthly_rate > 0 &&
+        data.yearly_rate > 0
+      ) {
+        setRates({
+          monthlyRate: data.monthly_rate,
+          yearlyRate: data.yearly_rate,
+          regularWalkIn:
+            typeof data.regular_walk_in === 'number' && data.regular_walk_in > 0
+              ? data.regular_walk_in
+              : 100,
+          yearlyWalkIn:
+            typeof data.yearly_walk_in === 'number' && data.yearly_walk_in >= 0
+              ? data.yearly_walk_in
+              : 70,
+        });
+        setRatesError(false);
+      } else {
+        setRates(null);
+        setRatesError(true);
+      }
+    } catch {
+      setRates(null);
+      setRatesError(true);
+    } finally {
+      setIsRatesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    settingsService.load().then(setSettings).catch(console.warn);
-  }, []);
+    fetchLiveRates();
+  }, [fetchLiveRates]);
 
   // 3-Second Timer Trigger on Entering Step 4
   useEffect(() => {
@@ -635,8 +684,8 @@ export const OnlineRegistrationPage: React.FC = () => {
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout>;
 
-    const subscription = watch((formValues, { type }) => {
-      if (!type || isRestoringDraft.current || isSubmitting) return;
+    const subscription = watch((formValues) => {
+      if (isRestoringDraft.current || isSubmitting) return;
 
       const currentJson = JSON.stringify(formValues);
       if (currentJson === lastDraftJsonRef.current) return;
@@ -745,17 +794,17 @@ export const OnlineRegistrationPage: React.FC = () => {
   );
 
   // Mathematically Accurate Live Calculations
-  const regularWalkInPrice = 100;
-  const yearlyCheckinFee = settings.yearly_member_checkin_fee ?? 70;
+  const regularWalkInPrice = rates?.regularWalkIn ?? 0;
+  const yearlyCheckinFee = rates?.yearlyWalkIn ?? 0;
   const yearlyDiscountPercent = useMemo(() => {
     if (regularWalkInPrice <= 0) return 0;
     const diff = regularWalkInPrice - yearlyCheckinFee;
     return Math.max(0, Math.round((diff / regularWalkInPrice) * 100));
-  }, [yearlyCheckinFee]);
+  }, [regularWalkInPrice, yearlyCheckinFee]);
 
   const yearlySavingsPerVisit = useMemo(() => {
     return Math.max(0, regularWalkInPrice - yearlyCheckinFee);
-  }, [yearlyCheckinFee]);
+  }, [regularWalkInPrice, yearlyCheckinFee]);
 
   const getFieldBorderClass = (
     fieldName: keyof RegistrationFormData,
@@ -862,19 +911,33 @@ export const OnlineRegistrationPage: React.FC = () => {
 
     setIsSyncing(true);
     try {
-      const serverQueue = await registrationService.getQueue();
+      const ticketIds = localTickets.map((t) => t.registrationId);
+      const { data: serverRows, error } = await supabase
+        .from('online_registrations')
+        .select('id, status, is_archived, deleted_at')
+        .in('id', ticketIds);
 
-      const serverPendingIds = new Set(
-        serverQueue
+      if (error || !Array.isArray(serverRows)) {
+        setIsSyncing(false);
+        return;
+      }
+
+      const processedOrPurgedIds = new Set(
+        serverRows
           .filter(
-            (item: OnlineRegistration) =>
-              item.status === 'Pending' && !(item as any).is_archived
+            (item) =>
+              item.status !== 'Pending' ||
+              item.is_archived === true ||
+              item.deleted_at !== null
           )
-          .map((item: OnlineRegistration) => item.id)
+          .map((item) => item.id)
       );
 
-      const validTickets = localTickets.filter((t) =>
-        serverPendingIds.has(t.registrationId)
+      const serverFoundIds = new Set(serverRows.map((r) => r.id));
+      const validTickets = localTickets.filter(
+        (t) =>
+          serverFoundIds.has(t.registrationId) &&
+          !processedOrPurgedIds.has(t.registrationId)
       );
 
       if (validTickets.length !== localTickets.length) {
@@ -887,8 +950,8 @@ export const OnlineRegistrationPage: React.FC = () => {
 
         toast.info(
           removedCount === 1
-            ? 'An active registration ticket was processed, archived, or removed by staff.'
-            : `${removedCount} tickets were processed, archived, or removed by staff.`
+            ? 'An active registration ticket was processed or completed at the desk.'
+            : `${removedCount} tickets were processed or completed at the desk.`
         );
 
         setSelectedTicket((prevSelected) => {
@@ -984,6 +1047,13 @@ export const OnlineRegistrationPage: React.FC = () => {
   ]);
 
   const handleNextStep = async () => {
+    if (!rates || ratesError) {
+      toast.error(
+        'Registration is currently paused while we update our rates. Please try again shortly.'
+      );
+      return;
+    }
+
     if (currentStep === 1) {
       const valid = await trigger([
         'last_name',
@@ -1045,6 +1115,13 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const onSubmit = async (data: RegistrationFormData) => {
+    if (!rates || ratesError) {
+      toast.error(
+        'Online registration is temporarily unavailable. Please visit the front desk or try again later.'
+      );
+      return;
+    }
+
     if (isTicketLimitReached) {
       toast.error(
         `Limit reached! You can only have up to ${MAX_ACTIVE_TICKETS} active pre-registration tickets at a time.`
@@ -1264,6 +1341,9 @@ export const OnlineRegistrationPage: React.FC = () => {
     step4Countdown > 0 ||
     isRestrictedUnder12 ||
     isTicketLimitReached ||
+    !rates ||
+    isRatesLoading ||
+    ratesError ||
     (isMinor && (!watchedApplicantSignature || !watchedParentSignature));
 
   const wizardSteps = [
@@ -1586,7 +1666,55 @@ export const OnlineRegistrationPage: React.FC = () => {
         )}
 
         {/* ================= VIEW 3: WIZARD FORM ================= */}
-        {viewMode === 'form' && (
+        {viewMode === 'form' && isRatesLoading && (
+          <div className="py-12 px-4 text-center space-y-4 animate-fade-in select-none">
+            <RefreshCw className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            <div className="space-y-1">
+              <h3 className="font-heading text-sm uppercase tracking-wider font-bold text-slate-800 dark:text-slate-100">
+                Checking Gym Membership Rates
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                Please wait a moment while we prepare current pricing...
+              </p>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'form' && !isRatesLoading && (ratesError || !rates) && (
+          <div className="py-8 px-4 text-center space-y-5 animate-fade-in select-none">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg shadow-amber-500/10">
+              <Clock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2 max-w-md mx-auto">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 inline-block">
+                Online Registration Temporarily Paused
+              </span>
+              <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                Please Check Back A Little Later
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                We are currently updating our gym membership plans and pricing schedule to ensure everything is accurate for you.
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+                You are always welcome to sign up in person at the Wolf Palomar reception desk — our friendly team will gladly assist you right away!
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={fetchLiveRates}
+                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] text-white hover:opacity-90 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Check Again</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'form' && !isRatesLoading && rates && !ratesError && (
           <form
             onSubmit={handleSubmit(onSubmit)}
             className="space-y-6 text-left"
@@ -2231,7 +2359,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </h3>
                         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="text-2xl sm:text-3xl lg:text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
-                            ₱{settings.monthly_plan_price.toLocaleString()}
+                            ₱{rates.monthlyRate.toLocaleString()}
                           </span>
                           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                             / 30 Days
@@ -2316,7 +2444,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </h3>
                         <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <span className="text-2xl sm:text-3xl lg:text-4xl font-heading font-black text-slate-900 dark:text-white tracking-tight">
-                            ₱{settings.yearly_plan_price.toLocaleString()}
+                            ₱{rates.yearlyRate.toLocaleString()}
                           </span>
                           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                             / 1 Year
@@ -2418,17 +2546,15 @@ export const OnlineRegistrationPage: React.FC = () => {
                   </div>
 
                   {/* 📜 COMPACT INTERNAL SCROLLABLE CONTAINER */}
-                  <div className="max-h-56 sm:max-h-60 overflow-y-auto pr-2 space-y-2.5 rounded-2xl bg-(--bg-card) p-3 border border-slate-200/80 dark:border-zinc-800 text-xs shadow-inner">
+                  <div className="max-h-64 sm:max-h-72 overflow-y-auto pr-2 space-y-2.5 rounded-2xl bg-(--bg-card) p-3 border border-slate-200/80 dark:border-zinc-800 text-xs shadow-inner">
                     {/* Non-refundable Rule Banner */}
                     <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-400/30 text-amber-900 dark:text-amber-200 text-[11px] leading-relaxed">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
                       <div>
                         <strong className="font-bold text-amber-800 dark:text-amber-300">
-                          Strict Non-Refundable Policy:{' '}
+                          1. 100% Non-Refundable &amp; Strictly Non-Transferable:{' '}
                         </strong>
-                        Once paid at the front desk, all membership passes and
-                        card fees are final and non-refundable, except as
-                        provided by Philippine Consumer Law (RA 7394).
+                        All membership passes, subscriptions, and card fees are final and non-refundable once paid. Memberships are strictly non-transferable and can only be used by the registered subscriber. Sharing your card or allowing another person to use your account is a violation that results in immediate termination without refund.
                       </div>
                     </div>
 
@@ -2436,29 +2562,30 @@ export const OnlineRegistrationPage: React.FC = () => {
                     <div className="space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🏋️ Equipment Care &amp; Racking
+                          ❄️ 2. Non-Freezable Calendar Validity &amp; Extensions
                         </strong>
-                        Always return dumbbells, plates, and attachments to
-                        their racks. Dropping weights carelessly or mishandling
-                        equipment is strictly prohibited.
+                        Active memberships run continuously for their duration (30 days for Monthly, 365 days for Yearly) and cannot be paused or frozen for personal reasons. When renewing early under an active membership, your current plan continues running while your new extension remains paused in queue until your existing membership expires.
                       </div>
 
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🤝 Respect &amp; Safe Spaces (RA 11313)
+                          ⏱️ 3. Suspension Does Not Pause Membership Time
                         </strong>
-                        Treat all members and staff with respect. Harassment,
-                        intimidation, foul language, or filming others without
-                        consent leads to immediate revocation.
+                        Any disciplinary suspension resulting from rule infractions, misconduct, unsafe behavior, or harassment will NOT stop or extend your subscription clock. Lost days during suspension are forfeited and cannot be credited or refunded.
                       </div>
 
                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
                         <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
-                          🛡️ Safety, Staff Guidance &amp; Health
+                          🏋️ 4. Equipment Responsibility &amp; Proper Care
                         </strong>
-                        Follow floor instructions and posted notices. Stop
-                        immediately and inform staff if you feel sharp pain,
-                        shortness of breath, or dizziness.
+                        Members are responsible for the equipment they use. Handle weights and machines with care, avoid dropping equipment carelessly, and always return all weights, dumbbells, and accessories back to their designated places after each use.
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-200/60 dark:border-zinc-800">
+                        <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">
+                          🤝 5. Safe Spaces (RA 11313) &amp; Health Precaution
+                        </strong>
+                        Treat all members and staff with respect. Unapproved filming, harassment, or verbal abuse is strictly prohibited. Stop exercising and inform staff immediately if you experience dizziness or chest discomfort.
                       </div>
                     </div>
                   </div>
@@ -2511,9 +2638,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <span className="text-[11px] sm:text-xs font-medium text-slate-800 dark:text-slate-200 leading-snug">
                         {isMinor ? (
                           <>
-                            As lawful guardian, I verify all details are
-                            accurate, accept the non-refundable policy, and
-                            consent to the{' '}
+                            As lawful guardian, I certify all details are accurate, acknowledge that fees are <strong>non-refundable</strong> and memberships are <strong>strictly non-transferable</strong> (only the registered applicant may use the pass), understand that renewals stay paused until current plans end, agree that <strong>suspensions do not extend membership time</strong>, and accept <strong>equipment responsibility and returning items after use</strong> under the{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
@@ -2533,9 +2658,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           </>
                         ) : (
                           <>
-                            I verify all details are accurate, acknowledge fees
-                            are non-refundable, and agree to obey gym rules
-                            under the{' '}
+                            I certify all details are accurate, acknowledge that payments are <strong>non-refundable</strong> and memberships are <strong>strictly non-transferable</strong> (solely for my personal use), understand that renewals stay paused until active memberships expire, agree that <strong>suspensions do not pause or extend membership duration</strong>, and commit to <strong>using equipment responsibly and returning it after use</strong> under the{' '}
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}

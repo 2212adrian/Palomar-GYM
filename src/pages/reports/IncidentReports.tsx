@@ -176,9 +176,9 @@ export const IncidentReports: React.FC = () => {
 
   // Emergency Contacts State (Palomar Owners & Leadership)
   const [contacts, setContacts] = useState<GymProfileContacts>({
-    name1: 'Staff Ryan (Palomar Management)',
+    name1: 'GYM Family Contact 1 (Palomar Management)',
     number1: '09762607481',
-    name2: 'Admin Wolf (Palomar Owner)',
+    name2: 'GYM Family Contact 2 (Palomar Owner)',
     number2: '09123456789',
   });
 
@@ -345,9 +345,9 @@ export const IncidentReports: React.FC = () => {
       if (error) throw error;
       if (data && isMountedRef.current) {
         setContacts({
-          name1: data.contact_name_1 || 'Staff Ryan (Palomar Management)',
+          name1: data.contact_name_1 || 'GYM Family Contact 1 (Palomar Management)',
           number1: data.contact_number_1 || '09762607481',
-          name2: data.contact_name_2 || 'Admin Wolf (Palomar Owner)',
+          name2: data.contact_name_2 || 'GYM Family Contact 2 (Palomar Owner)',
           number2: data.contact_number_2 || '09123456789',
         });
       }

@@ -7,6 +7,8 @@ import { useBackupSafetyStore } from '../../stores/useBackupSafetyStore';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import { useNavbarStore } from '../../stores/useNavbarStore';
+import { createPortal } from 'react-dom';
 import { SalesDialog } from '../sales/components/SalesDialog';
 import { LogbookRecordAttendance } from '../logbook/components/LogbookRecordAttendance';
 import { SalesManager } from './SystemInformation/SalesManager';
@@ -82,6 +84,7 @@ export const DatabaseBackup: React.FC = () => {
   // SuperAdmin Access Control & Terminal States
   const { user, profile } = useAuthStore() as any;
   const { activeSession } = useCashSessionStore();
+  const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
   const isSuperAdminOnly = useMemo(() => {
     return isSuperAdmin(user?.email || profile?.email);
@@ -1480,10 +1483,10 @@ export const DatabaseBackup: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-3">
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               SAVE TODAY'S BACKUP
@@ -1587,7 +1590,7 @@ export const DatabaseBackup: React.FC = () => {
         {/* Filter and Search Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 bg-(--bg-card) p-3 sm:p-4 rounded-2xl border border-(--border-color)">
           {/* Exposed Filter Segment Buttons */}
-          <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-(--bg-page) border border-(--border-color) rounded-xl">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none p-1 bg-(--bg-page) border border-(--border-color) rounded-xl">
             <button
               type="button"
               onClick={() => setSelectedTypeFilter('auto')}
@@ -2305,6 +2308,56 @@ export const DatabaseBackup: React.FC = () => {
           }}
         />
       )}
+
+      {/* MOBILE STICKY BOTTOM DOCK ABOVE NAVBAR */}
+      {mobileMainTab === 'backups' &&
+        createPortal(
+          <div
+            style={{ position: 'fixed' }}
+            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[195] shadow-2xl transition-all duration-300 ease-in-out ${
+              isNavFloatingOpen
+                ? 'translate-y-24 opacity-0 pointer-events-none'
+                : 'translate-y-0 opacity-100 pointer-events-auto'
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
+              <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 shrink-0">
+                <Database className="w-3.5 h-3.5" />
+                <span className="text-[11px]">{allBackupsCount} Backups</span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 truncate">
+                <span className="text-[11px] font-mono truncate">
+                  {autoBackupsCount}/3 Auto
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={fetchBackups}
+                disabled={isLoading}
+                className="w-9 h-9 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-500 dark:text-slate-400 hover:text-(--color-text) flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                title="Refresh Backups"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>SAVE BACKUP</span>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Modal: Create Backup */}
       <Modal

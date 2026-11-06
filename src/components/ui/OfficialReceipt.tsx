@@ -93,10 +93,10 @@ interface OfficialReceiptProps {
   isLoading?: boolean;
 }
 
-const DEFAULT_GYM_NAME = 'WOLF PALOMAR GYM';
+const DEFAULT_GYM_NAME = 'Wolf Palomar GYM Muaythai Boxing';
 const DEFAULT_GYM_ADDRESS =
-  '123 SAMPLE STREET, BARANGAY CENTRAL, QUEZON CITY, METRO MANILA';
-const DEFAULT_CONTACTS = 'STAFF CONTACT: 09762607481 / 09123456789';
+  '6B Judge A. Roldan St., Navotas City, Metro Manila';
+const DEFAULT_CONTACTS = 'STAFF CONTACT: 09098893819 / 09054380792';
 const DEFAULT_LOGO = '/favicon.svg';
 
 const RECEIPT_TITLES: Record<

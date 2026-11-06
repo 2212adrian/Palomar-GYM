@@ -28,6 +28,9 @@ import {
   Copy,
   Check,
   Lock,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -41,7 +44,9 @@ import { useResponsiveItemsPerPage } from '../../../lib/useResponsiveItemsPerPag
 import { registrationService, settingsService } from '../memberService';
 import type { OnlineRegistration } from '../../../types/members';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useAuthStore } from '../../../stores/authStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
+import { buildAppUrl } from '../../../lib/appUrl';
 
 interface OnlineQueueProps {
   onApproveLaunchWizard: (reg: OnlineRegistration) => void;
@@ -82,6 +87,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     useState<boolean>(false);
   const [isRefreshingArchived, setIsRefreshingArchived] =
     useState<boolean>(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState<string>('');
+  const [mobilePage, setMobilePage] = useState<number>(1);
 
   // Consolidated Multi-Stacked Rejection State
   const [stagedRejections, setStagedRejections] = useState<
@@ -92,6 +99,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   const itemsPerPage = useResponsiveItemsPerPage();
   const { isSessionOpen } = useCashSessionStore();
+  const { profile, user } = useAuthStore();
+  const currentActor = profile?.username || user?.email || 'System';
   const { isBatterySaver } = useBatterySaver();
 
   const fetchQueue = useCallback(async () => {
@@ -146,13 +155,38 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     );
   }, [queue, pendingRejectIds]);
 
+  const filteredMobileQueue = useMemo(() => {
+    if (!mobileSearchQuery.trim()) return pendingQueue;
+    const q = mobileSearchQuery.toLowerCase().trim();
+    return pendingQueue.filter(
+      (item) =>
+        item.full_name?.toLowerCase().includes(q) ||
+        item.id?.toLowerCase().includes(q) ||
+        item.phone?.toLowerCase().includes(q) ||
+        item.email?.toLowerCase().includes(q) ||
+        item.parent_name?.toLowerCase().includes(q) ||
+        item.emergency_contact_name?.toLowerCase().includes(q)
+    );
+  }, [pendingQueue, mobileSearchQuery]);
+
+  const mobileItemsPerPage = 5;
+  const totalMobilePages = Math.max(
+    1,
+    Math.ceil(filteredMobileQueue.length / mobileItemsPerPage)
+  );
+
+  const paginatedMobileQueue = useMemo(() => {
+    const startIndex = (mobilePage - 1) * mobileItemsPerPage;
+    return filteredMobileQueue.slice(startIndex, startIndex + mobileItemsPerPage);
+  }, [filteredMobileQueue, mobilePage, mobileItemsPerPage]);
+
   // Handle Archive Action (Exempts ticket from daily midnight purge)
   const handleArchiveRegistration = async (reg: OnlineRegistration) => {
     try {
       await registrationService.archive(
         reg.id,
         'Archived by staff to prevent daily purge',
-        'Admin Staff'
+        currentActor
       );
       toast.success(
         `Archived ${reg.full_name} (${reg.id}). Exempt from daily purges.`
@@ -169,7 +203,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   // Handle Restore Action from Archived Tickets Modal
   const handleRestoreRegistration = async (reg: OnlineRegistration) => {
     try {
-      await registrationService.restore(reg.id, 'Admin Staff');
+      await registrationService.restore(reg.id, currentActor);
       toast.success(`Restored ${reg.full_name} (${reg.id}) to active queue.`);
       await Promise.all([fetchQueue(), fetchArchived()]);
     } catch (err: any) {
@@ -194,7 +228,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         await registrationService.reject(
           targetReg.id,
           'Staff Rejected via Queue',
-          'Admin Staff'
+          currentActor
         );
         toast.info(`Registration ticket for ${targetReg.full_name} rejected.`);
         await fetchQueue();
@@ -207,7 +241,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         setStagedRejections((prev) => prev.filter((r) => r.id !== id));
       }
     },
-    [fetchQueue, selectedReg?.id]
+    [fetchQueue, selectedReg?.id, currentActor]
   );
 
   const handleUndoReject = (id: string) => {
@@ -237,26 +271,26 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
       if (stagedRejectionsRef.current.length > 0) {
         stagedRejectionsRef.current.forEach((reg) => {
           registrationService
-            .reject(reg.id, 'Staff Rejected via Queue', 'Admin Staff')
+            .reject(reg.id, 'Staff Rejected via Queue', currentActor)
             .catch(console.error);
         });
       }
     };
-  }, []);
+  }, [currentActor]);
 
-  const ORIGINAL_REGISTRATION_URL = 'https://wolfpalomar.vercel.app/register';
+  const registrationPortalUrl = useMemo(() => buildAppUrl('/register'), []);
 
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleOpenRegistrationPortal = () => {
-    window.open(ORIGINAL_REGISTRATION_URL, '_blank');
+    window.open(registrationPortalUrl, '_blank');
   };
 
   const handleCopyRegistrationLink = async () => {
     try {
-      await navigator.clipboard.writeText(ORIGINAL_REGISTRATION_URL);
+      await navigator.clipboard.writeText(registrationPortalUrl);
       setCopiedLink(true);
-      toast.success(`Copied: ${ORIGINAL_REGISTRATION_URL}`);
+      toast.success(`Copied: ${registrationPortalUrl}`);
       setTimeout(() => setCopiedLink(false), 2500);
     } catch {
       toast.error('Failed to copy link');
@@ -268,7 +302,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     if (!printWindow) return;
 
     const settings = await settingsService.load();
-    const portalUrl = ORIGINAL_REGISTRATION_URL;
+    const portalUrl = registrationPortalUrl;
     const qrImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(portalUrl)}`;
 
     printWindow.document.write(`
@@ -454,7 +488,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
             <div class="footer-tag">WOLF PALOMAR FITNESS • EST. 2026</div>
             <div style="margin-top: 14px; font-size: 11px; font-family: monospace; color: #123c73; font-weight: bold; letter-spacing: 0.5px;">
-              Portal Link: ${ORIGINAL_REGISTRATION_URL}
+              Portal Link: ${portalUrl}
             </div>
           </div>
         </body>
@@ -769,7 +803,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         </div>
       </div>
 
-      {/* Main Table View */}
+      {/* Main Content Area */}
       {pendingQueue.length === 0 ? (
         <div className="p-12 text-center bg-(--bg-card) border border-(--border-color) rounded-3xl space-y-3 shadow-xs">
           <Clock className="w-8 h-8 text-slate-400 mx-auto animate-pulse" />
@@ -809,28 +843,241 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           )}
         </div>
       ) : (
-        <div className="p-1 bg-(--bg-card) border border-(--border-color) rounded-3xl overflow-hidden shadow-xs">
-          <Table<OnlineRegistration>
-            data={pendingQueue}
-            columns={columns}
-            searchKeys={[
-              'full_name',
-              'id',
-              'phone',
-              'email',
-              'parent_name',
-              'emergency_contact_name',
-            ]}
-            searchPlaceholder="Search pre-registrations by name, ID, phone, email..."
-            itemsPerPage={itemsPerPage}
-            loading={false}
-          />
-        </div>
+        <>
+          {/* Mobile Responsive Cards View */}
+          <div className="block sm:hidden space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={mobileSearchQuery}
+                onChange={(e) => {
+                  setMobileSearchQuery(e.target.value);
+                  setMobilePage(1);
+                }}
+                placeholder="Search pre-registrations..."
+                className="w-full pl-10 pr-9 py-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-(--color-text)"
+              />
+              {mobileSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileSearchQuery('');
+                    setMobilePage(1);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {paginatedMobileQueue.length === 0 ? (
+              <div className="p-8 text-center bg-(--bg-card) border border-(--border-color) rounded-2xl text-xs text-slate-400">
+                No tickets match your search.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {paginatedMobileQueue.map((item) => {
+                  const age = calculateAge(item.birthday);
+                  const isMinor = age >= 12 && age < 18;
+                  const isRestricted = age < 12;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-2xl bg-(--bg-card) border border-(--border-color) space-y-3 shadow-xs text-left"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-heading text-xs font-bold border border-slate-200 dark:border-white/5 shrink-0">
+                            {item.full_name[0]}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                              {item.full_name}
+                            </h4>
+                            <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                              {item.id} • {item.gender}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="font-bold text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          {item.preferred_plan}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        {isRestricted ? (
+                          <span className="text-[8px] font-mono bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded font-bold">
+                            RESTRICTED (&lt;12 YRS)
+                          </span>
+                        ) : isMinor ? (
+                          <span className="text-[8px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold">
+                            MINOR ({age} YRS)
+                          </span>
+                        ) : (
+                          <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
+                            ADULT ({age} YRS)
+                          </span>
+                        )}
+
+                        {item.parent_consent_required ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <ShieldCheck className="w-2.5 h-2.5 text-amber-500 dark:text-amber-400" />
+                            Parent Consent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5">
+                            Self-Certified
+                          </span>
+                        )}
+
+                        <span className="text-[9px] font-mono text-slate-400 ml-auto">
+                          {new Date(item.submitted_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200/60 dark:border-white/5 grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Phone
+                          </span>
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200 block truncate">
+                            {item.phone}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Emergency
+                          </span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                            {item.emergency_contact_name || item.parent_name || 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-(--border-color)">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReg(item)}
+                          className="p-2 flex-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 rounded-xl cursor-pointer transition-colors border border-slate-200 dark:border-white/5 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+                          title="Preview details"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveRegistration(item)}
+                          className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/20 cursor-pointer transition-colors"
+                          title="Archive ticket"
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleInitiateReject(item)}
+                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl border border-red-500/20 cursor-pointer transition-colors"
+                          title="Reject submission"
+                        >
+                          <XSquare className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isSessionOpen) {
+                              toast.warning(
+                                'Cannot approve registration: Cash drawer session is closed. Open a cash session in Cash Management first.',
+                                { toastId: 'queue-session-closed' }
+                              );
+                              return;
+                            }
+                            onApproveLaunchWizard(item);
+                          }}
+                          disabled={!isSessionOpen}
+                          className={`py-2 px-3 font-bold rounded-xl font-heading text-[10px] tracking-wider uppercase flex items-center justify-center gap-1 border-none transition-all shadow-xs ${
+                            !isSessionOpen
+                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-50 cursor-not-allowed'
+                              : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
+                          }`}
+                        >
+                          {!isSessionOpen ? (
+                            <Lock className="w-3.5 h-3.5" />
+                          ) : (
+                            <CheckSquare className="w-3.5 h-3.5" />
+                          )}
+                          <span>Approve</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {totalMobilePages > 1 && (
+              <div className="flex items-center justify-between pt-2 px-1">
+                <button
+                  type="button"
+                  onClick={() => setMobilePage((p) => Math.max(1, p - 1))}
+                  disabled={mobilePage === 1}
+                  className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                </button>
+                <span className="text-[11px] font-mono text-slate-500">
+                  Page {mobilePage} of {totalMobilePages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobilePage((p) => Math.min(totalMobilePages, p + 1))
+                  }
+                  disabled={mobilePage === totalMobilePages}
+                  className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40"
+                >
+                  Next <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden sm:block p-1 bg-(--bg-card) border border-(--border-color) rounded-3xl overflow-hidden shadow-xs">
+            <Table<OnlineRegistration>
+              data={pendingQueue}
+              columns={columns}
+              searchKeys={[
+                'full_name',
+                'id',
+                'phone',
+                'email',
+                'parent_name',
+                'emergency_contact_name',
+              ]}
+              searchPlaceholder="Search pre-registrations by name, ID, phone, email..."
+              itemsPerPage={itemsPerPage}
+              loading={false}
+            />
+          </div>
+        </>
       )}
 
       {/* MOBILE FLOATING ACTION DOCK */}
-      {createPortal(
-        <div className="sm:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3 z-[190] shadow-2xl">
+      {!selectedReg &&
+        !isArchiveModalOpen &&
+        createPortal(
+          <div className="sm:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3 z-[190] shadow-2xl">
           {/* Status Indicator */}
           <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
             <Clock className="w-4 h-4 text-blue-500 shrink-0" />
@@ -913,7 +1160,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
       {/* ARCHIVED TICKETS RECYCLE BIN MODAL */}
       {isArchiveModalOpen &&
         createPortal(
-          <div className="fixed inset-0 z-130 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
             <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-2xl sm:max-w-3xl shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto text-left">
               {/* Modal Header */}
               <div className="flex justify-between items-center border-b border-(--border-color) pb-3 select-none">
@@ -1008,7 +1255,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
       {/* DETAILED PREVIEW MODAL */}
       {selectedReg &&
         createPortal(
-          <div className="fixed inset-0 z-130 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/75 backdrop-blur-md">
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
             <div className="bg-(--bg-card) border border-(--border-color) p-6 rounded-3xl w-full max-w-xl shadow-2xl space-y-4 text-left max-h-[85vh] overflow-y-auto font-body">
               {/* Modal Header */}
               <div className="flex justify-between items-center border-b border-(--border-color) pb-3 select-none">

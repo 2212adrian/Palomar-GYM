@@ -16,7 +16,6 @@ import {
   Smartphone,
   Monitor,
   AlertCircle,
-  ExternalLink,
   Sparkles,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -42,20 +41,11 @@ import { supabase } from '../../../lib/supabase/client';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNotificationStore } from '../../../stores/useNotificationStore';
-import { usePWAInstall } from '../../../hooks/usePWAInstall';
 
 export const SystemInformation: React.FC = () => {
   const BUNDLED_VERSION = String(pkg.version || '0.0.0').replace(/^v/i, '');
   const isNativePlatform = Capacitor.isNativePlatform();
   const runtimePlatform = Capacitor.getPlatform();
-  const { isInstalled: isPwaInstalled } = usePWAInstall();
-  const isStandalonePWA =
-    isPwaInstalled ||
-    (typeof window !== 'undefined' &&
-      (window.matchMedia('(display-mode: standalone)').matches ||
-        window.matchMedia('(display-mode: window-controls-overlay)').matches ||
-        (window.navigator as any).standalone === true));
-  const isAlreadyPwaOrCapacitor = isNativePlatform || isStandalonePWA;
 
   const [installedVersion, setInstalledVersion] =
     useState<string>(BUNDLED_VERSION);
@@ -513,19 +503,29 @@ export const SystemInformation: React.FC = () => {
               </div>
             )}
 
+            {/* Version Status Summary Banner */}
+            {!isUpdateAvailable && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <div className="text-left">
+                  <p className="text-xs font-heading font-black uppercase tracking-wider text-emerald-500">
+                    Your version is up to date
+                  </p>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    Version v{installedVersion} is currently the newest available release.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Update & Action Buttons */}
-            <div className="space-y-2.5">
-              {(isUpdateAvailable ||
-                (!isAlreadyPwaOrCapacitor && hasValidDownloadUrl)) && (
+            <div className="space-y-2">
+              {isUpdateAvailable && (
                 <button
                   type="button"
                   onClick={handleUpdateToLatest}
                   disabled={isUpdatingApp}
-                  className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md ${
-                    isUpdateAvailable
-                      ? 'bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  }`}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white"
                 >
                   <Download
                     className={`w-4 h-4 ${isUpdatingApp ? 'animate-bounce' : ''}`}
@@ -535,38 +535,33 @@ export const SystemInformation: React.FC = () => {
                       ? downloadProgress
                         ? `Updating (${downloadProgress.percent}%)...`
                         : 'Updating to Latest...'
-                      : isUpdateAvailable
-                        ? `Update to Latest (v${remoteVersion})`
-                        : `Download Latest Android APK (v${remoteVersion})`}
+                      : `Update to Latest (v${remoteVersion})`}
                   </span>
                 </button>
               )}
 
-              {/* Direct Browser Download Fallback when on Native Android and an update is available */}
-              {isNativePlatform &&
-                isUpdateAvailable &&
-                hasValidDownloadUrl &&
-                latestRelease && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      triggerDirectDownload(
-                        latestRelease.downloadUrl,
-                        latestRelease.fileName
-                      )
-                    }
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-(--color-text) rounded-lg text-[11px] font-heading tracking-wider uppercase transition-all cursor-pointer"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Direct Browser APK Download (Fallback)</span>
-                  </button>
-                )}
+              {/* Install Android App Option */}
+              {hasValidDownloadUrl && latestRelease && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    triggerDirectDownload(
+                      latestRelease.downloadUrl,
+                      latestRelease.fileName
+                    )
+                  }
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span>Download Android App</span>
+                </button>
+              )}
 
               <button
                 type="button"
                 onClick={handleReloadCore}
                 disabled={isReloadingCore || isLoadingRelease}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-lg text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60"
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-xl text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${
@@ -575,94 +570,93 @@ export const SystemInformation: React.FC = () => {
                 />
                 <span>
                   {isReloadingCore
-                    ? 'Checking Updates & Reloading...'
-                    : 'Check for Updates & Reload Core'}
+                    ? 'Checking for Updates...'
+                    : 'Check for Updates'}
                 </span>
               </button>
             </div>
           </div>
 
           {/* Legal Documentation & Developer Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-4">
+          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-3">
             <div>
               <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
                 Documentation &amp; Support
               </h3>
-              <p className="text-xs text-slate-400 mt-1 font-semibold">
-                System user agreement, facility terms, privacy policy, and
-                developer contact details.
+              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
+                Facility terms, agreements, and support contacts.
               </p>
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-(--border-color)">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color)">
               <button
                 type="button"
                 onClick={() => setActiveModal('agreement')}
-                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3">
-                  <FileText className="w-4 h-4 text-indigo-500 dark:text-red-400" />
-                  <span className="text-xs font-bold text-(--color-text)">
-                    User Agreement
+                <div className="flex items-center gap-2 truncate">
+                  <FileText className="w-3.5 h-3.5 text-indigo-500 dark:text-red-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Agreement
                   </span>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveModal('terms')}
-                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3">
-                  <Scale className="w-4 h-4 text-blue-500" />
-                  <span className="text-xs font-bold text-(--color-text)">
-                    Terms of Service
+                <div className="flex items-center gap-2 truncate">
+                  <Scale className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Terms
                   </span>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveModal('privacy')}
-                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span className="text-xs font-bold text-(--color-text)">
-                    Privacy Policy
+                <div className="flex items-center gap-2 truncate">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Privacy
                   </span>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveModal('developer')}
-                className="w-full p-3 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3">
-                  <Code2 className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-bold text-(--color-text)">
-                    About Developer
+                <div className="flex items-center gap-2 truncate">
+                  <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Developer
                   </span>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
             </div>
           </div>
         </div>
 
         {/* RIGHT COLUMN: Service Health & Resource Utilization (7 Cols) */}
-        <div className="lg:col-span-7 space-y-6">
+        <div className="lg:col-span-7 space-y-4 sm:space-y-6">
           {/* Core Services Operational Status Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-4">
+          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-3">
             <div>
               <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
                 Core Services Status
               </h3>
-              <p className="text-xs text-slate-400 mt-1 font-semibold">
+              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
                 Operational integrity across active application microservices.
               </p>
             </div>
@@ -684,77 +678,73 @@ export const SystemInformation: React.FC = () => {
           </div>
 
           {/* Infrastructure & Resource Allocation Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
+          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-4">
             <div>
               <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
                 Resource Utilization
               </h3>
-              <p className="text-xs text-slate-400 mt-1 font-semibold">
+              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
                 Database volume allocations and cloud asset storage pools.
               </p>
             </div>
 
-            {/* Database Utilization Gauge */}
-            <div className="space-y-2 pt-2 border-t border-(--border-color)">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-blue-500" />
-                  Database Utilization
-                </span>
-                <span className="text-[10px] font-mono font-bold text-slate-400">
-                  {dbUsagePercent.toFixed(1)}%
-                </span>
-              </div>
-              <div>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-base font-heading font-black text-(--color-text)">
-                    {formatBytes(totalDbBytes)}
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-(--border-color)">
+              {/* Database Utilization Gauge */}
+              <div className="space-y-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 truncate">
+                    <Database className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    Database
                   </span>
-                  <span className="text-xs font-mono text-slate-400">
-                    / {formatBytes(maxDbBytes)}
+                  <span className="text-[10px] font-mono font-bold text-slate-400">
+                    {dbUsagePercent.toFixed(1)}%
                   </span>
                 </div>
-                <div className="w-full h-2 bg-(--bg-page) border border-(--border-color) rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${dbUsagePercent}%` }}
-                  />
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5 truncate">
+                    <span className="text-sm font-heading font-black text-(--color-text)">
+                      {formatBytes(totalDbBytes)}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      / {formatBytes(maxDbBytes)}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-(--bg-card) border border-(--border-color) rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${dbUsagePercent}%` }}
+                    />
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                  {dbUsagePercent.toFixed(1)}% of 500 MB capacity utilized
-                </p>
               </div>
-            </div>
 
-            {/* Storage Buckets Gauge */}
-            <div className="space-y-2 pt-4 border-t border-(--border-color)">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Cloud className="w-3.5 h-3.5 text-purple-500" />
-                  Storage Buckets
-                </span>
-                <span className="text-[10px] font-mono font-bold text-slate-400">
-                  {storageUsagePercent.toFixed(1)}%
-                </span>
-              </div>
-              <div>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-base font-heading font-black text-(--color-text)">
-                    {formatBytes(totalStorageBytes)}
+              {/* Storage Buckets Gauge */}
+              <div className="space-y-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 truncate">
+                    <Cloud className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                    Storage
                   </span>
-                  <span className="text-xs font-mono text-slate-400">
-                    / {formatBytes(maxStorageBytes)}
+                  <span className="text-[10px] font-mono font-bold text-slate-400">
+                    {storageUsagePercent.toFixed(1)}%
                   </span>
                 </div>
-                <div className="w-full h-2 bg-(--bg-page) border border-(--border-color) rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-purple-500 rounded-full transition-all duration-500"
-                    style={{ width: `${storageUsagePercent}%` }}
-                  />
+                <div>
+                  <div className="flex items-baseline justify-between mb-1.5 truncate">
+                    <span className="text-sm font-heading font-black text-(--color-text)">
+                      {formatBytes(totalStorageBytes)}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      / {formatBytes(maxStorageBytes)}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-(--bg-card) border border-(--border-color) rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                      style={{ width: `${storageUsagePercent}%` }}
+                    />
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                  {storageUsagePercent.toFixed(1)}% of 1 GB bucket pool utilized
-                </p>
               </div>
             </div>
           </div>
