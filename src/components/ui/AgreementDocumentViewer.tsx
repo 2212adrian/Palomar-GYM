@@ -36,14 +36,16 @@ interface LiveGymLegalProfile {
   updatedAt: string | null;
 }
 
+export const LEGAL_TERMS_EFFECTIVE_DATE = '06 Nov. 2026';
+
 const DEFAULT_LEGAL_PROFILE: LiveGymLegalProfile = {
-  gymName: 'Wolf Palomar Gym',
-  gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
-  contactName1: 'Staff Ryan',
-  contactNumber1: '09762607481',
-  contactName2: 'Admin Wolf',
-  contactNumber2: '09123456789',
-  emailAddress: 'contact@wolfpalomargym.com',
+  gymName: 'Wolf Palomar Gym Muaythai Boxing',
+  gymAddress: '6B Judge A. Roldan St., Navotas City, Metro Manila, Philippines',
+  contactName1: 'GYM Family Contact 1',
+  contactNumber1: '09098893819',
+  contactName2: 'GYM Family Contact 2',
+  contactNumber2: '09054380792',
+  emailAddress: 'wolf.palomar@gmail.com',
   updatedAt: null,
 };
 
@@ -196,13 +198,7 @@ export const AgreementDocumentViewer: React.FC<
     onClose();
   };
 
-  const formattedEffectiveDate = gymProfile.updatedAt
-    ? new Date(gymProfile.updatedAt).toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      })
-    : '30 Aug 2026';
+  const formattedEffectiveDate = LEGAL_TERMS_EFFECTIVE_DATE;
 
   return createPortal(
     <div
@@ -334,22 +330,13 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     <div className="flex gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-red-500/10 border border-indigo-200 dark:border-red-500/20">
       <FileText className="w-5 h-5 shrink-0 text-indigo-600 dark:text-red-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        This User Agreement is a binding electronic agreement between you and{' '}
-        <strong>{profile.gymName}</strong> governing your access to and use of
-        the Gym Management System, including the Online Pre-Registration Portal,
-        Member QR &amp; Physical Access Cards, Attendance Logbook, Point-of-Sale
-        (POS) Register, and the Capacitor Android &amp; Desktop Web (PWA)
-        applications.
+        This User Agreement is a binding electronic contract between you and{' '}
+        <strong>{profile.gymName}</strong> governing your membership, physical access to the facility, and use of all digital systems including the Online Pre-Registration Portal, Member QR &amp; Physical Access Cards, Logbook, and POS Registers.
       </p>
     </div>
 
     <Highlight>
-      <strong>Binding Electronic Consent (RA 8792):</strong> Under the
-      Electronic Commerce Act of 2000 (RA 8792), checking the agreement box,
-      clicking &quot;Accept&quot;, drawing a digital signature, or signing into
-      an authorized terminal constitutes your valid, binding electronic
-      acknowledgment of this User Agreement, the Terms &amp; Conditions, and the
-      Privacy Policy.
+      <strong>Binding Operational &amp; Legal Policies:</strong> (1) All fees and memberships are 100% non-refundable and strictly non-transferable to any other person; (2) Running memberships cannot be frozen or paused for personal reasons, but early renewals stay queued and paused until the current membership ends; (3) Disciplinary suspensions do not pause or extend membership duration; and (4) Members are required to use all equipment responsibly and return items to their proper places after use.
     </Highlight>
 
     <Section title="1. Covered Platforms & System Users">
@@ -409,15 +396,9 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
       </p>
     </Section>
 
-    <Section title="5. POS Transactions, Cash Drawer Sessions & Audit Trail">
+    <Section title="5. POS Transactions, Non-Refundable & Non-Freezable Rule">
       <p>
-        Every membership subscription, walk-in check-in fee, product sale,
-        inventory stock adjustment, cash float opening/closing, and incident
-        report is bound to active Cash Drawer Sessions and permanently recorded
-        with server-synchronized Philippine Standard Time (Asia/Manila) in the
-        immutable system audit log. All membership and card fees paid at the
-        front desk are final and non-refundable, except where mandatory consumer
-        rights apply under the Consumer Act of the Philippines (RA 7394).
+        Every membership subscription, walk-in check-in fee, card issuance, and product sale is tied to active Cash Drawer Sessions and recorded in immutable audit logs under Philippine Standard Time (Asia/Manila). All membership passes, card issuance fees, and store purchases are strictly final, non-refundable, non-creditable, and non-freezable upon completion of payment at the front desk.
       </p>
     </Section>
 
@@ -459,46 +440,37 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     <div className="flex gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
       <Scale className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        These rules keep {profile.gymName} safe, fair, and welcoming. They apply
-        to every member, guest, staff member, and parent or guardian agreeing
-        for a minor.
+        These rules govern access and safety at {profile.gymName}. By registering, paying, or entering the facility, you accept these terms in full.
       </p>
     </div>
 
     <Highlight>
-      <strong>Important:</strong> Membership payments are non-refundable after
-      payment, except where Philippine law requires a refund. Please check the
-      plan, duration, and total before paying.
+      <strong>Mandatory Facility Notice:</strong>
+      <ul className="list-disc list-inside mt-1 space-y-1 font-semibold">
+        <li><strong>Strictly Non-Refundable:</strong> All payments for subscriptions, passes, and cards are final and non-refundable once paid.</li>
+        <li><strong>Strictly Non-Transferable:</strong> Memberships and access credentials belong exclusively to the subscribed owner. They cannot be shared, lent, transferred, or used by anyone else; doing so constitutes a severe violation resulting in immediate revocation without refund.</li>
+        <li><strong>Strictly Non-Freezable:</strong> Memberships run on consecutive calendar days; they cannot be paused, frozen, or put on hold for illness, work, exams, or travel.</li>
+        <li><strong>Subscription Renewals &amp; Extensions:</strong> If you renew or purchase an extended membership while an existing membership is currently running, your current membership continues to run without interruption, while the renewed extension stays paused and will only activate once the running subscription has expired.</li>
+        <li><strong>Suspensions Do Not Pause Membership:</strong> If suspended for rule violations, your membership validity clock keeps running without extension or refund.</li>
+        <li><strong>Responsible Equipment Use:</strong> Members must be responsible with all gym equipment, use it with care, and return every piece of equipment, weight, and accessory back to its designated place after use.</li>
+      </ul>
     </Highlight>
 
-    <Section title="1. Safe and respectful gym use">
+    <Section title="1. Responsible Equipment Use & Care">
       <p>
-        Use equipment only as intended and within your ability. Return weights,
-        attachments, benches, and other equipment to their proper place after
-        use. Follow staff instructions, posted safety notices, and reasonable
-        gym procedures. Ask staff before using unfamiliar equipment.
+        Members are expected to be responsible for all gym equipment during their workout. Use machinery, dumbbells, bars, and attachments safely, avoid dropping or slamming weights carelessly, and always return every piece of equipment and weight back to its proper designated location immediately after use so other members can find and use it.
       </p>
     </Section>
 
-    <Section title="2. Damage, theft, and prohibited conduct">
+    <Section title="2. Membership Validity, Non-Transferable, Non-Freezable Policy & Queued Renewals">
       <p>
-        Do not steal, damage, misuse, hide, or remove gym property. Do not
-        threaten, harass, fight with, record others without permission, or
-        endanger anyone. A member may be responsible for damage caused by
-        intentional misuse or carelessness. Serious or repeated violations can
-        lead to removal, suspension, cancellation, and referral to the proper
-        authorities.
+        Memberships cover a continuous period of calendar days (30 days for Monthly; 365 days for Yearly) and are strictly non-transferable. Subscriptions and cards are personal to the registered subscriber and may never be shared, loaned, or used by another person. Allowing someone else to use your account or card, or attempting to check in under another person's name, is a contractual violation resulting in immediate membership cancellation without refund. Memberships cannot be frozen, paused, or extended for travel, illness, or personal scheduling. When an active member renews or buys an extension, their currently active membership continues to run normally, and the new extension remains paused in queue, automatically beginning only after the active subscription reaches its expiration date.
       </p>
     </Section>
 
-    <Section title="3. Payments, subscriptions, and refunds">
+    <Section title="3. Facility Conduct, Safety & Suspension Clock Policy">
       <p>
-        Before payment, check the selected plan, price, duration, and added
-        fees. Memberships are personal and cannot be transferred or shared
-        without written gym approval. Fees are final and non-refundable after
-        payment, except where applicable Philippine consumer law requires
-        otherwise. This policy does not remove rights under the Consumer Act of
-        the Philippines (RA 7394).
+        Management reserves the right to suspend or terminate facility privileges for property damage, abusive language, filming others without consent, harassment, or refusal to comply with staff directives or gym etiquette. If a member is suspended for disciplinary reasons, the membership countdown clock continues to run normally. No days lost during a suspension will be refunded, credited, or added back to the subscription.
       </p>
     </Section>
 
@@ -568,73 +540,54 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     <div className="flex gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
       <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        We collect only the information reasonably needed to register members,
-        provide gym services, manage payments and access, and keep{' '}
-        {profile.gymName} safe.
+        {profile.gymName} is committed to safeguarding your personal data in strict compliance with the <strong>Data Privacy Act of 2012 (RA 10173)</strong>, the <strong>Safe Spaces Act (RA 11313)</strong>, and applicable Philippine health and safety regulations.
       </p>
     </div>
 
     <Highlight>
-      <strong>Your privacy:</strong> The Data Privacy Act of 2012 (RA 10173)
-      gives you rights over your personal information. You may ask questions or
-      make a request through the gym’s published contact details.
+      <strong>Commitment to Confidentiality &amp; Vital Safety:</strong> Your information is handled under the core principles of <strong>Transparency, Legitimate Purpose, and Proportionality</strong>. We never sell your personal data. Specific identifiers—such as your photo, home address, and In Case of Emergency (ICE) contacts—are gathered strictly for physical safety, identity verification, and medical emergency assistance.
     </Highlight>
 
-    <Section title="1. Information we collect">
+    <Section title="1. Identity Verification &amp; Member Photographs">
       <p>
-        This can include your name, contact details, date of birth, address,
-        emergency contact, membership and payment details, attendance records,
-        and—for minors—parent or guardian details and consent. We collect it
-        from you or your lawful parent or guardian.
+        We capture and store a facial photograph of every applicant during enrollment or digital registration. In accordance with Section 12 of RA 10173 and facility safety rules, this photo is used exclusively to: (a) print your official physical membership card; (b) verify your visual identity at front-desk scanner checkpoints upon every entry; and (c) prevent unauthorized entry, card-sharing fraud, or impersonation. Member photos are stored in secured, access-restricted cloud storage and are never published, shared with third parties, or used for promotional materials without your separate, explicit written consent.
       </p>
     </Section>
 
-    <Section title="2. Why we use it">
+    <Section title="2. In Case of Emergency (ICE) Data &amp; Vital Medical Safety">
       <p>
-        We use your information to process registration and subscriptions,
-        contact you about your membership, verify access, issue receipts,
-        respond to incidents, meet legal obligations, and operate the gym. We do
-        not sell personal information.
+        Exercise carries inherent physical demands. Under Section 12(e) and Section 13(c) of RA 10173 (processing necessary to protect the life and health of the data subject), we collect designated In Case of Emergency (ICE) names, relationship details, and active phone numbers. In the event of acute medical distress, fainting, sudden cardiac symptoms, or accidental injury on the gym floor, this information allows management and first-aid staff to instantly alert your family, contact emergency physicians, and coordinate ambulance or paramedic transfer.
       </p>
     </Section>
 
-    <Section title="3. Sharing, security, and records">
+    <Section title="3. Residential Home Address Collection &amp; Purpose">
       <p>
-        Access is limited to authorized staff and service providers who need the
-        information to operate the service. Information may be disclosed when
-        required by law or to protect people, property, or legal rights. We use
-        reasonable safeguards, but no system can promise absolute security.
-        Records are retained only as long as reasonably needed for operations,
-        legal duties, dispute handling, and secure recordkeeping.
+        Your residential street address is gathered exclusively for emergency logistics and legal recordkeeping. In serious medical emergencies requiring hospital transfer, dispatching first responders (such as barangay emergency units or ambulance services) requires precise residential records. For minor applicants (ages 12 to 17), verified home addresses establish guardian residency under parental consent requirements. Your address is treated with strict confidentiality and is accessible only to authorized administrators.
       </p>
     </Section>
 
-    <Section title="4. Your rights under RA 10173">
+    <Section title="4. Technical Safeguards &amp; Data Security">
       <p>
-        You may ask to be informed about, access, correct, or object to
-        processing of your personal data, subject to legal limits. You may raise
-        a privacy concern with the gym and, where applicable, the National
-        Privacy Commission. Withdrawing consent may affect services that need
-        the information to operate.
+        All member profiles, attendance logbook records, digital signatures, and encrypted credentials are protected by industry-standard technical safeguards, including HTTPS SSL encryption, Row Level Security (RLS) database policies, and multi-factor staff authentication. Access is strictly restricted to active administrative staff on duty. Physical documents and digital records are retained only for the active lifecycle of your membership and necessary statutory audit periods, after which they are securely archived or permanently purged.
       </p>
     </Section>
 
-    <Section title="5. Minors, images, and respectful use">
+    <Section title="5. Your Legal Rights under RA 10173">
       <p>
-        A parent or legal guardian provides consent for a minor’s registration.
-        Do not take or share another person’s image or personal information
-        without a lawful basis or permission. The gym follows the privacy
-        principles of transparency, legitimate purpose, and proportionality
-        under RA 10173.
+        As a data subject under Philippine law, you possess the right to: (a) be informed of how your data is handled; (b) request reasonable access to your stored personal information and photographs; (c) dispute and correct inaccurate or outdated information; (d) object to processing outside of mandatory safety and contract fulfillment requirements; and (e) lodge a complaint with the <strong>National Privacy Commission (NPC)</strong> if you believe your privacy rights have been infringed.
       </p>
     </Section>
 
-    <Section title="6. Contact">
+    <Section title="6. Minors, Parental Consent &amp; Respectful Facility Use">
+      <p>
+        For applicants aged 12 to 17, personal information is collected solely with the verified consent and electronic signature of a parent or legal guardian under the Electronic Commerce Act (RA 8792). Taking photos or videos of other gym members without their consent is strictly prohibited inside the facility under the Safe Spaces Act (RA 11313) and will lead to immediate card revocation.
+      </p>
+    </Section>
+
+    <Section title="7. Data Protection Inquiries &amp; Contact">
       <div className="space-y-2">
         <p>
-          For a privacy request or question, contact {profile.gymName} through
-          the contact details below or at the gym. Please provide enough detail
-          for us to verify and respond to your request.
+          To review, update, or inquire about your stored personal records, photos, or emergency details, please contact {profile.gymName}&apos;s administration at the front desk or via our published contact lines:
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
           <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
@@ -665,8 +618,7 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     </Section>
 
     <p className="text-[10px] text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-white/10 pt-3">
-      This is a plain-language privacy notice, not a substitute for a full legal
-      review. It is designed around RA 10173 and its implementing rules.
+      This Privacy Policy operates under Republic Act No. 10173 (Data Privacy Act of 2012) and its Implementing Rules and Regulations.
     </p>
   </div>
 );

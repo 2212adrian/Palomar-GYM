@@ -60,18 +60,17 @@ interface LiveGymFooterConfig {
 }
 
 const DEFAULT_FOOTER_GYM_CONFIG: LiveGymFooterConfig = {
-  gymName: 'WOLF PALOMAR GYM',
+  gymName: 'Wolf Palomar Gym Muaythai Boxing',
   gymDescription:
     'Welcome to Wolf Palomar Gym, where strength meets endurance. Our state-of-the-art facilities and expert trainers are here to help you achieve your fitness goals.',
-  gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
-  contactName1: 'Staff Ryan',
-  contactNumber1: '09762607481',
-  contactName2: 'Admin Wolf',
-  contactNumber2: '09123456789',
-  emailAddress: 'contact@wolfpalomargym.com',
+  gymAddress: '6B Judge A. Roldan St., Navotas City, Metro Manila, Philippines',
+  contactName1: 'GYM Family Contact 1',
+  contactNumber1: '09098893819',
+  contactName2: 'GYM Family Contact 2',
+  contactNumber2: '09054380792',
+  emailAddress: 'wolf.palomar@gmail.com',
   gymLogo: '',
 };
-
 interface AppFooterProps {
   variant?: 'system' | 'public' | 'register';
   onAcceptAgreement?: () => void;

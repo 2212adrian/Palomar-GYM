@@ -35,11 +35,11 @@ const DEFAULT_GYM_CONFIG = {
   gymDescription:
     'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
   gymAddress: '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
-  contactName1: 'Staff Ryan',
+  contactName1: 'GYM Family Contact 1',
   contactNumber1: '09762607481',
-  contactName2: 'Admin Wolf',
+  contactName2: 'GYM Family Contact 2',
   contactNumber2: '09123456789',
-  emailAddress: 'contact@wolfpalomargym.com',
+  emailAddress: 'wolf.palomar@gmail.com',
   gymLogo: '',
   carouselImages: [] as string[],
 };
@@ -73,6 +73,7 @@ export const GymProfile: React.FC = () => {
   const [carouselImages, setCarouselImages] = useState<string[]>(
     DEFAULT_GYM_CONFIG.carouselImages
   );
+  const [activeTab, setActiveTab] = useState<'info' | 'branding'>('info');
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -406,37 +407,94 @@ export const GymProfile: React.FC = () => {
         </p>
       </div>
 
+      {/* Mobile Responsive Switch Tabs */}
+      <div className="flex lg:hidden p-1 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl select-none">
+        <button
+          type="button"
+          onClick={() => setActiveTab('info')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'info'
+              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Building className="w-3.5 h-3.5" />
+          <span>Gym Information</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('branding')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'branding'
+              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <ImageIcon className="w-3.5 h-3.5" />
+          <span>Branding & Media</span>
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Side: Forms */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
+        {/* Left Side: Gym Information Forms */}
+        <div
+          className={`lg:col-span-6 space-y-6 ${
+            activeTab === 'info' ? 'block' : 'hidden lg:block'
+          }`}
+        >
+          <div className="p-4 sm:p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <Building className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
               Gym Information
             </h3>
 
             <div className="grid gap-4">
-              <div className="grid gap-1.5">
-                <label
-                  htmlFor="gymNameInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  Gym Name
-                </label>
-                {isLoading ? (
-                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                ) : (
-                  <input
-                    id="gymNameInput"
-                    type="text"
-                    value={gymName}
-                    placeholder="Enter business name"
-                    title="Gym Name"
-                    onChange={(e) => setGymName(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
-                )}
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="gymNameInput"
+                    className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                  >
+                    Gym Name
+                  </label>
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="gymNameInput"
+                      type="text"
+                      value={gymName}
+                      placeholder="Enter business name"
+                      title="Gym Name"
+                      onChange={(e) => setGymName(e.target.value)}
+                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
+                </div>
+
+                <div className="grid gap-1.5">
+                  <label
+                    htmlFor="emailAddressInput"
+                    className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                  >
+                    Business Email
+                  </label>
+                  {isLoading ? (
+                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                  ) : (
+                    <input
+                      id="emailAddressInput"
+                      type="email"
+                      value={emailAddress}
+                      placeholder="Enter support email"
+                      title="Business Email"
+                      onChange={(e) => setEmailAddress(e.target.value)}
+                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      required
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-1.5">
@@ -485,135 +543,122 @@ export const GymProfile: React.FC = () => {
                 )}
               </div>
 
-              {/* Two Contacts Section */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 dark:border-white/5 pt-4">
-                <div className="grid gap-1.5">
-                  <label
-                    htmlFor="contactName1Input"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                  >
-                    Contact Name 1
-                  </label>
-                  {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                  ) : (
-                    <input
-                      id="contactName1Input"
-                      type="text"
-                      value={contactName1}
-                      placeholder="E.g., Staff Ryan"
-                      title="Contact Name 1"
-                      onChange={(e) => setContactName1(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                      required
-                    />
-                  )}
+              {/* Two Contacts Section in Compact Two-Column Rows */}
+              <div className="border-t border-slate-200 dark:border-white/5 pt-3.5 space-y-3">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div className="grid gap-1.5">
+                    <label
+                      htmlFor="contactName1Input"
+                      className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                    >
+                      Contact Name 1
+                    </label>
+                    {isLoading ? (
+                      <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                    ) : (
+                      <input
+                        id="contactName1Input"
+                        type="text"
+                        value={contactName1}
+                        placeholder="GYM Contact 1"
+                        title="Contact Name 1"
+                        onChange={(e) => setContactName1(e.target.value)}
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        required
+                      />
+                    )}
+                  </div>
+
+                  <div className="grid gap-1.5">
+                    <label
+                      htmlFor="contactNumber1Input"
+                      className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                    >
+                      Contact Number 1
+                    </label>
+                    {isLoading ? (
+                      <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                    ) : (
+                      <input
+                        id="contactNumber1Input"
+                        type="text"
+                        value={contactNumber1}
+                        placeholder="09762607481"
+                        title="Contact Number 1"
+                        onChange={(e) => setContactNumber1(e.target.value)}
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        required
+                      />
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid gap-1.5">
-                  <label
-                    htmlFor="contactNumber1Input"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                  >
-                    Contact Number 1
-                  </label>
-                  {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                  ) : (
-                    <input
-                      id="contactNumber1Input"
-                      type="text"
-                      value={contactNumber1}
-                      placeholder="E.g., 09762607481"
-                      title="Contact Number 1"
-                      onChange={(e) => setContactNumber1(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                      required
-                    />
-                  )}
-                </div>
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div className="grid gap-1.5">
+                    <label
+                      htmlFor="contactName2Input"
+                      className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                    >
+                      Contact Name 2
+                    </label>
+                    {isLoading ? (
+                      <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                    ) : (
+                      <input
+                        id="contactName2Input"
+                        type="text"
+                        value={contactName2}
+                        placeholder="GYM Contact 2"
+                        title="Contact Name 2"
+                        onChange={(e) => setContactName2(e.target.value)}
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        required
+                      />
+                    )}
+                  </div>
 
-                <div className="grid gap-1.5 pt-1.5">
-                  <label
-                    htmlFor="contactName2Input"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                  >
-                    Contact Name 2
-                  </label>
-                  {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                  ) : (
-                    <input
-                      id="contactName2Input"
-                      type="text"
-                      value={contactName2}
-                      placeholder="E.g., Admin Wolf"
-                      title="Contact Name 2"
-                      onChange={(e) => setContactName2(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                      required
-                    />
-                  )}
+                  <div className="grid gap-1.5">
+                    <label
+                      htmlFor="contactNumber2Input"
+                      className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 truncate"
+                    >
+                      Contact Number 2
+                    </label>
+                    {isLoading ? (
+                      <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
+                    ) : (
+                      <input
+                        id="contactNumber2Input"
+                        type="text"
+                        value={contactNumber2}
+                        placeholder="09123456789"
+                        title="Contact Number 2"
+                        onChange={(e) => setContactNumber2(e.target.value)}
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        required
+                      />
+                    )}
+                  </div>
                 </div>
-
-                <div className="grid gap-1.5 pt-1.5">
-                  <label
-                    htmlFor="contactNumber2Input"
-                    className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                  >
-                    Contact Number 2
-                  </label>
-                  {isLoading ? (
-                    <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                  ) : (
-                    <input
-                      id="contactNumber2Input"
-                      type="text"
-                      value={contactNumber2}
-                      placeholder="E.g., 09123456789"
-                      title="Contact Number 2"
-                      onChange={(e) => setContactNumber2(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                      required
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-1.5 border-t border-slate-200 dark:border-white/5 pt-4">
-                <label
-                  htmlFor="emailAddressInput"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  Business Email Address
-                </label>
-                {isLoading ? (
-                  <div className="h-10 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200/50 dark:border-white/5 animate-pulse" />
-                ) : (
-                  <input
-                    id="emailAddressInput"
-                    type="email"
-                    value={emailAddress}
-                    placeholder="Enter support email"
-                    title="Business Email"
-                    onChange={(e) => setEmailAddress(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
-                    required
-                  />
-                )}
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Media Uploads */}
-          <div className="p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-5">
+        {/* Right Side: Branding, Media Displays & Integrated Live Terminal Preview */}
+        <div
+          className={`lg:col-span-6 space-y-6 ${
+            activeTab === 'branding' ? 'block' : 'hidden lg:block'
+          }`}
+        >
+          <div className="p-4 sm:p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-5">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <ImageIcon className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
               Branding & Media Displays
             </h3>
 
             {/* Logo Slot */}
-            <div className="flex flex-col sm:flex-row items-center gap-5 p-4 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5 p-3.5 sm:p-4 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
               <div className="w-16 h-16 rounded-xl border border-slate-200 dark:border-white/10 flex items-center justify-center shrink-0 bg-white dark:bg-[#13161a] overflow-hidden">
                 {isLoading ? (
                   <div className="w-full h-full bg-slate-100 dark:bg-[#13161a] animate-pulse" />
@@ -752,51 +797,38 @@ export const GymProfile: React.FC = () => {
                 </div>
               )}
             </div>
-          </div>
-        </div>
 
-        {/* Right Side: Live Terminal Preview Info */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="p-6 bg-slate-50 dark:bg-[#111315] border border-slate-200 dark:border-white/5 rounded-2xl shadow-xs space-y-5 flex flex-col h-full justify-between">
-            <div className="space-y-4">
-              <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Lock className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
-                Live Terminal Preview
-              </h3>
+            {/* Integrated Live Terminal Preview */}
+            <div className="pt-2 border-t border-slate-200 dark:border-white/5 space-y-3">
+              <div className="p-4 sm:p-5 border border-slate-200 dark:border-white/10 rounded-2xl bg-white dark:bg-[#13161a] space-y-3.5 shadow-2xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
+                    <h4 className="text-xs font-heading tracking-wider uppercase font-bold text-slate-800 dark:text-slate-200">
+                      Live Terminal Preview
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 font-semibold uppercase">
+                    Sandboxed
+                  </span>
+                </div>
 
-              <div className="p-4 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/15 dark:border-blue-500/20 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
-                <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  To ensure your brand identity, logo, address, and active
-                  carousels render cleanly on high-definition monitors, we have
-                  created a dedicated sandboxed viewer.
-                </span>
+                <div className="p-3 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/15 dark:border-blue-500/20 rounded-xl flex items-start gap-2.5 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    Preview how your brand identity, logo, address, and active carousels render cleanly on the actual login screen.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenLivePreview}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading font-bold tracking-wider uppercase shadow-md cursor-pointer transition-all duration-200 active:scale-95"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Open Live Login Preview</span>
+                </button>
               </div>
-            </div>
-
-            <div className="p-6 border border-slate-200 dark:border-white/5 rounded-2xl bg-white dark:bg-[#0d0f12] text-center space-y-4 animate-slide-up shadow-sm">
-              <div className="w-12 h-12 rounded-full bg-blue-500/10 dark:bg-[#bf0202]/10 border border-blue-500/20 dark:border-red-500/20 flex items-center justify-center mx-auto text-blue-600 dark:text-[#bf0202]">
-                <ExternalLink className="w-5 h-5" />
-              </div>
-              <div className="space-y-1.5">
-                <h4 className="font-heading text-xs tracking-wider uppercase text-slate-800 dark:text-slate-200">
-                  Secure Sandboxed Preview
-                </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                  Open the actual live Login screen in a separate,
-                  non-functional tab. It will display your current unsaved
-                  drafts cleanly in both Light and Dark themes.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleOpenLivePreview}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase shadow-md cursor-pointer transition-all duration-300 active:scale-95"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open Live Login Preview
-              </button>
             </div>
           </div>
         </div>

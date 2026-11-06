@@ -7,11 +7,11 @@ CREATE TABLE IF NOT EXISTS public.gym_profile (
     gym_name TEXT NOT NULL DEFAULT 'WOLF PALOMAR GYM',
     gym_description TEXT NOT NULL DEFAULT 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.',
     gym_address TEXT NOT NULL DEFAULT '123 Sample Street, Barangay Central, Quezon City, Metro Manila',
-    contact_name_1 TEXT NOT NULL DEFAULT 'Staff Ryan',
+    contact_name_1 TEXT NOT NULL DEFAULT 'GYM Family Contact 1',
     contact_number_1 TEXT NOT NULL DEFAULT '09762607481',
-    contact_name_2 TEXT NOT NULL DEFAULT 'Admin Wolf',
+    contact_name_2 TEXT NOT NULL DEFAULT 'GYM Family Contact 2',
     contact_number_2 TEXT NOT NULL DEFAULT '09123456789',
-    email_address TEXT NOT NULL DEFAULT 'contact@wolfpalomargym.com',
+    email_address TEXT NOT NULL DEFAULT 'wolf.palomar@gmail.com',
     gym_logo TEXT NOT NULL DEFAULT '',
     carousel_images TEXT[] NOT NULL DEFAULT '{}'::TEXT[],
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -58,7 +58,7 @@ WITH CHECK (
 
 -- Seed the single default row
 INSERT INTO public.gym_profile (id, gym_name, gym_description, gym_address, contact_name_1, contact_number_1, contact_name_2, contact_number_2, email_address)
-VALUES (1, 'WOLF PALOMAR GYM', 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.', '123 Sample Street, Barangay Central, Quezon City, Metro Manila', 'Staff Ryan', '09762607481', 'Admin Wolf', '09123456789', 'contact@wolfpalomargym.com')
+VALUES (1, 'WOLF PALOMAR GYM', 'This terminal is exclusively for authorized staff members including trainers and coaches, as well as family members with administrative privileges.', '123 Sample Street, Barangay Central, Quezon City, Metro Manila', 'GYM Family Contact 1', '09762607481', 'GYM Family Contact 2', '09123456789', 'wolf.palomar@gmail.com')
 ON CONFLICT (id) DO NOTHING;
 
 

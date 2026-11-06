@@ -1,5 +1,5 @@
 // src/pages/dashboard/RevenueGoalsPage.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Target,
   Sparkles,
@@ -17,6 +17,13 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  format,
+} from 'date-fns';
 import {
   useRevenueGoals,
   type GoalTimeframe,
@@ -51,120 +58,6 @@ interface TimeframeTheme {
   inputIconColor: string;
 }
 
-const TIMEFRAME_THEMES: TimeframeTheme[] = [
-  {
-    id: 'daily',
-    label: 'Daily Target',
-    sublabel: 'Today',
-    helperText: "Today's revenue goal",
-    icon: Clock,
-    activeCard:
-      'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-500/20 dark:ring-emerald-400/30',
-    inactiveCard:
-      'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700/60',
-    topBarColor: 'bg-emerald-500',
-    iconContainerActive: 'bg-emerald-500 text-white dark:bg-emerald-500',
-    iconContainerInactive:
-      'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40',
-    titleColorActive: 'text-emerald-800 dark:text-emerald-300',
-    indicatorColor: 'bg-emerald-500',
-    heroContainer:
-      'border-emerald-200/90 dark:border-emerald-900/60 bg-gradient-to-br from-emerald-50/40 via-white to-teal-50/20 dark:from-[#061d15] dark:via-[#161920] dark:to-[#04140e]',
-    progressBarFill:
-      'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300',
-    badgeClass:
-      'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
-    accentText: 'text-emerald-600 dark:text-emerald-400',
-    inputBorderFocus:
-      'focus-within:border-emerald-500 dark:focus-within:border-emerald-400',
-    inputRingFocus: 'focus-within:ring-emerald-500/20',
-    inputIconColor: 'text-emerald-600 dark:text-emerald-400',
-  },
-  {
-    id: 'weekly',
-    label: 'Weekly Target',
-    sublabel: '7 Days',
-    helperText: '7-day revenue goal',
-    icon: CalendarDays,
-    activeCard:
-      'bg-sky-50/70 dark:bg-sky-950/30 border-sky-500 dark:border-sky-400 ring-1 ring-sky-500/20 dark:ring-sky-400/30',
-    inactiveCard:
-      'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700/60',
-    topBarColor: 'bg-sky-500',
-    iconContainerActive: 'bg-sky-500 text-white dark:bg-sky-500',
-    iconContainerInactive:
-      'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-900/40',
-    titleColorActive: 'text-sky-800 dark:text-sky-300',
-    indicatorColor: 'bg-sky-500',
-    heroContainer:
-      'border-sky-200/90 dark:border-sky-900/60 bg-gradient-to-br from-sky-50/40 via-white to-blue-50/20 dark:from-[#061828] dark:via-[#161920] dark:to-[#04111d]',
-    progressBarFill: 'bg-gradient-to-r from-sky-500 via-cyan-400 to-blue-400',
-    badgeClass:
-      'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border-sky-300 dark:border-sky-800',
-    accentText: 'text-sky-600 dark:text-sky-400',
-    inputBorderFocus:
-      'focus-within:border-sky-500 dark:focus-within:border-sky-400',
-    inputRingFocus: 'focus-within:ring-sky-500/20',
-    inputIconColor: 'text-sky-600 dark:text-sky-400',
-  },
-  {
-    id: 'monthly',
-    label: 'Monthly Target',
-    sublabel: '30 Days',
-    helperText: 'Calendar month goal',
-    icon: Calendar,
-    activeCard:
-      'bg-violet-50/70 dark:bg-violet-950/30 border-violet-500 dark:border-violet-400 ring-1 ring-violet-500/20 dark:ring-violet-400/30',
-    inactiveCard:
-      'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-violet-300 dark:hover:border-violet-700/60',
-    topBarColor: 'bg-violet-500',
-    iconContainerActive: 'bg-violet-500 text-white dark:bg-violet-500',
-    iconContainerInactive:
-      'bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/60 dark:border-violet-900/40',
-    titleColorActive: 'text-violet-800 dark:text-violet-300',
-    indicatorColor: 'bg-violet-500',
-    heroContainer:
-      'border-violet-200/90 dark:border-violet-900/60 bg-gradient-to-br from-violet-50/40 via-white to-purple-50/20 dark:from-[#19092c] dark:via-[#161920] dark:to-[#10051e]',
-    progressBarFill:
-      'bg-gradient-to-r from-violet-500 via-fuchsia-400 to-purple-400',
-    badgeClass:
-      'bg-violet-100 text-violet-800 dark:bg-violet-950/80 dark:text-violet-300 border-violet-300 dark:border-violet-800',
-    accentText: 'text-violet-600 dark:text-violet-400',
-    inputBorderFocus:
-      'focus-within:border-violet-500 dark:focus-within:border-violet-400',
-    inputRingFocus: 'focus-within:ring-violet-500/20',
-    inputIconColor: 'text-violet-600 dark:text-violet-400',
-  },
-  {
-    id: 'yearly',
-    label: 'Yearly Target',
-    sublabel: '12 Months',
-    helperText: 'Annual revenue goal',
-    icon: Trophy,
-    activeCard:
-      'bg-amber-50/70 dark:bg-amber-950/30 border-amber-500 dark:border-amber-400 ring-1 ring-amber-500/20 dark:ring-amber-400/30',
-    inactiveCard:
-      'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700/60',
-    topBarColor: 'bg-amber-500',
-    iconContainerActive: 'bg-amber-500 text-white dark:bg-amber-500',
-    iconContainerInactive:
-      'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40',
-    titleColorActive: 'text-amber-800 dark:text-amber-300',
-    indicatorColor: 'bg-amber-500',
-    heroContainer:
-      'border-amber-200/90 dark:border-amber-900/60 bg-gradient-to-br from-amber-50/40 via-white to-yellow-50/20 dark:from-[#241304] dark:via-[#161920] dark:to-[#170a02]',
-    progressBarFill:
-      'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300',
-    badgeClass:
-      'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800',
-    accentText: 'text-amber-600 dark:text-amber-400',
-    inputBorderFocus:
-      'focus-within:border-amber-500 dark:focus-within:border-amber-400',
-    inputRingFocus: 'focus-within:ring-amber-500/20',
-    inputIconColor: 'text-amber-600 dark:text-amber-400',
-  },
-];
-
 export const RevenueGoalsPage: React.FC = () => {
   const {
     timeframe,
@@ -178,10 +71,133 @@ export const RevenueGoalsPage: React.FC = () => {
     progressPercent,
     remainingAmount,
     isGoalAchieved,
+    dateRange,
     isLoading,
     isAdmin,
     refreshRevenue,
   } = useRevenueGoals();
+
+  const timeframeThemes = useMemo<TimeframeTheme[]>(() => {
+    const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+
+    return [
+      {
+        id: 'daily',
+        label: 'Daily Target',
+        sublabel: format(now, 'EEE, MMM d'),
+        helperText: 'Today (12:00 AM – 11:59 PM)',
+        icon: Clock,
+        activeCard:
+          'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-500/20 dark:ring-emerald-400/30',
+        inactiveCard:
+          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700/60',
+        topBarColor: 'bg-emerald-500',
+        iconContainerActive: 'bg-emerald-500 text-white dark:bg-emerald-500',
+        iconContainerInactive:
+          'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40',
+        titleColorActive: 'text-emerald-800 dark:text-emerald-300',
+        indicatorColor: 'bg-emerald-500',
+        heroContainer:
+          'border-emerald-200/90 dark:border-emerald-900/60 bg-gradient-to-br from-emerald-50/40 via-white to-teal-50/20 dark:from-[#061d15] dark:via-[#161920] dark:to-[#04140e]',
+        progressBarFill:
+          'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300',
+        badgeClass:
+          'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+        accentText: 'text-emerald-600 dark:text-emerald-400',
+        inputBorderFocus:
+          'focus-within:border-emerald-500 dark:focus-within:border-emerald-400',
+        inputRingFocus: 'focus-within:ring-emerald-500/20',
+        inputIconColor: 'text-emerald-600 dark:text-emerald-400',
+      },
+      {
+        id: 'weekly',
+        label: 'Weekly Target',
+        sublabel: `${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d')}`,
+        helperText: 'Calendar Week (Mon – Sun)',
+        icon: CalendarDays,
+        activeCard:
+          'bg-sky-50/70 dark:bg-sky-950/30 border-sky-500 dark:border-sky-400 ring-1 ring-sky-500/20 dark:ring-sky-400/30',
+        inactiveCard:
+          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700/60',
+        topBarColor: 'bg-sky-500',
+        iconContainerActive: 'bg-sky-500 text-white dark:bg-sky-500',
+        iconContainerInactive:
+          'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-900/40',
+        titleColorActive: 'text-sky-800 dark:text-sky-300',
+        indicatorColor: 'bg-sky-500',
+        heroContainer:
+          'border-sky-200/90 dark:border-sky-900/60 bg-gradient-to-br from-sky-50/40 via-white to-blue-50/20 dark:from-[#061828] dark:via-[#161920] dark:to-[#04111d]',
+        progressBarFill: 'bg-gradient-to-r from-sky-500 via-cyan-400 to-blue-400',
+        badgeClass:
+          'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border-sky-300 dark:border-sky-800',
+        accentText: 'text-sky-600 dark:text-sky-400',
+        inputBorderFocus:
+          'focus-within:border-sky-500 dark:focus-within:border-sky-400',
+        inputRingFocus: 'focus-within:ring-sky-500/20',
+        inputIconColor: 'text-sky-600 dark:text-sky-400',
+      },
+      {
+        id: 'monthly',
+        label: 'Monthly Target',
+        sublabel: format(now, 'MMMM yyyy'),
+        helperText: `${format(monthStart, 'MMM 1')} – ${format(monthEnd, 'MMM d')}`,
+        icon: Calendar,
+        activeCard:
+          'bg-violet-50/70 dark:bg-violet-950/30 border-violet-500 dark:border-violet-400 ring-1 ring-violet-500/20 dark:ring-violet-400/30',
+        inactiveCard:
+          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-violet-300 dark:hover:border-violet-700/60',
+        topBarColor: 'bg-violet-500',
+        iconContainerActive: 'bg-violet-500 text-white dark:bg-violet-500',
+        iconContainerInactive:
+          'bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/60 dark:border-violet-900/40',
+        titleColorActive: 'text-violet-800 dark:text-violet-300',
+        indicatorColor: 'bg-violet-500',
+        heroContainer:
+          'border-violet-200/90 dark:border-violet-900/60 bg-gradient-to-br from-violet-50/40 via-white to-purple-50/20 dark:from-[#19092c] dark:via-[#161920] dark:to-[#10051e]',
+        progressBarFill:
+          'bg-gradient-to-r from-violet-500 via-fuchsia-400 to-purple-400',
+        badgeClass:
+          'bg-violet-100 text-violet-800 dark:bg-violet-950/80 dark:text-violet-300 border-violet-300 dark:border-violet-800',
+        accentText: 'text-violet-600 dark:text-violet-400',
+        inputBorderFocus:
+          'focus-within:border-violet-500 dark:focus-within:border-violet-400',
+        inputRingFocus: 'focus-within:ring-violet-500/20',
+        inputIconColor: 'text-violet-600 dark:text-violet-400',
+      },
+      {
+        id: 'yearly',
+        label: 'Yearly Target',
+        sublabel: `Year ${format(now, 'yyyy')}`,
+        helperText: `Jan 1 – Dec 31, ${format(now, 'yyyy')}`,
+        icon: Trophy,
+        activeCard:
+          'bg-amber-50/70 dark:bg-amber-950/30 border-amber-500 dark:border-amber-400 ring-1 ring-amber-500/20 dark:ring-amber-400/30',
+        inactiveCard:
+          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700/60',
+        topBarColor: 'bg-amber-500',
+        iconContainerActive: 'bg-amber-500 text-white dark:bg-amber-500',
+        iconContainerInactive:
+          'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40',
+        titleColorActive: 'text-amber-800 dark:text-amber-300',
+        indicatorColor: 'bg-amber-500',
+        heroContainer:
+          'border-amber-200/90 dark:border-amber-900/60 bg-gradient-to-br from-amber-50/40 via-white to-yellow-50/20 dark:from-[#241304] dark:via-[#161920] dark:to-[#170a02]',
+        progressBarFill:
+          'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300',
+        badgeClass:
+          'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+        accentText: 'text-amber-600 dark:text-amber-400',
+        inputBorderFocus:
+          'focus-within:border-amber-500 dark:focus-within:border-amber-400',
+        inputRingFocus: 'focus-within:ring-amber-500/20',
+        inputIconColor: 'text-amber-600 dark:text-amber-400',
+      },
+    ];
+  }, []);
 
   // Reactive Network Connection State
   const [isOffline, setIsOffline] = useState<boolean>(
@@ -250,7 +266,7 @@ const handleSaveAll = async (e: React.FormEvent) => {
   }
 
   const currentTheme =
-    TIMEFRAME_THEMES.find((c) => c.id === timeframe) || TIMEFRAME_THEMES[0];
+    timeframeThemes.find((c) => c.id === timeframe) || timeframeThemes[0];
   const CurrentIcon = currentTheme.icon;
 
   return (
@@ -278,7 +294,7 @@ const handleSaveAll = async (e: React.FormEvent) => {
 
       {/* ─── 4-COLOR TIMEFRAME SELECTOR CARDS ─── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {TIMEFRAME_THEMES.map((theme) => {
+        {timeframeThemes.map((theme) => {
           const isSelected = timeframe === theme.id;
           const targetVal = goalsConfig[theme.id];
           const CardIcon = theme.icon;
@@ -364,6 +380,11 @@ const handleSaveAll = async (e: React.FormEvent) => {
               >
                 <CurrentIcon className="w-3.5 h-3.5" />
                 {currentTheme.label.toUpperCase()} PROGRESS
+              </span>
+
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 font-mono shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>{dateRange.detailedLabel}</span>
               </span>
 
               {isGoalAchieved ? (
