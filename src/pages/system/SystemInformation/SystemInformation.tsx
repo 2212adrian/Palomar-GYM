@@ -16,7 +16,6 @@ import {
   Smartphone,
   Monitor,
   AlertCircle,
-  ExternalLink,
   Sparkles,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -42,20 +41,11 @@ import { supabase } from '../../../lib/supabase/client';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNotificationStore } from '../../../stores/useNotificationStore';
-import { usePWAInstall } from '../../../hooks/usePWAInstall';
 
 export const SystemInformation: React.FC = () => {
   const BUNDLED_VERSION = String(pkg.version || '0.0.0').replace(/^v/i, '');
   const isNativePlatform = Capacitor.isNativePlatform();
   const runtimePlatform = Capacitor.getPlatform();
-  const { isInstalled: isPwaInstalled } = usePWAInstall();
-  const isStandalonePWA =
-    isPwaInstalled ||
-    (typeof window !== 'undefined' &&
-      (window.matchMedia('(display-mode: standalone)').matches ||
-        window.matchMedia('(display-mode: window-controls-overlay)').matches ||
-        (window.navigator as any).standalone === true));
-  const isAlreadyPwaOrCapacitor = isNativePlatform || isStandalonePWA;
 
   const [installedVersion, setInstalledVersion] =
     useState<string>(BUNDLED_VERSION);
