@@ -178,6 +178,9 @@ let activeProfileUserId: string | null = null; // Track currently subscribed Use
 let isClaimingSession = false;
 let isForcingLogout = false;
 let isLoginInProgress = false;
+let checkSessionPromise: Promise<void> | null = null;
+let lastValidateSessionTime = 0;
+let inMemoryProfileCache: { profile: UserProfile; timestamp: number } | null = null;
 
 const getCachedProfile = (): UserProfile | null => {
   if (typeof window === 'undefined') return null;
@@ -307,6 +310,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     }
 
+    const now = Date.now();
+    if (now - lastValidateSessionTime < 30000) {
+      return true;
+    }
+    lastValidateSessionTime = now;
+
     try {
       const {
         data: { user: serverUser },
@@ -356,17 +365,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   checkSession: async () => {
-    try {
-      // Only show full-screen blocking loader on the initial cold boot
-      const isAlreadyInitialized = get().initialized;
-      if (!isAlreadyInitialized) {
-        set({ loading: true, error: null });
-      }
+    if (checkSessionPromise) {
+      return checkSessionPromise;
+    }
 
-      let {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
+    checkSessionPromise = (async () => {
+      try {
+        // Only show full-screen blocking loader on the initial cold boot
+        const isAlreadyInitialized = get().initialized;
+        if (!isAlreadyInitialized) {
+          set({ loading: true, error: null });
+        }
+
+        let {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
       if (sessionError) throw sessionError;
 
@@ -446,7 +460,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const cachedFallbackProfile = getCachedProfile();
         const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
-       if (isOffline && cachedFallbackProfile) {
+        if (
+          inMemoryProfileCache &&
+          inMemoryProfileCache.profile.id === activeUser.id &&
+          Date.now() - inMemoryProfileCache.timestamp < 60000
+        ) {
+          dbProfile = inMemoryProfileCache.profile;
+        } else if (isOffline && cachedFallbackProfile) {
           dbProfile = cachedFallbackProfile;
         } else {
           try {
@@ -669,6 +689,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 : Boolean(cachedFallbackProfile?.email_verification_enabled ?? false),
         };
 
+        inMemoryProfileCache = { profile: resolvedProfile, timestamp: Date.now() };
+
         try {
           localStorage.setItem('palomar_cached_profile', JSON.stringify(resolvedProfile));
         } catch {}
@@ -690,6 +712,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           activeProfileChannel = null;
         }
         activeProfileUserId = null;
+        inMemoryProfileCache = null;
         await clearSensitiveAppData();
         set({ user: null, profile: null, loading: false, initialized: true });
       }
@@ -706,7 +729,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         initialized: true,
         error: isOfflineNetwork ? null : err.message,
       });
+    } finally {
+      checkSessionPromise = null;
     }
+  })();
+
+    return checkSessionPromise;
   },
 
   signInWithGoogle: async () => {

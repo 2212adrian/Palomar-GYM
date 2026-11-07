@@ -532,7 +532,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   </span>
                 </div>
 
-                {canDelete ? (
+                {canDelete && attendanceMeta.log.amountPaid > 0 ? (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -553,13 +553,16 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                   </button>
                 ) : (
                   <div
+                    title={attendanceMeta.log.amountPaid <= 0 ? 'Free entry / zero balance record' : undefined}
                     className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-heading tracking-widest uppercase shrink-0 font-bold border select-none shadow-xs ${
-                      attendanceMeta.isPaid
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
-                        : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
+                      attendanceMeta.log.amountPaid <= 0
+                        ? 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-zinc-800/80 dark:text-zinc-400 dark:border-zinc-700 cursor-not-allowed opacity-80'
+                        : attendanceMeta.isPaid
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-500'
+                          : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-500'
                     }`}
                   >
-                    {attendanceMeta.isPaid ? 'PAID' : 'UNPAID'}
+                    {attendanceMeta.log.amountPaid <= 0 ? 'FREE' : attendanceMeta.isPaid ? 'PAID' : 'UNPAID'}
                   </div>
                 )}
 

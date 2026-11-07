@@ -245,8 +245,53 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const [voidNotes, setVoidNotes] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [voidConfirmText, setVoidConfirmText] = useState('');
   const [isVerifyingVoid, setIsVerifyingVoid] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Check if current user has an assigned password
+  const isGoogleOnly = useMemo(() => {
+    if (!user) return false;
+    const rawProviders = user.app_metadata?.providers;
+    const singleProvider = user.app_metadata?.provider;
+    const providers: string[] = Array.isArray(rawProviders)
+      ? rawProviders
+      : singleProvider
+        ? [singleProvider]
+        : [];
+    const identities: any[] = user.identities || [];
+    const hasEmail =
+      providers.includes('email') ||
+      identities.some((id: any) => id.provider === 'email');
+    const isGoogle =
+      providers.includes('google') ||
+      identities.some((id: any) => id.provider === 'google');
+    return isGoogle && !hasEmail;
+  }, [user]);
+
+  const [hasPassword, setHasPassword] = useState<boolean>(!isGoogleOnly);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkPassword = async () => {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase.rpc('check_user_has_password');
+        if (!error && typeof data === 'boolean' && isMounted) {
+          setHasPassword(data);
+          return;
+        }
+      } catch {}
+
+      if (isMounted) {
+        setHasPassword(!isGoogleOnly);
+      }
+    };
+    checkPassword();
+    return () => {
+      isMounted = false;
+    };
+  }, [user, isGoogleOnly]);
 
   // Card Reissue & Unbind Modal States
   const [isReissueModalOpen, setIsReissueModalOpen] = useState(false);
@@ -347,6 +392,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   useEffect(() => {
     if (!localMember.member_id) return;
 
+    let profileDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedReload = () => {
+      if (profileDebounceTimer) clearTimeout(profileDebounceTimer);
+      profileDebounceTimer = setTimeout(() => {
+        profileDebounceTimer = null;
+        loadProfileCollections();
+      }, 1200);
+    };
+
     const memberFilter = `member_id=eq.${localMember.member_id}`;
     const channel = supabase
       .channel(`realtime-member-profile-${localMember.member_id}`)
@@ -358,7 +412,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           table: 'receipts',
           filter: memberFilter,
         },
-        () => loadProfileCollections()
+        debouncedReload
       )
       .on(
         'postgres_changes',
@@ -368,7 +422,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           table: 'subscriptions',
           filter: memberFilter,
         },
-        () => loadProfileCollections()
+        debouncedReload
       )
       .on(
         'postgres_changes',
@@ -378,7 +432,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           table: 'attendance',
           filter: memberFilter,
         },
-        () => loadProfileCollections()
+        debouncedReload
       )
       .on(
         'postgres_changes',
@@ -388,7 +442,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           table: 'cards',
           filter: memberFilter,
         },
-        () => loadProfileCollections()
+        debouncedReload
       )
       .on(
         'postgres_changes',
@@ -398,11 +452,12 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
           table: 'member_cards',
           filter: memberFilter,
         },
-        () => loadProfileCollections()
+        debouncedReload
       )
       .subscribe();
 
     return () => {
+      if (profileDebounceTimer) clearTimeout(profileDebounceTimer);
       supabase.removeChannel(channel);
     };
   }, [localMember.member_id]);
@@ -429,10 +484,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   useEffect(() => {
     const handleSync = () => setRefreshKey((prev) => prev + 1);
     window.addEventListener('palomar_logbook_updated', handleSync);
-    window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('palomar_logbook_updated', handleSync);
-      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
@@ -894,14 +947,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       toast.warning('Please select a reason for voiding.');
       return;
     }
-    if (!adminPassword.trim()) {
+
+    if (hasPassword && !adminPassword.trim()) {
       toast.warning('Admin password is required to verify this action.');
+      return;
+    }
+
+    if (!hasPassword && voidConfirmText.trim().toUpperCase() !== 'CONFIRM VOID') {
+      toast.warning('Please type "CONFIRM VOID" to authorize this action.');
       return;
     }
 
     setIsVerifyingVoid(true);
     try {
-      if (user?.email) {
+      if (hasPassword && user?.email) {
         const { error } = await supabase.auth.signInWithPassword({
           email: user.email,
           password: adminPassword.trim(),
@@ -915,7 +974,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         }
       }
 
-const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
+      const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
 
       await subscriptionService.void(
         targetVoidSub.id,
@@ -937,6 +996,7 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
       await loadProfileCollections();
 
       window.dispatchEvent(new Event('palomar_logbook_updated'));
+      window.dispatchEvent(new Event('palomar:cash-session-updated'));
       setRefreshKey((prev) => prev + 1);
       onMutationSuccess();
     } catch (err: any) {
@@ -3350,19 +3410,28 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
           onClose={() => {
             setIsVoidModalOpen(false);
             setTargetVoidSub(null);
+            setAdminPassword('');
+            setVoidConfirmText('');
           }}
           title="VOID SUBSCRIPTION CONTRACT"
         >
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (voidReason && adminPassword.trim() && !isVerifyingVoid) {
+              const canSubmit = hasPassword
+                ? Boolean(voidReason && adminPassword.trim() && !isVerifyingVoid)
+                : Boolean(
+                    voidReason &&
+                      voidConfirmText.trim().toUpperCase() === 'CONFIRM VOID' &&
+                      !isVerifyingVoid
+                  );
+              if (canSubmit) {
                 handleConfirmVoidSubscription();
               }
             }}
             className="space-y-4 text-left font-body"
           >
-<div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs space-y-1">
+            <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-700 dark:text-rose-300 text-xs space-y-1">
               <p className="font-bold flex items-center gap-1.5">
                 <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>
@@ -3414,27 +3483,53 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-400 block">
-                Admin Password Verification *
-              </label>
-              <div className="relative">
-                <input
-                  type={showAdminPassword ? 'text' : 'password'}
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="Re-enter your account password"
-                  className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowAdminPassword(!showAdminPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
+            {hasPassword ? (
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 block">
+                  Admin Password Verification *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminPassword ? 'text' : 'password'}
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="Re-enter your account password"
+                    className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPassword(!showAdminPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-600 dark:text-blue-400 flex items-center justify-between gap-2">
+                  <span className="font-semibold truncate">
+                    Signed in via Google ({user?.email})
+                  </span>
+                  <span className="text-[10px] uppercase font-mono font-bold bg-blue-500/20 px-2 py-0.5 rounded shrink-0">
+                    Verified OAuth
+                  </span>
+                </div>
+                <label className="text-xs font-bold text-slate-400 block">
+                  Safety Confirmation Phrase *
+                </label>
+                <input
+                  type="text"
+                  value={voidConfirmText}
+                  onChange={(e) => setVoidConfirmText(e.target.value)}
+                  placeholder='Type "CONFIRM VOID" to proceed'
+                  className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono uppercase"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Because this account uses Google Sign-In with no local password, typing <strong className="text-(--color-text)">CONFIRM VOID</strong> authorizes this permanent cancellation.
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-3 justify-end pt-2 border-t border-(--border-color)">
               <button
@@ -3442,6 +3537,8 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
                 onClick={() => {
                   setIsVoidModalOpen(false);
                   setTargetVoidSub(null);
+                  setAdminPassword('');
+                  setVoidConfirmText('');
                 }}
                 className="px-4 py-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none"
               >
@@ -3450,7 +3547,11 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
               <button
                 type="submit"
                 disabled={
-                  !voidReason || !adminPassword.trim() || isVerifyingVoid
+                  !voidReason ||
+                  isVerifyingVoid ||
+                  (hasPassword
+                    ? !adminPassword.trim()
+                    : voidConfirmText.trim().toUpperCase() !== 'CONFIRM VOID')
                 }
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border-none shadow-md transition-all flex items-center gap-1.5"
               >

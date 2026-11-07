@@ -270,6 +270,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     _userRole?: string | null,
     _isRealtimeEvent = false
   ) => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
@@ -616,11 +618,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   subscribeRealtime: (userEmail, userRole) => {
-    // 1. Perform initial data fetch
     get().checkBrowserPermission();
     get().fetchNotifications(userEmail, userRole, false);
 
-    // 2. Use a unique channel ID per subscription session to avoid channel collisions
+    let realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerDebouncedFetch = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+      realtimeDebounceTimer = setTimeout(() => {
+        realtimeDebounceTimer = null;
+        get().fetchNotifications(userEmail, userRole, true);
+      }, 2500);
+    };
+
     const channelId = `notifications-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId);
 
@@ -628,30 +639,22 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'incident_reports' },
-        () => {
-          get().fetchNotifications(userEmail, userRole, true);
-        }
+        triggerDebouncedFetch
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
-        () => {
-          get().fetchNotifications(userEmail, userRole, true);
-        }
+        triggerDebouncedFetch
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'subscriptions' },
-        () => {
-          get().fetchNotifications(userEmail, userRole, true);
-        }
+        triggerDebouncedFetch
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
-        () => {
-          get().fetchNotifications(userEmail, userRole, true);
-        }
+        triggerDebouncedFetch
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -659,8 +662,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         }
       });
 
-    // 3. Clean up on unmount
     return () => {
+      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
       supabase.removeChannel(channel);
     };
   },

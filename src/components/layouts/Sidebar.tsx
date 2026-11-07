@@ -195,15 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     expiringSubsCount,
     toggleNotificationOpen,
     markBadgeSeen,
-    subscribeRealtime,
   } = useNotificationStore();
-
-  useEffect(() => {
-    const unsubscribe = subscribeRealtime(user?.email, profile?.role);
-    return () => {
-      unsubscribe();
-    };
-  }, [user?.email, profile?.role, subscribeRealtime]);
 
   // Accordion Expand States
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);

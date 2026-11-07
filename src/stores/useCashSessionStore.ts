@@ -96,6 +96,10 @@ const INITIAL_METRICS: CashFlowMetrics = {
 let globalRealtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 let realtimeSubscriberCount = 0;
 let debounceRecalculateTimer: ReturnType<typeof setTimeout> | null = null;
+let debounceSessionSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let isRecalculatingInProgress = false;
+let hasPendingRecalculateRequest = false;
+let lastHistoryFetchTime = 0;
 
 const getInitialOfflineState = () => {
   if (typeof window === 'undefined') {
@@ -406,6 +410,11 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       return;
     }
 
+    const now = Date.now();
+    if (get().history.length > 0 && now - lastHistoryFetchTime < 30000) {
+      return;
+    }
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       try {
         const cached = localStorage.getItem('sales_closed_sessions_cache');
@@ -421,6 +430,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
 
     try {
       const history = await fetchCashSessionHistory(30);
+      lastHistoryFetchTime = Date.now();
       set({ history });
       try {
         localStorage.setItem('sales_closed_sessions_cache', JSON.stringify(history));
@@ -442,6 +452,12 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       set({ metrics: INITIAL_METRICS, currentDrawerCash: null, transactions: [] });
       return;
     }
+
+    if (isRecalculatingInProgress) {
+      hasPendingRecalculateRequest = true;
+      return;
+    }
+    isRecalculatingInProgress = true;
 
     const openingFloat = Number(session.opening_float || 0);
     const effectiveStart = session.opened_at;
@@ -878,6 +894,12 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       if ((typeof navigator === 'undefined' || navigator.onLine) && !isConnectionError(error)) {
         console.error('Error recalculating cash metrics:', error);
       }
+    } finally {
+      isRecalculatingInProgress = false;
+      if (hasPendingRecalculateRequest) {
+        hasPendingRecalculateRequest = false;
+        get().recalculateMetrics();
+      }
     }
   },
 
@@ -889,10 +911,23 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     realtimeSubscriberCount += 1;
 
     const triggerRecalculate = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (debounceRecalculateTimer) clearTimeout(debounceRecalculateTimer);
       debounceRecalculateTimer = setTimeout(() => {
         get().recalculateMetrics();
-      }, 75);
+      }, 1500);
+    };
+
+    const triggerSessionSync = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (debounceSessionSyncTimer) clearTimeout(debounceSessionSyncTimer);
+      debounceSessionSyncTimer = setTimeout(() => {
+        lastHistoryFetchTime = 0;
+        get().loadActiveSession();
+        get().loadHistory();
+      }, 1500);
     };
 
     if (!globalRealtimeChannel) {
@@ -903,38 +938,27 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'cash_sessions' },
-          () => {
-            get().loadActiveSession();
-            get().loadHistory();
-          }
+          triggerSessionSync
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'cash_transactions' },
-          () => {
-            triggerRecalculate();
-          }
+          triggerRecalculate
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'sales' },
-          () => {
-            triggerRecalculate();
-          }
+          triggerRecalculate
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'attendance' },
-          () => {
-            triggerRecalculate();
-          }
+          triggerRecalculate
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'receipts' },
-          () => {
-            triggerRecalculate();
-          }
+          triggerRecalculate
         );
 
       channel.subscribe();
@@ -944,6 +968,8 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     return () => {
       realtimeSubscriberCount = Math.max(0, realtimeSubscriberCount - 1);
       if (realtimeSubscriberCount === 0 && globalRealtimeChannel) {
+        if (debounceRecalculateTimer) clearTimeout(debounceRecalculateTimer);
+        if (debounceSessionSyncTimer) clearTimeout(debounceSessionSyncTimer);
         supabase.removeChannel(globalRealtimeChannel);
         globalRealtimeChannel = null;
       }

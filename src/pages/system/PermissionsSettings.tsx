@@ -19,7 +19,6 @@ import {
   Crosshair,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Html5Qrcode } from 'html5-qrcode';
 import {
   getCameraPermissionStatus,
   getNotificationPermissionStatus,
@@ -63,35 +62,47 @@ export const PermissionsSettings: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Enumerate Connected Camera Devices
+  // Enumerate Connected Camera Devices passively without invoking camera stream
   const fetchCameras = async () => {
     try {
-      const devices = await Html5Qrcode.getCameras();
-      if (devices && devices.length > 0) {
-        setCameras(devices);
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = allDevices.filter(
+        (device) => device.kind === 'videoinput'
+      );
+
+      if (videoDevices.length > 0) {
+        const formatted = videoDevices.map((d, index) => ({
+          id: d.deviceId,
+          label: d.label || `Camera ${index + 1}`,
+        }));
+        setCameras(formatted);
+
         const savedCameraId = localStorage.getItem('preferred_camera_id');
         const cameraExists =
-          savedCameraId && devices.some((d) => d.id === savedCameraId);
+          savedCameraId && formatted.some((d) => d.id === savedCameraId);
 
         if (cameraExists) {
           setSelectedCameraId(savedCameraId!);
         } else if (
           !selectedCameraId ||
-          !devices.some((d) => d.id === selectedCameraId)
+          !formatted.some((d) => d.id === selectedCameraId)
         ) {
-          const backCam = devices.find(
+          const backCam = formatted.find(
             (d) =>
               d.label.toLowerCase().includes('back') ||
               d.label.toLowerCase().includes('rear') ||
               d.label.toLowerCase().includes('environment')
           );
-          const defaultId = backCam ? backCam.id : devices[0].id;
+          const defaultId = backCam ? backCam.id : formatted[0].id;
           setSelectedCameraId(defaultId);
-          localStorage.setItem('preferred_camera_id', defaultId);
+          if (defaultId) {
+            localStorage.setItem('preferred_camera_id', defaultId);
+          }
         }
       }
     } catch (err) {
-      console.warn('Camera enumeration error:', err);
+      console.warn('Passive camera enumeration notice:', err);
     }
   };
 
@@ -122,7 +133,7 @@ export const PermissionsSettings: React.FC = () => {
     setCameraStatus(status);
     if (status === 'granted') {
       toast.success('Camera permission enabled successfully!');
-      fetchCameras();
+      await fetchCameras();
     } else if (status === 'denied') {
       toast.error(
         'Camera permission was blocked. Please check your app/browser permissions.'
@@ -249,7 +260,7 @@ export const PermissionsSettings: React.FC = () => {
         await videoRef.current.play().catch(() => {});
       }
 
-      fetchCameras();
+      await fetchCameras();
     } catch (err: any) {
       console.error('Camera preview error:', err);
       toast.error(
@@ -263,7 +274,7 @@ export const PermissionsSettings: React.FC = () => {
     setSelectedCameraId(cameraId);
     localStorage.setItem('preferred_camera_id', cameraId);
     const chosen = cameras.find((c) => c.id === cameraId);
-    toast.info(`Switched to: ${chosen?.label || 'Camera'}`);
+    toast.info(`Selected: ${chosen?.label || 'Camera'}`);
 
     if (previewActive) {
       startCameraPreview(cameraId);
@@ -327,16 +338,16 @@ export const PermissionsSettings: React.FC = () => {
   };
 
   return (
-    <div className="w-full flex justify-center py-2">
-      <div className="w-full max-w-4xl space-y-6">
+    <div className="w-full flex justify-center px-1 sm:px-2 py-2">
+      <div className="w-full max-w-7xl space-y-6">
         {/* Header Info */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200 dark:border-zinc-800">
-          <div>
-            <h2 className="text-xl font-heading font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-              <ShieldCheck className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-              Hardware & Device Permissions
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-5 border-b border-slate-200 dark:border-zinc-800">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-heading font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2 sm:gap-2.5 truncate">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 dark:text-purple-400 shrink-0" />
+              <span className="truncate">Hardware & Device Permissions</span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium leading-relaxed">
               Manage system and hardware access for camera (QR scanning, member
               photos), location (GPS check-ins), and push notifications.
             </p>
@@ -346,7 +357,7 @@ export const PermissionsSettings: React.FC = () => {
             type="button"
             onClick={refreshStatuses}
             disabled={checking}
-            className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer shadow-xs shrink-0"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2.5 sm:py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer shadow-xs shrink-0"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`}
@@ -356,12 +367,12 @@ export const PermissionsSettings: React.FC = () => {
         </div>
 
         {/* Permissions Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 items-stretch">
           {/* CAMERA CARD */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/10 dark:bg-purple-950/50 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 dark:bg-purple-950/50 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
                   <Camera className="w-5 h-5" />
                 </div>
                 {renderStatusBadge(cameraStatus)}
@@ -401,7 +412,7 @@ export const PermissionsSettings: React.FC = () => {
                   <select
                     value={selectedCameraId}
                     onChange={(e) => handleCameraChange(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500/30 cursor-pointer truncate"
+                    className="w-full px-2.5 py-2 bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-purple-500/30 cursor-pointer truncate"
                   >
                     {cameras.map((cam, idx) => (
                       <option
@@ -430,12 +441,12 @@ export const PermissionsSettings: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-2.5">
+            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch gap-2.5">
               {cameraStatus !== 'granted' ? (
                 <button
                   type="button"
                   onClick={handleRequestCamera}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center"
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center min-h-[42px]"
                 >
                   Enable Camera Access
                 </button>
@@ -445,7 +456,7 @@ export const PermissionsSettings: React.FC = () => {
                   onClick={() =>
                     previewActive ? stopCameraPreview() : startCameraPreview()
                   }
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 ${
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 min-h-[42px] ${
                     previewActive
                       ? 'bg-rose-600 hover:bg-rose-700 text-white'
                       : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700'
@@ -467,7 +478,7 @@ export const PermissionsSettings: React.FC = () => {
 
             {/* Live Camera Preview Box */}
             {previewActive && (
-              <div className="mt-3 relative rounded-2xl overflow-hidden bg-zinc-950 aspect-video border border-zinc-700 shadow-inner flex items-center justify-center">
+              <div className="mt-3 relative rounded-2xl overflow-hidden bg-zinc-950 aspect-video border border-zinc-700 shadow-inner flex items-center justify-center w-full">
                 <video
                   ref={setVideoRef}
                   className="w-full h-full object-cover"
@@ -506,10 +517,10 @@ export const PermissionsSettings: React.FC = () => {
           </div>
 
           {/* LOCATION PERMISSION CARD */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 dark:bg-blue-950/50 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 dark:bg-blue-950/50 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                   <MapPin className="w-5 h-5" />
                 </div>
                 {renderStatusBadge(locationStatus)}
@@ -531,13 +542,13 @@ export const PermissionsSettings: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px] font-bold">
                     <span className="flex items-center gap-1">
                       <Crosshair className="w-3.5 h-3.5 text-blue-500" />
-                      Current Device Coordinates
+                      Current Coordinates
                     </span>
                     <span className="font-mono text-[10px] opacity-75">
                       {testedCoords.timestamp}
                     </span>
                   </div>
-                  <p className="text-xs font-mono font-bold tracking-tight">
+                  <p className="text-xs font-mono font-bold tracking-tight truncate">
                     {testedCoords.lat}, {testedCoords.lng}
                   </p>
                   <p className="text-[10px] opacity-80">
@@ -560,12 +571,12 @@ export const PermissionsSettings: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-2.5">
+            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch gap-2.5">
               {locationStatus !== 'granted' ? (
                 <button
                   type="button"
                   onClick={handleRequestLocation}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center"
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center min-h-[42px]"
                 >
                   Enable Location Access
                 </button>
@@ -574,7 +585,7 @@ export const PermissionsSettings: React.FC = () => {
                   type="button"
                   onClick={handleTestLocation}
                   disabled={isLocating}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 min-h-[42px]"
                 >
                   <Navigation
                     className={`w-4 h-4 text-blue-500 ${isLocating ? 'animate-spin' : ''}`}
@@ -588,10 +599,10 @@ export const PermissionsSettings: React.FC = () => {
           </div>
 
           {/* NOTIFICATION CARD */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between space-y-4">
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/10 dark:bg-purple-950/50 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 dark:bg-purple-950/50 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
                   <Bell className="w-5 h-5" />
                 </div>
                 {renderStatusBadge(notificationStatus)}
@@ -622,12 +633,12 @@ export const PermissionsSettings: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-2.5">
+            <div className="pt-2 border-t border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch gap-2.5">
               {notificationStatus !== 'granted' ? (
                 <button
                   type="button"
                   onClick={handleRequestNotification}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center"
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm active:scale-95 text-center min-h-[42px]"
                 >
                   Enable Push Notifications
                 </button>
@@ -635,7 +646,7 @@ export const PermissionsSettings: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSendTestNotification}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm flex items-center justify-center gap-2 min-h-[42px]"
                 >
                   <Send className="w-4 h-4 text-purple-500" />
                   <span>Send Test Alert</span>
@@ -646,7 +657,7 @@ export const PermissionsSettings: React.FC = () => {
         </div>
 
         {/* Device Guidance Note */}
-        <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-3">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2.5 sm:gap-3">
           <Smartphone className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-heading font-bold uppercase text-slate-900 dark:text-white">

@@ -1,7 +1,37 @@
--- Migration: Create get_sanitized_logbook RPC function
--- Purpose: Sanitizes attendance check-ins and receipts into a display-safe DTO.
--- Prevents DevTools from inspecting sensitive database columns (emails, addresses, phones, internal auth ids)
--- and includes cash_session_id for session-based grouping and lifecycle locks.
+-- Migration: Add processed_by column backfills and update get_sanitized_logbook RPC
+-- File: 20261108050000_add_processed_by_to_logbook_rpc.sql
+
+BEGIN;
+
+ALTER TABLE public.receipts ADD COLUMN IF NOT EXISTS processed_by TEXT DEFAULT NULL;
+ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS processed_by TEXT DEFAULT NULL;
+ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS processed_by TEXT DEFAULT NULL;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS processed_by TEXT DEFAULT NULL;
+
+-- Backfill existing receipts and attendance from audit logs
+UPDATE public.receipts r
+SET processed_by = (
+    SELECT al.actor_username 
+    FROM public.audit_logs al 
+    WHERE al.target_id = r.id::text 
+       OR al.target_id = 'rcpt-' || r.id::text 
+       OR al.details ILIKE '%' || r.id::text || '%'
+    ORDER BY al.created_at DESC 
+    LIMIT 1
+)
+WHERE r.processed_by IS NULL;
+
+UPDATE public.attendance a
+SET processed_by = (
+    SELECT al.actor_username 
+    FROM public.audit_logs al 
+    WHERE al.target_id = a.id::text 
+       OR al.target_id = a.receipt_number 
+       OR al.details ILIKE '%' || a.id::text || '%'
+    ORDER BY al.created_at DESC 
+    LIMIT 1
+)
+WHERE a.processed_by IS NULL;
 
 DROP FUNCTION IF EXISTS public.get_sanitized_logbook(date);
 
@@ -22,7 +52,8 @@ RETURNS TABLE (
     payment_status text,
     is_subscription boolean,
     deletable boolean,
-    cash_session_id text
+    cash_session_id text,
+    processed_by text
 )
 LANGUAGE sql
 SECURITY DEFINER
@@ -48,7 +79,8 @@ AS $$
         CASE WHEN COALESCE(a.entry_fee, 0.00) > 0 THEN 'Paid' ELSE 'Promo' END::text AS payment_status,
         false AS is_subscription,
         true AS deletable,
-        a.cash_session_id::text AS cash_session_id
+        a.cash_session_id::text AS cash_session_id,
+        a.processed_by::text AS processed_by
     FROM public.attendance a, ref_date rd
     WHERE a.deleted_at IS NULL
       AND (a.check_in_time AT TIME ZONE 'Asia/Manila')::date = rd.d
@@ -69,15 +101,23 @@ AS $$
         COALESCE(r.gcash_fee, 0.00)::numeric AS gcash_fee,
         COALESCE(r.card_fee, 0.00)::numeric AS card_fee,
         r.gcash_ref_no::text AS gcash_ref_no,
-        'Paid'::text AS payment_status,
+        COALESCE(r.payment_status::text, 'Paid')::text AS payment_status,
         true AS is_subscription,
         false AS deletable,
-        r.cash_session_id::text AS cash_session_id
+        r.cash_session_id::text AS cash_session_id,
+        r.processed_by::text AS processed_by
     FROM public.receipts r, ref_date rd
     WHERE (r.created_at AT TIME ZONE 'Asia/Manila')::date = rd.d
+      AND (r.payment_status::text IS NULL OR r.payment_status::text NOT IN ('Voided', 'Cancelled', 'voided', 'cancelled'))
+      AND NOT EXISTS (
+          SELECT 1 FROM public.subscriptions s
+          WHERE (s.receipt_number = r.id OR s.id::text = r.id::text)
+            AND s.status::text IN ('Voided', 'voided', 'Cancelled', 'cancelled')
+      )
 
     ORDER BY "timestamp" DESC;
 $$;
 
--- Grant execution privileges
 GRANT EXECUTE ON FUNCTION public.get_sanitized_logbook(date) TO authenticated, anon;
+
+COMMIT;

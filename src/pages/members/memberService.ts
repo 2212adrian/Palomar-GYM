@@ -256,7 +256,9 @@ export const memberService = {
       );
       const queryPromise = supabase
         .from('members')
-        .select('*')
+        .select(
+          'id, member_id, full_name, phone, email, gender, birthday, address, image_url, emergency_contact_name, relationship, emergency_contact_phone, status, notes, created_at, updated_at'
+        )
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
@@ -1155,8 +1157,9 @@ export const subscriptionService = {
     const receiptNo = `REC-${Date.now().toString().slice(-8)}`;
     const offlineSubId = `sub_off_${Date.now()}`;
 
-    const customerType = activeSub ? 'Membership Renewal' : 'New Membership';
-    const itemDescription = activeSub
+    const isRenewal = Boolean(activeSub);
+    const customerType = isRenewal ? 'Existing Member' : 'New Membership';
+    const itemDescription = isRenewal
       ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
       : `Subscribed under ${planName}`;
 
@@ -1200,6 +1203,7 @@ export const subscriptionService = {
               status: subPayload.status,
               payment_status: subPayload.payment_status,
               payment_method: subPayload.payment_method,
+              receipt_number: receiptNo,
             },
           ])
           .select()
@@ -1240,49 +1244,54 @@ export const subscriptionService = {
     if (!insertedSub.receipt_number) {
       insertedSub.receipt_number = receiptNo;
       if (!isOffline) {
-        (async () => {
-          try {
-            await supabase
-              .from('subscriptions')
-              .update({ receipt_number: receiptNo })
-              .eq('id', insertedSub.id);
-          } catch {}
-        })();
+        try {
+          await supabase
+            .from('subscriptions')
+            .update({ receipt_number: receiptNo })
+            .eq('id', insertedSub.id);
+        } catch {}
       }
     }
 
     if (!isOffline) {
-      (async () => {
-        try {
-          await supabase
-            .from('members')
-            .update({ status: 'Active', updated_at: new Date().toISOString() })
-            .eq('member_id', m.member_id);
-        } catch {}
-      })();
+      try {
+        await supabase
+          .from('members')
+          .update({ status: 'Active', updated_at: new Date().toISOString() })
+          .eq('member_id', m.member_id);
+      } catch (memErr) {
+        console.warn('Member status update notice:', memErr);
+      }
 
-      (async () => {
-        try {
+      const receiptPayload = {
+        id: receiptNo,
+        member_id: m.member_id,
+        customer_name: m.full_name,
+        customer_type: customerType,
+        amount: totalAmount,
+        base_price: basePrice,
+        gcash_fee: gcashFee,
+        card_fee: cardFee,
+        gcash_ref_no: gcashRefNo,
+        payment_method: paymentMethod,
+        payment_status: 'Paid',
+        item_description: itemDescription,
+      };
+
+      try {
+        const { error: rcptErr } = await supabase.from('receipts').insert([receiptPayload]);
+        if (rcptErr) {
+          console.warn('Initial receipt insert failed, trying New Membership enum fallback:', rcptErr.message);
           await supabase.from('receipts').insert([
             {
-              id: receiptNo,
-              member_id: m.member_id,
-              customer_name: m.full_name,
-              customer_type: activeSub ? 'Membership Renewal' : 'New Membership',
-              amount: totalAmount,
-              base_price: basePrice,
-              gcash_fee: gcashFee,
-              card_fee: cardFee,
-              gcash_ref_no: gcashRefNo,
-              payment_method: paymentMethod,
-              payment_status: 'Paid',
-              item_description: activeSub
-                ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
-                : `Subscribed under ${planName}`,
+              ...receiptPayload,
+              customer_type: 'New Membership',
             },
           ]);
-        } catch {}
-      })();
+        }
+      } catch (rcptCatchErr) {
+        console.error('Failed to insert receipt for subscription:', rcptCatchErr);
+      }
     }
 
     // Persist to local cache
@@ -1324,7 +1333,7 @@ export const subscriptionService = {
     };
   },
 
-  void: async (
+void: async (
     subscriptionId: string,
     reason: string,
     notes: string,
@@ -1340,31 +1349,35 @@ export const subscriptionService = {
 
     if (findErr || !target) throw new Error('Subscription record not found.');
 
-    // 1. Delete linked receipt so cash drawer balance reconciles immediately
-    if (target.receipt_number) {
+    const cleanReceiptNo = target.receipt_number ? String(target.receipt_number).replace(/^rcpt-/, '') : null;
+    const nowIso = new Date().toISOString();
+
+    if (cleanReceiptNo) {
+      await supabase
+        .from('receipts')
+        .update({
+          payment_status: 'Voided',
+        })
+        .or(`id.eq.${cleanReceiptNo},id.eq.rcpt-${cleanReceiptNo}`);
+
       await supabase
         .from('receipts')
         .delete()
-        .or(`id.eq.${target.receipt_number},id.eq.rcpt-${target.receipt_number}`);
+        .or(`id.eq.${cleanReceiptNo},id.eq.rcpt-${cleanReceiptNo}`);
+
+      await supabase
+        .from('attendance')
+        .update({
+          deleted_at: nowIso,
+          deleted_by: user,
+          updated_at: nowIso,
+        })
+        .or(`receipt_number.eq.${cleanReceiptNo},receipt_number.eq.rcpt-${cleanReceiptNo}`);
 
       await supabase
         .from('attendance')
         .delete()
-        .eq('receipt_number', target.receipt_number);
-    }
-
-    if (target.member_id) {
-      const targetTime = new Date(target.created_at || target.start_date || Date.now()).getTime();
-      const timeWindowStart = new Date(targetTime - 3600000 * 24).toISOString();
-      const timeWindowEnd = new Date(targetTime + 3600000 * 24).toISOString();
-
-      await supabase
-        .from('receipts')
-        .delete()
-        .eq('member_id', target.member_id)
-        .gte('created_at', timeWindowStart)
-        .lte('created_at', timeWindowEnd)
-        .or('customer_type.ilike.%Membership%,item_description.ilike.%Subscription%,item_description.ilike.%Renewal%,item_description.ilike.%Monthly%,item_description.ilike.%Yearly%');
+        .or(`receipt_number.eq.${cleanReceiptNo},receipt_number.eq.rcpt-${cleanReceiptNo}`);
     }
 
     // 2. Check and void member card if it was part of this subscription
@@ -1435,7 +1448,7 @@ export const subscriptionService = {
           .select('*')
           .eq('member_id', target.member_id)
           .neq('id', subscriptionId)
-          .not('status', 'in', '("Voided","voided","cancelled","Cancelled")')
+          .neq('status', 'Voided')
           .order('end_date', { ascending: false });
 
         const activeSub = (remainingSubs || []).find((s: any) => {
@@ -1483,6 +1496,9 @@ export const subscriptionService = {
       Object.keys(sessionStorage).forEach((k) => {
         if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
       });
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('logbook_sanitized_')) localStorage.removeItem(k);
+      });
     } catch {}
 
     const auditDetail = `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}${
@@ -1501,6 +1517,7 @@ export const subscriptionService = {
     );
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
+    window.dispatchEvent(new Event('palomar:cash-session-updated'));
     window.dispatchEvent(new Event('member-refresh'));
   },
 
@@ -1530,20 +1547,6 @@ export const subscriptionService = {
         .eq('receipt_number', target.receipt_number);
     }
 
-    if (target.member_id) {
-      const targetTime = new Date(target.created_at || target.start_date || Date.now()).getTime();
-      const timeWindowStart = new Date(targetTime - 3600000 * 24).toISOString();
-      const timeWindowEnd = new Date(targetTime + 3600000 * 24).toISOString();
-
-      await supabase
-        .from('receipts')
-        .delete()
-        .eq('member_id', target.member_id)
-        .gte('created_at', timeWindowStart)
-        .lte('created_at', timeWindowEnd)
-        .or('customer_type.ilike.%Membership%,item_description.ilike.%Subscription%,item_description.ilike.%Renewal%,item_description.ilike.%Monthly%,item_description.ilike.%Yearly%');
-    }
-
     // Delete or cancel the subscription record
     const { error: delErr } = await supabase
       .from('subscriptions')
@@ -1554,7 +1557,7 @@ export const subscriptionService = {
       await supabase
         .from('subscriptions')
         .update({
-          status: 'cancelled',
+          status: 'Voided',
           payment_status: 'Cancelled',
           voided_at: new Date().toISOString(),
           voided_by: user,
@@ -1573,7 +1576,7 @@ export const subscriptionService = {
           .select('*')
           .eq('member_id', target.member_id)
           .neq('id', subscriptionId)
-          .not('status', 'in', '("Voided","voided","cancelled","Cancelled")')
+          .neq('status', 'Voided')
           .order('end_date', { ascending: false });
 
         const activeSub = (remainingSubs || []).find((s: any) => {
@@ -1605,6 +1608,9 @@ export const subscriptionService = {
       Object.keys(sessionStorage).forEach((k) => {
         if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
       });
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('logbook_sanitized_')) localStorage.removeItem(k);
+      });
     } catch {}
 
     await writeAudit(
@@ -1617,6 +1623,7 @@ export const subscriptionService = {
     );
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));
+    window.dispatchEvent(new Event('palomar:cash-session-updated'));
     window.dispatchEvent(new Event('member-refresh'));
   },
 };

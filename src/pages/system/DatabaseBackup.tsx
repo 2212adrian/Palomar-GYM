@@ -81,6 +81,7 @@ export const DatabaseBackup: React.FC = () => {
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(3);
   const [verifyPassword, setVerifyPassword] = useState<string>('');
+  const [restoreConfirmText, setRestoreConfirmText] = useState<string>('');
 
   // SuperAdmin Access Control & Terminal States
   const { user, profile } = useAuthStore() as any;
@@ -90,6 +91,50 @@ export const DatabaseBackup: React.FC = () => {
   const isSuperAdminOnly = useMemo(() => {
     return isSuperAdmin(user?.email || profile?.email);
   }, [user?.email, profile?.email]);
+
+  // Dual-Path Verification: Detect if user has a password or signed in via Google only
+  const isGoogleOnly = useMemo(() => {
+    if (!user) return false;
+    const rawProviders = user.app_metadata?.providers;
+    const singleProvider = user.app_metadata?.provider;
+    const providers: string[] = Array.isArray(rawProviders)
+      ? rawProviders
+      : singleProvider
+        ? [singleProvider]
+        : [];
+    const identities: any[] = user.identities || [];
+    const hasEmail =
+      providers.includes('email') ||
+      identities.some((id: any) => id.provider === 'email');
+    const isGoogle =
+      providers.includes('google') ||
+      identities.some((id: any) => id.provider === 'google');
+    return isGoogle && !hasEmail;
+  }, [user]);
+
+  const [hasPassword, setHasPassword] = useState<boolean>(!isGoogleOnly);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkPasswordStatus = async () => {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase.rpc('check_user_has_password');
+        if (!error && typeof data === 'boolean' && isMounted) {
+          setHasPassword(data);
+          return;
+        }
+      } catch {}
+
+      if (isMounted) {
+        setHasPassword(!isGoogleOnly);
+      }
+    };
+    checkPasswordStatus();
+    return () => {
+      isMounted = false;
+    };
+  }, [user, isGoogleOnly]);
 
   const todayStr = useMemo(() => getTodayDateString(), []);
   const [startDate, setStartDate] = useState<string>(MIN_ALLOWED_DATE);
@@ -596,6 +641,7 @@ export const DatabaseBackup: React.FC = () => {
     if (!isRestoreModalOpen) return;
     setCountdown(3);
     setVerifyPassword('');
+    setRestoreConfirmText('');
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -794,21 +840,28 @@ export const DatabaseBackup: React.FC = () => {
   const handleConfirmRestore = async () => {
     if (!restoreTarget) return;
 
-    if (!verifyPassword.trim()) {
+    if (hasPassword && !verifyPassword.trim()) {
       toast.error('Please enter your password to authorize this action.');
+      return;
+    }
+
+    if (!hasPassword && restoreConfirmText.trim().toUpperCase() !== 'CONFIRM RESTORE') {
+      toast.error('Please type "CONFIRM RESTORE" to authorize this rollback.');
       return;
     }
 
     try {
       setIsRestoring(true);
 
-      const { data: isValidPassword, error: authError } = await supabase.rpc(
-        'verify_user_password',
-        { entered_password: verifyPassword }
-      );
+      if (hasPassword) {
+        const { data: isValidPassword, error: authError } = await supabase.rpc(
+          'verify_user_password',
+          { entered_password: verifyPassword }
+        );
 
-      if (authError || !isValidPassword) {
-        throw new Error('Authorization failed. Incorrect password.');
+        if (authError || !isValidPassword) {
+          throw new Error('Authorization failed. Incorrect password.');
+        }
       }
 
       const existingSafety = backups.find((b) => b.type === 'safety');
@@ -1353,14 +1406,16 @@ export const DatabaseBackup: React.FC = () => {
             RESTORE
           </button>
 
-          {/* Delete Button */}
-          <button
-            onClick={() => handleDeleteBackup(b)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-            title="Delete this backup"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {/* Delete Button (Prohibited for Automated Backups) */}
+          {b.type !== 'auto' && (
+            <button
+              onClick={() => handleDeleteBackup(b)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              title="Delete this backup"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -1810,14 +1865,16 @@ export const DatabaseBackup: React.FC = () => {
                       RESTORE
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBackup(b)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
-                      title="Delete this backup"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {b.type !== 'auto' && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBackup(b)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                        title="Delete this backup"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -2465,24 +2522,55 @@ export const DatabaseBackup: React.FC = () => {
               </strong>
             </div>
 
-            <div className="grid gap-1.5 pt-1">
-              <label
-                htmlFor="verifyPasswordInput"
-                className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
-              >
-                <Lock className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
-                Confirm Admin Password
-              </label>
-              <input
-                id="verifyPasswordInput"
-                type="password"
-                disabled={isRestoring}
-                placeholder="Enter your password to authorize rollback..."
-                value={verifyPassword}
-                onChange={(e) => setVerifyPassword(e.target.value)}
-                className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-medium disabled:opacity-50"
-              />
-            </div>
+            {hasPassword ? (
+              <div className="grid gap-1.5 pt-1">
+                <label
+                  htmlFor="verifyPasswordInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
+                  Confirm Admin Password
+                </label>
+                <input
+                  id="verifyPasswordInput"
+                  type="password"
+                  disabled={isRestoring}
+                  placeholder="Enter your password to authorize rollback..."
+                  value={verifyPassword}
+                  onChange={(e) => setVerifyPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-medium disabled:opacity-50"
+                />
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1">
+                <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-600 dark:text-blue-400 flex items-center justify-between gap-2">
+                  <span className="font-semibold truncate">
+                    Signed in via Google ({user?.email})
+                  </span>
+                  <span className="text-[10px] uppercase font-mono font-bold bg-blue-500/20 px-2 py-0.5 rounded shrink-0">
+                    Verified OAuth
+                  </span>
+                </div>
+                <label
+                  htmlFor="restoreConfirmPhraseInput"
+                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 block"
+                >
+                  Safety Confirmation Phrase *
+                </label>
+                <input
+                  id="restoreConfirmPhraseInput"
+                  type="text"
+                  disabled={isRestoring}
+                  value={restoreConfirmText}
+                  onChange={(e) => setRestoreConfirmText(e.target.value)}
+                  placeholder='Type "CONFIRM RESTORE" to proceed'
+                  className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-mono uppercase font-semibold disabled:opacity-50"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Because this account uses Google Sign-In with no local password, typing <strong className="text-(--color-text)">CONFIRM RESTORE</strong> authorizes this critical database restoration.
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
               <Button
@@ -2493,6 +2581,7 @@ export const DatabaseBackup: React.FC = () => {
                   setIsRestoreModalOpen(false);
                   setRestoreTarget(null);
                   setVerifyPassword('');
+                  setRestoreConfirmText('');
                 }}
               >
                 Cancel
@@ -2502,11 +2591,18 @@ export const DatabaseBackup: React.FC = () => {
                 onClick={handleConfirmRestore}
                 loading={isRestoring}
                 disabled={
-                  countdown > 0 || isRestoring || !verifyPassword.trim()
+                  countdown > 0 ||
+                  isRestoring ||
+                  (hasPassword
+                    ? !verifyPassword.trim()
+                    : restoreConfirmText.trim().toUpperCase() !== 'CONFIRM RESTORE')
                 }
                 loadingLabel="RESTORING SYSTEM..."
                 className={`w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors ${
-                  countdown > 0 || !verifyPassword.trim()
+                  countdown > 0 ||
+                  (hasPassword
+                    ? !verifyPassword.trim()
+                    : restoreConfirmText.trim().toUpperCase() !== 'CONFIRM RESTORE')
                     ? '!bg-slate-200 !border-slate-300 !text-slate-500 dark:!bg-zinc-800 dark:!border-zinc-700 dark:!text-zinc-400 cursor-not-allowed'
                     : '!bg-red-600 hover:!bg-red-700 !border-red-600 !text-white cursor-pointer'
                 }`}

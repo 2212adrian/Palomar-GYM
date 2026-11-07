@@ -41,6 +41,17 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
   },
 
   fetchSafetyBackup: async () => {
+    if (get().isLoading) return get().safetyBackup;
+
+    const cacheKey = 'palomar_safety_backup_check_ts';
+    const now = Date.now();
+    try {
+      const lastCheck = sessionStorage.getItem(cacheKey);
+      if (lastCheck && now - Number(lastCheck) < 15000) {
+        return get().safetyBackup;
+      }
+    } catch {}
+
     try {
       set({ isLoading: true });
       const { data, error } = await supabase
@@ -54,6 +65,9 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
       if (error) throw error;
       const safety = (data as BackupItem) || null;
       set({ safetyBackup: safety });
+      try {
+        sessionStorage.setItem(cacheKey, String(Date.now()));
+      } catch {}
       return safety;
     } catch (err) {
       console.warn('Failed to check safety backup status:', err);
@@ -64,18 +78,27 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
   },
 
   subscribeRealtime: () => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel('database_backups_safety_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'database_backups' },
         () => {
-          get().fetchSafetyBackup();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null;
+            try {
+              sessionStorage.removeItem('palomar_safety_backup_check_ts');
+            } catch {}
+            get().fetchSafetyBackup();
+          }, 1500);
         }
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   },

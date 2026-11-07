@@ -149,6 +149,55 @@ const URL_TAB_MAP: Record<string, TabID> = {
   updates: 'info',
 };
 
+const SettingsTabSkeleton: React.FC = () => {
+  return (
+    <div className="w-full space-y-6 animate-pulse">
+      <div className="space-y-2">
+        <div className="h-6 w-52 bg-slate-200 dark:bg-white/10 rounded-lg" />
+        <div className="h-4 w-80 max-w-full bg-slate-100 dark:bg-white/5 rounded-md" />
+      </div>
+
+      <div className="p-4 sm:p-5 bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-slate-200 dark:bg-white/10 rounded" />
+          <div className="h-4 w-44 bg-slate-200 dark:bg-white/10 rounded" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="h-3 w-28 bg-slate-200 dark:bg-white/10 rounded" />
+            <div className="h-10 w-full bg-slate-100 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 rounded-lg" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 w-32 bg-slate-200 dark:bg-white/10 rounded" />
+            <div className="h-10 w-full bg-slate-100 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 rounded-lg" />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 sm:p-5 bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-slate-200 dark:bg-white/10 rounded" />
+          <div className="h-4 w-36 bg-slate-200 dark:bg-white/10 rounded" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <div className="h-3 w-24 bg-slate-200 dark:bg-white/10 rounded" />
+            <div className="h-10 w-full bg-slate-100 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 rounded-lg" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 w-24 bg-slate-200 dark:bg-white/10 rounded" />
+            <div className="h-10 w-full bg-slate-100 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 rounded-lg" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 w-24 bg-slate-200 dark:bg-white/10 rounded" />
+            <div className="h-10 w-full bg-slate-100 dark:bg-white/5 border border-slate-200/60 dark:border-white/5 rounded-lg" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function Settings() {
   const { user, profile } = useAuthStore();
   const {
@@ -190,6 +239,8 @@ export default function Settings() {
   }, [urlTabParam]);
 
   const settingsScrollRef = useRef<HTMLDivElement>(null);
+  const prevTabIdRef = useRef<TabID>(activeTabId);
+  const [isTabLoading, setIsTabLoading] = useState<boolean>(false);
 
   const [tabTransition, setTabTransition] = useState<{
     tabId: TabID;
@@ -201,21 +252,31 @@ export default function Settings() {
     animKey: 0,
   });
 
-  if (tabTransition.tabId !== activeTabId) {
-    const prevIdx = getSettingsTabVerticalIndex(tabTransition.tabId);
-    const currIdx = getSettingsTabVerticalIndex(activeTabId);
+  useEffect(() => {
+    if (prevTabIdRef.current !== activeTabId) {
+      const prevIdx = getSettingsTabVerticalIndex(prevTabIdRef.current);
+      const currIdx = getSettingsTabVerticalIndex(activeTabId);
 
-    let dir: 'down' | 'up' | null = null;
-    if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
-      dir = currIdx > prevIdx ? 'down' : 'up';
+      let dir: 'down' | 'up' | null = null;
+      if (prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx) {
+        dir = currIdx > prevIdx ? 'down' : 'up';
+      }
+
+      prevTabIdRef.current = activeTabId;
+      setTabTransition((prev) => ({
+        tabId: activeTabId,
+        direction: dir,
+        animKey: prev.animKey + 1,
+      }));
+
+      setIsTabLoading(true);
+      const timer = setTimeout(() => {
+        setIsTabLoading(false);
+      }, 180);
+
+      return () => clearTimeout(timer);
     }
-
-    setTabTransition({
-      tabId: activeTabId,
-      direction: dir,
-      animKey: tabTransition.animKey + 1,
-    });
-  }
+  }, [activeTabId]);
 
   useEffect(() => {
     if (settingsScrollRef.current) {
@@ -366,24 +427,16 @@ export default function Settings() {
   }, []);
 
   const handleTabClick = (tabId: TabID) => {
+    if (tabId === activeTabId) {
+      if (mobileView === 'menu') {
+        setMobileView('detail');
+      }
+      return;
+    }
+
     if (isChildDirty) {
       window.dispatchEvent(new CustomEvent('trigger-rates-cancel'));
     }
-
-    const prevIdx = getSettingsTabVerticalIndex(activeTabId);
-    const currIdx = getSettingsTabVerticalIndex(tabId);
-    const dir: 'down' | 'up' =
-      prevIdx !== -1 && currIdx !== -1 && prevIdx !== currIdx
-        ? currIdx > prevIdx
-          ? 'down'
-          : 'up'
-        : 'down';
-
-    setTabTransition((prev) => ({
-      tabId,
-      direction: dir,
-      animKey: prev.animKey + 1,
-    }));
 
     const pathSegment = TAB_URL_MAP[tabId];
 
@@ -862,24 +915,30 @@ export default function Settings() {
                       : ''
               }`}
             >
-              {activeTab === 'personal-account' && <PersonalAccount />}
+              {isTabLoading ? (
+                <SettingsTabSkeleton />
+              ) : (
+                <>
+                  {activeTab === 'personal-account' && <PersonalAccount />}
 
-              {(activeTab === 'security-and-permissions' ||
-                activeTab === 'device-permissions') && (
-                <div className="w-full">
-                  <PermissionsSettings />
-                </div>
+                  {(activeTab === 'security-and-permissions' ||
+                    activeTab === 'device-permissions') && (
+                    <div className="w-full">
+                      <PermissionsSettings />
+                    </div>
+                  )}
+
+                  {activeTab === 'gym-profile' && <GymProfile />}
+                  {activeTab === 'rates-and-payments' && <RatesPayments />}
+                  {activeTab === 'user-management' && <UserManagement />}
+                  {activeTab === 'database-backup' && <DatabaseBackup />}
+                  {activeTab === 'audit-logs' && <AuditLogs />}
+                  {(activeTab === 'system-updates' ||
+                    activeTab === 'system-information' ||
+                    activeTab === 'updates' ||
+                    activeTabId === 'info') && <SystemInformation />}
+                </>
               )}
-
-              {activeTab === 'gym-profile' && <GymProfile />}
-              {activeTab === 'rates-and-payments' && <RatesPayments />}
-              {activeTab === 'user-management' && <UserManagement />}
-              {activeTab === 'database-backup' && <DatabaseBackup />}
-              {activeTab === 'audit-logs' && <AuditLogs />}
-              {(activeTab === 'system-updates' ||
-                activeTab === 'system-information' ||
-                activeTab === 'updates' ||
-                activeTabId === 'info') && <SystemInformation />}
             </div>
           </div>
         </div>

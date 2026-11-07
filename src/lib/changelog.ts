@@ -18,6 +18,76 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.3',
+    date: '2026-11-07',
+    summary:
+      'API gateway and database egress optimization, logbook attendance patch fixes, synchronized subscription voiding reconciliation, and Google authentication management.',
+    sections: [
+      {
+        type: 'Egress & API Gateway Optimization',
+        items: [
+          'Bound dashboard telemetry queries to active date ranges, eliminating multi-megabyte 1,500-record historical dumps.',
+          'Removed redundant background cache-warming queries that duplicated logbook and sales requests.',
+          'Excluded heavy base64 signature images from directory bulk fetches to minimize bandwidth.',
+          'Replaced full database downloads during QR and barcode scans with targeted direct queries.',
+          'Added in-flight request deduplication and debounced realtime listeners across cash sessions, notifications, and rates.',
+        ],
+      },
+      {
+        type: 'Logbook & Subscription Integrity',
+        items: [
+          'Resolved HTTP 400 error on attendance payment status updates by validating UUID vs receipt code formats.',
+          'Fixed subscription voiding workflow to accurately reconcile member statuses and purge linked receipts without corrupting logbook history.',
+        ],
+      },
+      {
+        type: 'Authentication & Security Verification',
+        items: [
+          'Display account email with one-click copying and status badges in Personal Account settings.',
+          'Support linking and unbinding Google accounts with safeguarded password checks.',
+          'Added dual-path confirmation phrase verification for Google-authenticated admin accounts.',
+          'Lifted live staff presence broadcasting into root system layout for continuous online visibility.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.2',
+    date: '2026-11-07',
+    summary:
+      'Seamless Google OAuth authentication method detection and zero-friction security configuration in Personal Account settings.',
+    sections: [
+      {
+        type: 'Google OAuth & Credential Management',
+        items: [
+          'Dynamic Password Presence Inspection: Implemented `check_user_has_password` RPC alongside client-side provider inspection to determine whether an account was initialized via Google OAuth or standard password authentication.',
+          'Context-Aware Credentials Interface: Automatically transforms the password management card into "Set Account Password" for Google-linked accounts, bypassing current password requirements and guiding users to attach custom login passwords.',
+          'Connected Sign-In Methods Status Widget: Integrated visual indicator cards and badge pills displaying live connection statuses for both Google Sign-In and Account Password authentication.',
+          'Unblocked Security Dialogs: Eliminated blocking password prompt verification in username update and two-step verification modals for Google accounts that have not established a custom password.',
+          'TypeScript Provider Type Safety: Enhanced application metadata provider normalization to prevent runtime type errors on string array transformations.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.1',
+    date: '2026-11-07',
+    summary:
+      'Critical database enum alignment for subscription renewals, cross-session contract isolation during void operations, and automated logbook receipt healing.',
+    sections: [
+      {
+        type: 'Subscription Engine & Logbook Integrity',
+        items: [
+          'Customer Type Enum Alignment: Fixed database schema failure on membership renewals (`invalid input value for enum customer_type_enum: "Membership Renewal"`) by mapping active renewal receipts to enum-compatible types with automatic fallback.',
+          'Database Schema Migration: Dispatched migration adding "Membership Renewal" to the PostgreSQL `customer_type_enum` database type.',
+          'Awaited Receipt Persistence: Converted detached asynchronous receipt insertion promises into awaited transactions, guaranteeing that subscription receipts are written to storage prior to dispatching logbook refresh events.',
+          'Surgical Subscription Voiding: Removed destructive 24-hour blanket time-window deletions that inadvertently purged sibling subscriptions and earlier receipts belonging to the same member.',
+          'Automated Self-Healing Logbook: Implemented automatic background reconciliation in the attendance logbook that detects active subscriptions missing receipt entries and re-establishes their ledger records.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-10-13',
     summary:

@@ -95,6 +95,12 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
   }
 
   try {
+    const earliestDate =
+      timeRange === 'year'
+        ? subDays(now, 366)
+        : startOfMonth(subDays(monthStart, 1));
+    const earliestIso = earliestDate.toISOString();
+
     const [
       membersRes,
       attendanceRes,
@@ -113,20 +119,20 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           'id, check_in_time, entry_fee, base_price, gcash_fee, card_fee, receipt_number, customer_type, customer_name, plan_name, payment_method, gcash_ref_no, deleted_at, member_id'
         )
         .is('deleted_at', null)
-        .order('check_in_time', { ascending: false })
-        .limit(1500),
+        .gte('check_in_time', earliestIso)
+        .order('check_in_time', { ascending: false }),
       supabase
         .from('sales')
         .select(
           'id, receipt_no, items, product_name, payment_method, amount_received, change_calculated, total_amount, reference_number, created_at, deleted_at, cash_session_id, gcash_fee_applied'
         )
         .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1500),
+        .gte('created_at', earliestIso)
+        .order('created_at', { ascending: false }),
       supabase
         .from('products')
         .select(
-          'id, barcode_id, product_name, image_url, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, created_at'
+          'id, barcode_id, product_name, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, created_at'
         )
         .is('deleted_at', null),
       supabase
@@ -135,15 +141,15 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
           'id, member_id, plan_type, price, start_date, end_date, created_at, receipt_number, status, payment_status, voided_at, payment_method, gcash_ref_no, members(full_name, phone)'
         )
         .is('voided_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1500),
+        .or(`created_at.gte.${earliestIso},end_date.gte.${now.toISOString()}`)
+        .order('created_at', { ascending: false }),
       supabase
         .from('receipts')
         .select(
           'id, member_id, customer_name, customer_type, amount, base_price, gcash_fee, card_fee, gcash_ref_no, payment_method, payment_status, item_description, created_at'
         )
-        .order('created_at', { ascending: false })
-        .limit(1500),
+        .gte('created_at', earliestIso)
+        .order('created_at', { ascending: false }),
     ]);
 
     const members = membersRes.data || [];

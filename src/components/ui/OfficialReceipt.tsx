@@ -1,3 +1,4 @@
+// src/components/ui/OfficialReceipt.tsx
 import {
   useMemo,
   useState,
@@ -168,8 +169,35 @@ export const OfficialReceipt = forwardRef<
     const [actualReceiptNo, setActualReceiptNo] = useState<string>(
       data.receiptNo || 'RCPT-PREVIEW-001'
     );
+    const [resolvedProcessor, setResolvedProcessor] = useState<string>('');
 
-useEffect(() => {
+    const isUuid = (val?: string | null): boolean => {
+      if (!val) return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        val.trim()
+      );
+    };
+
+    const isGenericStaff = (val?: string | null): boolean => {
+      if (!val) return true;
+      const lower = val.trim().toLowerCase();
+      return (
+        lower === 'staff' ||
+        lower === 'admin staff' ||
+        lower === 'staff (staff)' ||
+        lower === 'frontdesk staff' ||
+        lower === 'wolf palomar staff'
+      );
+    };
+
+    const isPreviewCheck =
+      !data.receiptNo && !data.paymentRef;
+
+    const [isResolvingProcessor, setIsResolvingProcessor] = useState<boolean>(
+      () => Boolean(!data.processedBy && !isPreviewCheck)
+    );
+
+    useEffect(() => {
       setActualReceiptNo(data.receiptNo || 'RCPT-PREVIEW-001');
     }, [data.receiptNo]);
 
@@ -200,15 +228,19 @@ useEffect(() => {
         const searchKey = data.paymentRef || data.receiptNo;
         if (!searchKey) return;
 
-        let targetReceiptNumber = searchKey.replace(/^rcpt-/, '');
+        let targetReceiptNumber = searchKey.replace(/^rcpt-/i, '');
 
         // If the ID is a check-in ID (CHK-...), resolve its actual receipt_number from attendance table
         if (targetReceiptNumber.startsWith('CHK-')) {
-          const { data: attRow } = await supabase
-            .from('attendance')
-            .select('receipt_number')
-            .eq('id', targetReceiptNumber)
-            .maybeSingle();
+          let attQuery = supabase.from('attendance').select('receipt_number');
+          if (isUuid(targetReceiptNumber)) {
+            attQuery = attQuery.eq('id', targetReceiptNumber);
+          } else {
+            attQuery = attQuery.or(
+              `receipt_number.eq.${targetReceiptNumber},reference_number.eq.${targetReceiptNumber}`
+            );
+          }
+          const { data: attRow } = await attQuery.maybeSingle();
 
           if (attRow?.receipt_number) {
             targetReceiptNumber = attRow.receipt_number;
@@ -384,26 +416,269 @@ const itemsSubtotal = useMemo(() => {
     const authProfile = useAuthStore((s) => s.profile);
     const authUser = useAuthStore((s) => s.user);
 
+    useEffect(() => {
+      let isMounted = true;
+
+      const resolveProcessorUser = async () => {
+        if (data.processedBy && !isGenericStaff(data.processedBy)) {
+          const trimmed = data.processedBy.trim();
+
+          if (isUuid(trimmed)) {
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('username, role')
+                .eq('id', trimmed)
+                .maybeSingle();
+
+              if (isMounted && prof?.username) {
+                setResolvedProcessor(
+                  prof.role ? `${prof.username} (${prof.role})` : prof.username
+                );
+                return;
+              }
+            } catch (err) {
+              console.warn('Failed to resolve UUID to profile:', err);
+            }
+          }
+
+          if (trimmed.includes('@')) {
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('username, role')
+                .eq('email', trimmed)
+                .maybeSingle();
+
+              if (isMounted && prof?.username) {
+                setResolvedProcessor(
+                  prof.role ? `${prof.username} (${prof.role})` : prof.username
+                );
+                return;
+              }
+            } catch (err) {
+              console.warn('Failed to resolve email to profile:', err);
+            }
+          }
+
+          if (isMounted) {
+            setResolvedProcessor(trimmed);
+          }
+          return;
+        }
+
+        const searchKey = data.paymentRef || actualReceiptNo || data.receiptNo;
+        const isPreview = !searchKey || searchKey.includes('PREVIEW');
+
+        if (!isPreview && searchKey) {
+          const cleanKey = searchKey.replace(/^rcpt-/i, '').trim();
+          const rawKey = searchKey.trim();
+
+          try {
+            let processorIdentifier: string | null = null;
+
+            const { data: rcptRow } = await supabase
+              .from('receipts')
+              .select('*')
+              .or(`id.eq.${cleanKey},id.eq.${rawKey}`)
+              .maybeSingle();
+
+            if (rcptRow) {
+              processorIdentifier =
+                rcptRow.processed_by ||
+                rcptRow.created_by ||
+                rcptRow.user_id ||
+                rcptRow.cashier ||
+                rcptRow.staff_name ||
+                rcptRow.staff_username ||
+                null;
+            }
+
+            if (!processorIdentifier) {
+              let subFilter = `receipt_number.eq.${cleanKey},receipt_number.eq.${rawKey}`;
+              if (isUuid(cleanKey)) subFilter += `,id.eq.${cleanKey}`;
+              if (isUuid(rawKey) && rawKey !== cleanKey) subFilter += `,id.eq.${rawKey}`;
+
+              const { data: subRow } = await supabase
+                .from('subscriptions')
+                .select('*')
+                .or(subFilter)
+                .maybeSingle();
+
+              if (subRow) {
+                processorIdentifier =
+                  subRow.processed_by ||
+                  subRow.created_by ||
+                  subRow.user_id ||
+                  null;
+              }
+            }
+
+            if (!processorIdentifier) {
+              let attFilter = `receipt_number.eq.${cleanKey},receipt_number.eq.${rawKey}`;
+              if (isUuid(cleanKey)) attFilter += `,id.eq.${cleanKey}`;
+              if (isUuid(rawKey) && rawKey !== cleanKey) attFilter += `,id.eq.${rawKey}`;
+
+              const { data: attRow } = await supabase
+                .from('attendance')
+                .select('*')
+                .or(attFilter)
+                .maybeSingle();
+
+              if (attRow) {
+                processorIdentifier =
+                  attRow.processed_by ||
+                  attRow.created_by ||
+                  attRow.staff_username ||
+                  attRow.user_id ||
+                  null;
+              }
+            }
+
+            if (!processorIdentifier) {
+              let salesFilter = `receipt_no.eq.${rawKey},receipt_no.eq.${cleanKey}`;
+              if (isUuid(rawKey)) salesFilter += `,id.eq.${rawKey}`;
+              if (isUuid(cleanKey) && cleanKey !== rawKey) salesFilter += `,id.eq.${cleanKey}`;
+
+              const { data: salesRow } = await supabase
+                .from('sales')
+                .select('*')
+                .or(salesFilter)
+                .maybeSingle();
+
+              if (salesRow) {
+                processorIdentifier =
+                  salesRow.processed_by ||
+                  salesRow.created_by ||
+                  salesRow.user_id ||
+                  salesRow.sold_by ||
+                  salesRow.cashier ||
+                  null;
+              }
+            }
+
+            if (!processorIdentifier) {
+              const { data: auditRow } = await supabase
+                .from('audit_logs')
+                .select('actor_username')
+                .or(
+                  `target_id.eq.${cleanKey},target_id.eq.${rawKey},target_id.eq.rcpt-${cleanKey}`
+                )
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (
+                auditRow?.actor_username &&
+                auditRow.actor_username !== 'System'
+              ) {
+                processorIdentifier = auditRow.actor_username;
+              }
+            }
+
+            if (!processorIdentifier) {
+              const { data: detailAudit } = await supabase
+                .from('audit_logs')
+                .select('actor_username')
+                .ilike('details', `%${cleanKey}%`)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (
+                detailAudit?.actor_username &&
+                detailAudit.actor_username !== 'System'
+              ) {
+                processorIdentifier = detailAudit.actor_username;
+              }
+            }
+
+            if (processorIdentifier) {
+              const targetId = String(processorIdentifier).trim();
+
+              if (isUuid(targetId)) {
+                const { data: prof } = await supabase
+                  .from('profiles')
+                  .select('username, role')
+                  .eq('id', targetId)
+                  .maybeSingle();
+
+                if (isMounted && prof?.username) {
+                  setResolvedProcessor(
+                    prof.role ? `${prof.username} (${prof.role})` : prof.username
+                  );
+                  setIsResolvingProcessor(false);
+                  return;
+                }
+              } else if (!isGenericStaff(targetId)) {
+                if (isMounted) {
+                  setResolvedProcessor(targetId);
+                  setIsResolvingProcessor(false);
+                  return;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to query transaction processor:', err);
+          }
+        }
+
+        if (isMounted) {
+          if (data.processedBy && !isGenericStaff(data.processedBy)) {
+            setResolvedProcessor(data.processedBy);
+          } else if (isPreview && authProfile?.username) {
+            setResolvedProcessor(authProfile.username);
+          } else if (isPreview && authUser?.email) {
+            setResolvedProcessor(authUser.email.split('@')[0]);
+          }
+          setIsResolvingProcessor(false);
+        }
+      };
+
+      resolveProcessorUser();
+
+      return () => {
+        isMounted = false;
+      };
+    }, [
+      data.processedBy,
+      actualReceiptNo,
+      data.receiptNo,
+      data.paymentRef,
+      isOpen,
+      authProfile,
+      authUser,
+    ]);
+
     const processedBy = useMemo(() => {
-      if (
-        data.processedBy &&
-        data.processedBy !== 'WOLF PALOMAR STAFF' &&
-        data.processedBy !== 'FRONTDESK STAFF' &&
-        data.processedBy !== 'Admin Staff' &&
-        data.processedBy !== 'Staff'
-      ) {
+      if (data.processedBy && !isGenericStaff(data.processedBy)) {
         return data.processedBy;
       }
+
+      if (resolvedProcessor && !isGenericStaff(resolvedProcessor)) {
+        return resolvedProcessor;
+      }
+
+      if (isResolvingProcessor) {
+        return '...';
+      }
+
       if (authProfile?.username) {
-        const role = authProfile.role || 'staff';
-        return `${authProfile.username} (${role})`;
+        return authProfile.username;
       }
+
       if (authUser?.email) {
-        const namePart = authUser.email.split('@')[0];
-        return `${namePart} (staff)`;
+        return authUser.email.split('@')[0];
       }
-      return data.processedBy || 'Staff (staff)';
-    }, [data.processedBy, authProfile, authUser]);
+
+      return 'SUPERADMIN';
+    }, [
+      data.processedBy,
+      resolvedProcessor,
+      isResolvingProcessor,
+      authProfile,
+      authUser,
+    ]);
 
     const gcashRefDisplay = data.gcashRefNo || data.paymentRef || 'N/A';
 

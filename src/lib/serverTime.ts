@@ -36,6 +36,9 @@ if (typeof localStorage !== 'undefined') {
 
 export async function syncServerTime(): Promise<number> {
   if (isSyncing) return serverTimeOffsetMs;
+  if (isInitialized && Date.now() - lastSyncTimestamp < 30000) {
+    return serverTimeOffsetMs;
+  }
   isSyncing = true;
 
   try {

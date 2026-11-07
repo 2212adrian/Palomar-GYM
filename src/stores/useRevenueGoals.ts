@@ -64,6 +64,14 @@ export function useRevenueGoals() {
   const fetchGoalsConfig = useCallback(async () => {
     if (!isAdmin || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
 
+    const cacheKey = 'palomar_revenue_goals_cache';
+    try {
+      const cached = sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+      if (cached) {
+        setGoalsConfig(JSON.parse(cached));
+      }
+    } catch {}
+
     try {
       const { data, error } = await supabase
         .from('revenue_goals')
@@ -80,12 +88,18 @@ export function useRevenueGoals() {
       }
 
       if (data) {
-        setGoalsConfig({
+        const parsed = {
           daily: Number(data.daily) || DEFAULT_GOALS.daily,
           weekly: Number(data.weekly) || DEFAULT_GOALS.weekly,
           monthly: Number(data.monthly) || DEFAULT_GOALS.monthly,
           yearly: Number(data.yearly) || DEFAULT_GOALS.yearly,
-        });
+        };
+        setGoalsConfig(parsed);
+        try {
+          const str = JSON.stringify(parsed);
+          sessionStorage.setItem(cacheKey, str);
+          localStorage.setItem(cacheKey, str);
+        } catch {}
       }
     } catch (err) {
       if (typeof navigator === 'undefined' || navigator.onLine) {
@@ -278,7 +292,17 @@ export function useRevenueGoals() {
   useEffect(() => {
     if (!isAdmin || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
 
-    // Generate an isolated channel name to prevent subscribe() collisions across instances
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerDebouncedRevenue = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        fetchRevenue();
+      }, 2000);
+    };
+
     const channelId = `revenue-goals-sync-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId);
 
@@ -286,23 +310,17 @@ export function useRevenueGoals() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sales' },
-        () => {
-          fetchRevenue();
-        }
+        triggerDebouncedRevenue
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance' },
-        () => {
-          fetchRevenue();
-        }
+        triggerDebouncedRevenue
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'subscriptions' },
-        () => {
-          fetchRevenue();
-        }
+        triggerDebouncedRevenue
       )
       .on(
         'postgres_changes',
@@ -314,6 +332,7 @@ export function useRevenueGoals() {
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchRevenue, fetchGoalsConfig, isAdmin]);

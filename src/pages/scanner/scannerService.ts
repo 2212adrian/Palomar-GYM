@@ -1,6 +1,6 @@
 // src/pages/scanner/scannerService.ts
 import { supabase } from '../../lib/supabase/client';
-import { memberService, cardService } from '../members/memberService';
+import { memberService } from '../members/memberService';
 import type { Member, OnlineRegistration } from '../../types/members';
 
 export interface HybridMemberResult {
@@ -500,75 +500,54 @@ export const scannerService = {
     // 3. MEMBER QR / CARD / MEMBER-ID SCAN (Validates Today's Active Plan)
     // =========================================================================
     try {
-      const [allCards, allMembers] = await Promise.all([
-        cardService.getAll(),
-        memberService.getAll(),
-      ]);
+      let member: any = null;
+      let targetMemberId = memberIdPart;
 
-      const cardMatch = (allCards || []).find((c: any) => {
-        const cNum = (c.card_number || '').toLowerCase();
-        const cTok = (
-          c.security_token ||
-          c.token ||
-          c.card_token ||
-          c.qr_code ||
-          c.id ||
-          ''
-        ).toLowerCase();
-        const fc = fullCode.toLowerCase();
-        const mid = memberIdPart.toLowerCase();
+      // 1. Direct targeted lookup by card token in database
+      const { data: dbCard } = await supabase
+        .from('cards')
+        .select('member_id')
+        .or(`card_number.eq.${fullCode},card_number.eq.${memberIdPart}`)
+        .maybeSingle();
 
-        return (
-          (cNum && (cNum === fc || cNum === mid)) ||
-          (cTok && (cTok === fc || cTok === mid))
-        );
-      });
+      if (dbCard?.member_id) {
+        targetMemberId = dbCard.member_id;
+      }
 
-      const targetMemberId = cardMatch ? cardMatch.member_id : memberIdPart;
+      // 2. Direct targeted lookup by member_id, id, phone or name
+      const { data: dbMember } = await supabase
+        .from('members')
+        .select('*')
+        .is('deleted_at', null)
+        .or(
+          `member_id.ilike.${targetMemberId},id.ilike.${targetMemberId},phone.eq.${memberIdPart},member_id.ilike.${fullCode}`
+        )
+        .maybeSingle();
 
-      let member = (allMembers || []).find((m: Member) => {
-        const mId = (m.member_id || '').toLowerCase();
-        const mDbId = (m.id || '').toLowerCase();
-        const mPhone = (m.phone || '').trim();
-        const mName = (m.full_name || '').toLowerCase();
-        const tId = targetMemberId.toLowerCase();
-        const fc = fullCode.toLowerCase();
-        const mid = memberIdPart.toLowerCase();
+      if (dbMember) {
+        member = dbMember;
+      } else {
+        // Offline cache fallback only when direct query returns nothing
+        const allMembers = await memberService.getAll();
+        member = (allMembers || []).find((m: Member) => {
+          const mId = (m.member_id || '').toLowerCase();
+          const mDbId = (m.id || '').toLowerCase();
+          const mPhone = (m.phone || '').trim();
+          const mName = (m.full_name || '').toLowerCase();
+          const tId = targetMemberId.toLowerCase();
+          const fc = fullCode.toLowerCase();
+          const mid = memberIdPart.toLowerCase();
 
-        return (
-          mId === tId ||
-          mId === fc ||
-          mId === mid ||
-          mDbId === fc ||
-          mDbId === mid ||
-          (mPhone && (mPhone === fullCode || mPhone === memberIdPart)) ||
-          (mName && (mName === fc || mName === mid))
-        );
-      });
-
-      // Direct Database fallback query if not in cache
-      if (!member) {
-        // Check if scanned code is a card token UUID in cards table
-        const { data: dbCard } = await supabase
-          .from('cards')
-          .select('member_id')
-          .or(`card_number.eq.${fullCode},card_number.eq.${memberIdPart}`)
-          .maybeSingle();
-
-        const resolvedMemberId = dbCard?.member_id || memberIdPart;
-
-        const { data: dbMember } = await supabase
-          .from('members')
-          .select('*')
-          .is('deleted_at', null)
-          .or(
-            `member_id.ilike.${resolvedMemberId},member_id.ilike.${fullCode},full_name.ilike.${fullCode}`
-          )
-          .maybeSingle();
-
-        if (dbMember) {
-          member = dbMember;
-        }
+          return (
+            mId === tId ||
+            mId === fc ||
+            mId === mid ||
+            mDbId === fc ||
+            mDbId === mid ||
+            (mPhone && (mPhone === fullCode || mPhone === memberIdPart)) ||
+            (mName && (mName === fc || mName === mid))
+          );
+        });
       }
 
       if (member) {

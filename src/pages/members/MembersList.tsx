@@ -421,17 +421,15 @@ export const MembersList: React.FC<MembersListProps> = ({
 
     const invalidateAndRefresh = () => {
       if (isBatterySaver && document.hidden) return;
-      if (isBatterySaver) {
-        if (debounceTimer) return;
-        debounceTimer = setTimeout(() => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(
+        () => {
           debounceTimer = null;
           purgeCache();
           fetchMembers(true);
-        }, 10000);
-        return;
-      }
-      purgeCache();
-      fetchMembers(true);
+        },
+        isBatterySaver ? 10000 : 1500
+      );
     };
 
     const channel = supabase
@@ -1125,7 +1123,7 @@ export const MembersList: React.FC<MembersListProps> = ({
           />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight">
+              <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight uppercase">
                 {item.full_name}
               </span>
               {item.status === 'Suspended' && (
@@ -1135,7 +1133,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                 </span>
               )}
             </div>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium block mt-0.5 leading-none truncate">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium block mt-0.5 leading-none truncate uppercase">
               {item.member_id} • {item.phone}
             </span>
           </div>
@@ -1971,7 +1969,7 @@ export const MembersList: React.FC<MembersListProps> = ({
 
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <h3 className="font-heading font-extrabold text-sm text-(--color-text) truncate leading-tight">
+                                    <h3 className="font-heading font-extrabold text-sm text-(--color-text) truncate leading-tight uppercase">
                                       {member.full_name}
                                     </h3>
                                     {isSuspended && (
@@ -1980,7 +1978,7 @@ export const MembersList: React.FC<MembersListProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate font-medium">
+                                  <span className="text-xs font-mono text-slate-400 block mt-0.5 truncate font-medium uppercase">
                                     {member.member_id}
                                   </span>
                                 </div>
@@ -2429,10 +2427,10 @@ export const MembersList: React.FC<MembersListProps> = ({
                     {(mobileActionSheetMember.full_name || 'M')[0]}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-heading font-bold text-base text-(--color-text) truncate">
+                    <h3 className="font-heading font-bold text-base text-(--color-text) truncate uppercase">
                       {mobileActionSheetMember.full_name}
                     </h3>
-                    <span className="text-xs font-mono text-slate-400 block">
+                    <span className="text-xs font-mono text-slate-400 block uppercase">
                       {mobileActionSheetMember.member_id} •{' '}
                       {mobileActionSheetMember.phone}
                     </span>
@@ -2734,10 +2732,10 @@ export const MembersList: React.FC<MembersListProps> = ({
                           className="shrink-0 border border-(--border-color)"
                         />
                         <div className="min-w-0">
-                          <span className="font-bold text-xs block truncate text-(--color-text)">
+                          <span className="font-bold text-xs block truncate text-(--color-text) uppercase">
                             {m.full_name}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400 block">
+                          <span className="text-[10px] font-mono text-slate-400 block uppercase">
                             {m.member_id}
                           </span>
                         </div>

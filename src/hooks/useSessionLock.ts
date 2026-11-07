@@ -83,6 +83,10 @@ export const assertActiveCashSession = async (actionDesc: string = 'process tran
     );
   }
 
+  if (storeState.activeSessionId) {
+    return storeState.activeSessionId;
+  }
+
   try {
     const { data, error } = await supabase
       .from('cash_sessions')

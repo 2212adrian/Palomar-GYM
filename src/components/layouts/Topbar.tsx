@@ -33,7 +33,7 @@ import {
   useMotionValue,
   useTransform,
 } from 'framer-motion';
-import { supabase } from '../../lib/supabase/client';
+import { getServerNow } from '../../lib/serverTime';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 import {
@@ -291,7 +291,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   const { isBatterySaver } = useBatterySaver();
   const [currentTimeFull, setCurrentTimeFull] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
-  const [timeOffset, setTimeOffset] = useState<number>(0);
 
   // Cash Session State
   const {
@@ -302,7 +301,16 @@ export const Topbar: React.FC<TopbarProps> = ({
     isLoading: isCashLoading,
     loadActiveSession,
     refreshTransactions,
+    subscribeRealtime: subscribeCashRealtime,
   } = useCashSessionStore();
+
+  useEffect(() => {
+    loadActiveSession();
+    const unsubscribe = subscribeCashRealtime();
+    return () => {
+      unsubscribe();
+    };
+  }, [loadActiveSession, subscribeCashRealtime]);
 
   const [isCashPopoverOpen, setIsCashPopoverOpen] = useState(false);
   const [, setIsSyncPopoverOpen] = useState(false);
@@ -386,10 +394,6 @@ export const Topbar: React.FC<TopbarProps> = ({
     setNotificationOpen,
     subscribeRealtime,
   } = useNotificationStore();
-
-  useEffect(() => {
-    loadActiveSession();
-  }, [loadActiveSession]);
 
   useEffect(() => {
     if (user?.email) {
@@ -532,29 +536,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   }, []);
 
   useEffect(() => {
-    const syncWithServer = async () => {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      try {
-        const clientStartTime = Date.now();
-        const { data, error } = await supabase.rpc('get_server_time');
-
-        if (data && !error) {
-          const serverTime = new Date(data).getTime();
-          const clientEndTime = Date.now();
-          const latency = (clientEndTime - clientStartTime) / 2;
-          const offset = serverTime + latency - clientEndTime;
-          setTimeOffset(offset);
-        }
-      } catch (err) {
-        // Fallback to system time
-      }
-    };
-    syncWithServer();
-  }, []);
-
-  useEffect(() => {
     const updateTime = () => {
-      const databaseNow = new Date(Date.now() + timeOffset);
+      const databaseNow = getServerNow();
       const timeStr = databaseNow.toLocaleTimeString('en-US', {
         timeZone: 'Asia/Manila',
         hour: 'numeric',
@@ -575,7 +558,7 @@ export const Topbar: React.FC<TopbarProps> = ({
     updateTime();
     const interval = setInterval(updateTime, isBatterySaver ? 15000 : 1000);
     return () => clearInterval(interval);
-  }, [timeOffset, isBatterySaver]);
+  }, [isBatterySaver]);
 
   const isLogbookPath = location.pathname.startsWith('/logbook');
   const isSalesPath = location.pathname.startsWith('/sales');

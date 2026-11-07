@@ -350,7 +350,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillData,
   prefillMember,
 }) => {
-  const { profile } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const isStaff = profile?.role === 'staff';
 
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
@@ -481,6 +481,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         })
         .catch(() => {});
 
+      cardService
+        .getAll()
+        .then((cList) => {
+          if (cList && cList.length > 0) {
+            setAllCards(cList);
+          }
+        })
+        .catch(() => {});
+
       return () => {
         unsub();
       };
@@ -549,6 +558,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [gcashReference, setGcashReference] = useState('');
   const [cashTendered, setCashTendered] = useState('');
   const [addIdCard, setAddIdCard] = useState(false);
+  const [allCards, setAllCards] = useState<any[]>([]);
   const [importedQueueReg, setImportedQueueReg] =
     useState<OnlineRegistration | null>(null);
   const [finishedIds, setFinishedIds] = useState<{
@@ -568,6 +578,24 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   } | null>(null);
 
   const activeMember = selectedExistingMember || prefillMember;
+
+  // Detect if active member already owns or has paid for a physical card
+  const existingActiveCard = useMemo(() => {
+    if (!activeMember) return null;
+    return (
+      allCards.find(
+        (c) =>
+          c.member_id === activeMember.member_id &&
+          c.status === 'Active' &&
+          c.card_type !== 'None'
+      ) || null
+    );
+  }, [activeMember, allCards]);
+
+  const hasAlreadyPaidCard = Boolean(
+    existingActiveCard && existingActiveCard.payment_status === 'PAID'
+  );
+
   const isNameLocked = Boolean(activeMember?.full_name?.trim());
   const isPhoneLocked = Boolean(
     activeMember?.phone &&
@@ -1827,16 +1855,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           : null,
       };
 
+      const currentProcessor =
+        profile?.username ||
+        (user?.email ? user.email.split('@')[0] : 'SUPERADMIN');
+
       if (activeMemberToUse) {
         targetMember = await memberService.update(
           activeMemberToUse.id,
           memberFields,
-          'Admin Staff'
+          currentProcessor
         );
       } else {
         targetMember = await memberService.create(
           { ...memberFields, status: 'Active' },
-          'Admin Staff'
+          currentProcessor
         );
       }
 
@@ -1847,7 +1879,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           targetMember.member_id,
           selectedPlan,
           mappedPayment,
-          'Admin Staff',
+          currentProcessor,
           liveTotalPrice,
           {
             basePrice: livePlanBasePrice,
@@ -1879,6 +1911,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               payment_method: mappedPayment,
               payment_status: 'Paid',
               item_description: 'Physical Membership Card Fee',
+              processed_by: currentProcessor,
             },
           ]);
         } catch (rcptErr) {
@@ -1892,7 +1925,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         await cardService.issue(
           targetMember.member_id,
           'QR',
-          'Admin Staff',
+          currentProcessor,
           undefined,
           'PAID',
           'UNCLAIMED',
@@ -1908,7 +1941,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           await cardService.issue(
             targetMember.member_id,
             'QR',
-            'Admin Staff',
+            currentProcessor,
             undefined,
             'NONE',
             'NOT_APPLICABLE',
@@ -1920,7 +1953,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       if (importedQueueReg) {
         try {
-          await registrationService.approve(importedQueueReg.id, 'Admin Staff');
+          await registrationService.approve(importedQueueReg.id, currentProcessor);
         } catch (apprErr) {
           console.warn('Queue approval deferred offline:', apprErr);
         }
@@ -3518,57 +3551,91 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               )}
 
-              {/* Membership Card Option */}
-              <div className="pt-2 border-t border-(--border-color) flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-(--color-text) block text-xs">
-                    Issue Physical Entry Card (+₱{cardFee})
-                    {!isSessionOpen && (
-                      <span className="ml-2 text-[9px] text-amber-500 font-mono font-bold uppercase">
-                        (Disabled - Session Closed)
+              {/* Purchase Physical Card Option with Pre-existing Card Validation */}
+              <div className="pt-2.5 border-t border-(--border-color) space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-(--color-text) text-xs">
+                        Purchase Physical Card (+₱{cardFee})
                       </span>
-                    )}
-                  </span>
-                  <span className="text-[10px] text-(--color-text)/50">
-                    Printed RFID / QR membership card
-                  </span>
-                </div>
-                <label
-                  className={`relative inline-flex items-center ${
-                    !isSessionOpen
-                      ? 'cursor-not-allowed opacity-50'
-                      : 'cursor-pointer'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={addIdCard}
-                    disabled={!isSessionOpen}
-                    onChange={(e) => {
-                      if (!isSessionOpen) {
-                        toast.warning(
-                          'Cash drawer is closed. Cannot issue physical card.'
-                        );
-                        return;
-                      }
-                      setAddIdCard(e.target.checked);
-                    }}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
-                      addIdCard
-                        ? 'bg-(--color-primary)'
-                        : 'bg-slate-300 dark:bg-zinc-700 border border-slate-400/60 dark:border-zinc-600'
+                      {hasAlreadyPaidCard && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono font-extrabold uppercase bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                          <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />
+                          Card Already Purchased
+                        </span>
+                      )}
+                      {!isSessionOpen && (
+                        <span className="text-[9px] text-amber-500 font-mono font-bold uppercase">
+                          (Disabled - Session Closed)
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-(--color-text)/60 block mt-0.5">
+                      {hasAlreadyPaidCard
+                        ? `Issued on ${
+                            existingActiveCard?.issued_at
+                              ? new Date(existingActiveCard.issued_at).toLocaleDateString()
+                              : 'previous registration'
+                          } • Switching on will re-issue a replacement card`
+                        : 'Official physical RFID / QR printed member credential badge'}
+                    </span>
+                  </div>
+
+                  <label
+                    className={`relative inline-flex items-center shrink-0 ${
+                      !isSessionOpen
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
                     }`}
                   >
-                    <div
-                      className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${
-                        addIdCard ? 'translate-x-5' : 'translate-x-0'
-                      }`}
+                    <input
+                      type="checkbox"
+                      checked={addIdCard}
+                      disabled={!isSessionOpen}
+                      onChange={(e) => {
+                        if (!isSessionOpen) {
+                          toast.warning(
+                            'Cash drawer is closed. Cannot purchase physical card.'
+                          );
+                          return;
+                        }
+                        setAddIdCard(e.target.checked);
+                      }}
+                      className="sr-only"
                     />
+                    <div
+                      className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
+                        addIdCard
+                          ? hasAlreadyPaidCard
+                            ? 'bg-amber-500'
+                            : 'bg-(--color-primary)'
+                          : 'bg-slate-300 dark:bg-zinc-700 border border-slate-400/60 dark:border-zinc-600'
+                      }`}
+                    >
+                      <div
+                        className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${
+                          addIdCard ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                {hasAlreadyPaidCard && addIdCard && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-2 animate-fade-in">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Reissue Notice:</strong> This member already holds an active card issued on{' '}
+                      <strong>
+                        {existingActiveCard?.issued_at
+                          ? new Date(existingActiveCard.issued_at).toLocaleDateString()
+                          : 'an earlier date'}
+                      </strong>
+                      . Proceeding will replace the previous badge and re-issue a fresh replacement card.
+                    </span>
                   </div>
-                </label>
+                )}
               </div>
 
               {/* Fee Breakdown */}
@@ -3590,7 +3657,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   )}
                   {addIdCard && (
                     <div className="flex justify-between text-(--color-text)/60">
-                      <span>Card Printing:</span>
+                      <span>{hasAlreadyPaidCard ? 'Card Reissue / Replacement:' : 'Physical Card Purchase:'}</span>
                       <span className="text-(--color-primary-light) font-bold">
                         +₱{cardFee}.00
                       </span>
@@ -3639,9 +3706,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       paymentMethod: finishedIds.payment_method,
                       gcashRefNo: finishedIds.gcash_ref_no,
                       transactionDate: finishedIds.transaction_date,
-                      processedBy: profile?.username
-                        ? `${profile.username} (${profile.role || 'staff'})`
-                        : 'Adrian (staff)',
+                      processedBy:
+                        profile?.username ||
+                        (user?.email ? user.email.split('@')[0] : 'SUPERADMIN'),
                       qrValue: finishedIds.receipt_no,
                     }}
                   />

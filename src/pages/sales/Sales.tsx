@@ -501,7 +501,7 @@ export const Sales: React.FC = () => {
 
   const fetchTransactions = useCallback(
     async (isBackground: boolean = false) => {
-      const cacheKey = `sales_sanitized_${dateStr}`;
+      const cacheKey = `sales_sanitized_${dateStr}_v3`;
       const sessionsCacheKey = 'sales_closed_sessions_cache';
 
       if (!isBackground) {
@@ -575,20 +575,16 @@ export const Sales: React.FC = () => {
             freshTransactions = data.map((s: any) => ({
               ...s,
               cash_session_id: s.cash_session_id || null,
+              processed_by:
+                s.processed_by ||
+                s.processedBy ||
+                s.sold_by ||
+                s.cashier ||
+                s.created_by ||
+                null,
             }));
 
-            // Warm the Service Worker GET cache for /rest/v1/sales in the background when online
-            if (typeof navigator === 'undefined' || navigator.onLine) {
-              supabase
-                .from('sales')
-                .select('*')
-                .is('deleted_at', null)
-                .gte('created_at', startOfDayIso)
-                .lte('created_at', endOfDayIso)
-                .order('created_at', { ascending: false })
-                .then(() => {});
-            }
-          } else if (error) {
+            } else if (error) {
             const isOfflineErr =
               error?.message?.includes('No internet connection') ||
               (typeof navigator !== 'undefined' && !navigator.onLine);
@@ -634,6 +630,13 @@ export const Sales: React.FC = () => {
                 total_amount: s.total_amount,
                 gcash_fee_applied: s.gcash_fee_applied || 0,
                 reference_number: s.reference_number,
+                processed_by:
+                  s.processed_by ||
+                  s.processedBy ||
+                  s.sold_by ||
+                  s.cashier ||
+                  s.created_by ||
+                  null,
               }));
             }
           } catch {
@@ -986,6 +989,10 @@ export const Sales: React.FC = () => {
     const canOffline = useCashSessionStore.getState().canProcessOfflineTransactions();
     const sessionId = activeSession?.id || useCashSessionStore.getState().getLastKnownSessionId();
 
+    const currentProcessor =
+      profile?.username ||
+      (user?.email ? user.email.split('@')[0] : 'SUPERADMIN');
+
     if (!isOnline) {
       if (!canOffline || !sessionId) {
         toast.error('Cannot record offline sale: No active cash drawer session was open.');
@@ -1003,6 +1010,7 @@ export const Sales: React.FC = () => {
         reference_number: newTx.referenceNumber || newTx.reference_number || null,
         cash_session_id: sessionId,
         created_at: newTx.createdAt || new Date().toISOString(),
+        processed_by: currentProcessor,
       };
 
       try {
@@ -1011,7 +1019,7 @@ export const Sales: React.FC = () => {
           type: 'sale',
           cashSessionId: sessionId,
           userId: auth.user?.id || 'offline_cashier',
-          userName: auth.profile?.username || auth.user?.email || 'Cashier',
+          userName: currentProcessor,
           payload: offlineSalePayload,
         });
 
@@ -1026,7 +1034,7 @@ export const Sales: React.FC = () => {
 
         setTransactions((prev) => {
           const updated = [offlineSale, ...prev];
-          sessionStorage.setItem(`sales_sanitized_${dateStr}`, JSON.stringify(updated));
+          sessionStorage.setItem(`sales_sanitized_${dateStr}_v3`, JSON.stringify(updated));
           return updated;
         });
 
@@ -1053,6 +1061,7 @@ export const Sales: React.FC = () => {
             reference_number:
               newTx.referenceNumber || newTx.reference_number || null,
             cash_session_id: sessionId || null,
+            processed_by: currentProcessor,
           },
         ])
         .select()
@@ -1067,7 +1076,7 @@ export const Sales: React.FC = () => {
         setTransactions((prev) => {
           const updated = [{ ...insertedSale, sync_status: 'synced' }, ...prev];
           sessionStorage.setItem(
-            `sales_sanitized_${dateStr}`,
+            `sales_sanitized_${dateStr}_v3`,
             JSON.stringify(updated)
           );
           return updated;
@@ -2110,9 +2119,13 @@ export const Sales: React.FC = () => {
               selectedReceiptTx.referenceNumber,
             transactionDate:
               selectedReceiptTx.created_at || selectedReceiptTx.createdAt,
-            processedBy: profile?.username
-              ? `${profile.username} (${profile.role || 'staff'})`
-              : 'Adrian (staff)',
+            processedBy:
+              selectedReceiptTx.processed_by ||
+              selectedReceiptTx.processedBy ||
+              selectedReceiptTx.sold_by ||
+              selectedReceiptTx.cashier ||
+              selectedReceiptTx.created_by ||
+              undefined,
           }}
         />
       )}
@@ -2124,7 +2137,7 @@ export const Sales: React.FC = () => {
           onClose={() => setIsRecycleBinOpen(false)}
           products={products}
           onRestoreSuccess={() => {
-            sessionStorage.removeItem(`sales_sanitized_${dateStr}`);
+            sessionStorage.removeItem(`sales_sanitized_${dateStr}_v3`);
             fetchTransactions(true);
             fetchProducts();
           }}

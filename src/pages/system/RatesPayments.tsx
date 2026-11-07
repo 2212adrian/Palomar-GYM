@@ -63,13 +63,13 @@ export const RatesPayments: React.FC = () => {
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [initialConfig, setInitialConfig] = useState<any>(DEFAULT_RATES_CONFIG);
+  const [initialConfig, setInitialConfig] = useState<any>(null);
 
   const [gymProfileData, setGymProfileData] = useState<GymProfileConfig | null>(
     null
   );
 
-  const initialConfigRef = useRef<any>(DEFAULT_RATES_CONFIG);
+  const initialConfigRef = useRef<any>(null);
   const currentConfigRef = useRef<any>(null);
 
   currentConfigRef.current = {
@@ -84,9 +84,55 @@ export const RatesPayments: React.FC = () => {
     vatPercentage,
   };
 
-  const fetchRatesConfig = useCallback(async () => {
+  const fetchRatesConfig = useCallback(async (silent = false) => {
+    const cacheKey = 'palomar_rates_config_cache';
+    if (!silent) {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const cachedConfig = {
+            monthlyRate: Number(parsed.monthly_rate ?? DEFAULT_RATES_CONFIG.monthlyRate),
+            yearlyRate: Number(parsed.yearly_rate ?? DEFAULT_RATES_CONFIG.yearlyRate),
+            regularWalkIn: Number(parsed.regular_walk_in ?? DEFAULT_RATES_CONFIG.regularWalkIn),
+            studentWalkIn: Number(parsed.student_walk_in ?? DEFAULT_RATES_CONFIG.studentWalkIn),
+            yearlyWalkIn: Number(parsed.yearly_walk_in ?? DEFAULT_RATES_CONFIG.yearlyWalkIn),
+            gcashFee: Number(parsed.gcash_fee ?? DEFAULT_RATES_CONFIG.gcashFee),
+            newCardFee: Number(parsed.new_card_fee ?? DEFAULT_RATES_CONFIG.newCardFee),
+            vatEnabled: parsed.vat_enabled ?? DEFAULT_RATES_CONFIG.vatEnabled,
+            vatPercentage: Number(parsed.vat_percentage ?? DEFAULT_RATES_CONFIG.vatPercentage),
+          };
+
+          setMonthlyRate(cachedConfig.monthlyRate);
+          setYearlyRate(cachedConfig.yearlyRate);
+          setRegularWalkIn(cachedConfig.regularWalkIn);
+          setStudentWalkIn(cachedConfig.studentWalkIn);
+          setYearlyWalkIn(cachedConfig.yearlyWalkIn);
+          setGcashFee(cachedConfig.gcashFee);
+          setNewCardFee(cachedConfig.newCardFee);
+          setVatEnabled(cachedConfig.vatEnabled);
+          setVatPercentage(cachedConfig.vatPercentage);
+
+          setInitialConfig(cachedConfig);
+          initialConfigRef.current = cachedConfig;
+          setIsLoading(false);
+        }
+      } catch {}
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_RATES_CONFIG);
+        initialConfigRef.current = DEFAULT_RATES_CONFIG;
+      }
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      setIsLoading(true);
+      if (!silent && !localStorage.getItem(cacheKey)) {
+        setIsLoading(true);
+      }
       const { data, error } = await supabase
         .from('rates_config')
         .select('*')
@@ -134,18 +180,39 @@ export const RatesPayments: React.FC = () => {
 
         setInitialConfig(parsedConfig);
         initialConfigRef.current = parsedConfig;
+
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch {}
+      } else if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_RATES_CONFIG);
+        initialConfigRef.current = DEFAULT_RATES_CONFIG;
       }
     } catch (err: any) {
       console.warn(
         'Failed to load rates_config from database, using defaults:',
         err.message
       );
+      if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_RATES_CONFIG);
+        initialConfigRef.current = DEFAULT_RATES_CONFIG;
+      }
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   const fetchGymProfile = useCallback(async () => {
+    const cacheKey = 'palomar_gym_profile_cache_v2';
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setGymProfileData(JSON.parse(cached));
+      }
+    } catch {}
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
     try {
       const { data, error } = await supabase
         .from('gym_profile')
@@ -156,6 +223,9 @@ export const RatesPayments: React.FC = () => {
       if (error) throw error;
       if (data) {
         setGymProfileData(data);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch {}
       }
     } catch (err: any) {
       console.warn('Failed to retrieve gym_profile parameters:', err.message);
@@ -166,22 +236,32 @@ export const RatesPayments: React.FC = () => {
     fetchRatesConfig();
     fetchGymProfile();
 
-    // Supabase Realtime Subscriptions
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerDebouncedRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        fetchRatesConfig(true);
+        fetchGymProfile();
+      }, 2000);
+    };
+
     const channel = supabase
       .channel('rates_gym_profile_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'rates_config' },
-        fetchRatesConfig
+        triggerDebouncedRefresh
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'gym_profile' },
-        fetchGymProfile
+        triggerDebouncedRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchRatesConfig, fetchGymProfile]);

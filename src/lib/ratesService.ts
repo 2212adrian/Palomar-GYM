@@ -106,57 +106,77 @@ export async function getSecuredRates(): Promise<RatesConfig | null> {
   }
 }
 
+let inMemoryRatesCache: { config: RatesConfig; timestamp: number } | null = null;
+let inFlightRatesPromise: Promise<RatesConfig> | null = null;
+
 /**
  * Fetches fresh rates from Supabase when online, or retrieves tamper-proof
  * secured rates from browser storage when offline.
  * Seeds initial secure defaults if storage was empty, ensuring offline readiness.
  */
 export async function getEffectiveRates(): Promise<RatesConfig> {
-  const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+  if (inMemoryRatesCache && Date.now() - inMemoryRatesCache.timestamp < 60000) {
+    return inMemoryRatesCache.config;
+  }
 
-  if (isOnline) {
-    try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Rates query timeout')), 1500)
-      );
-      const queryPromise = supabase
-        .from('rates_config')
-        .select('*')
-        .eq('id', 1)
-        .maybeSingle();
+  if (inFlightRatesPromise) {
+    return inFlightRatesPromise;
+  }
 
-      const { data, error } = (await Promise.race([
-        queryPromise,
-        timeoutPromise,
-      ])) as any;
+  inFlightRatesPromise = (async () => {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
-      if (!error && data) {
-        const fullConfig: RatesConfig = {
-          ...DEFAULT_RATES_CONFIG,
-          ...data,
-          monthly_membership: data.monthly_rate ?? DEFAULT_RATES_CONFIG.monthly_rate,
-        };
-        await saveSecuredRates(fullConfig);
-        return fullConfig;
+    if (isOnline) {
+      try {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Rates query timeout')), 1500)
+        );
+        const queryPromise = supabase
+          .from('rates_config')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        const { data, error } = (await Promise.race([
+          queryPromise,
+          timeoutPromise,
+        ])) as any;
+
+        if (!error && data) {
+          const fullConfig: RatesConfig = {
+            ...DEFAULT_RATES_CONFIG,
+            ...data,
+            monthly_membership: data.monthly_rate ?? DEFAULT_RATES_CONFIG.monthly_rate,
+          };
+          inMemoryRatesCache = { config: fullConfig, timestamp: Date.now() };
+          await saveSecuredRates(fullConfig);
+          return fullConfig;
+        }
+      } catch (err) {
+        console.warn('Online rates fetch failed or timed out, trying secured storage:', err);
       }
-    } catch (err) {
-      console.warn('Online rates fetch failed or timed out, trying secured storage:', err);
     }
-  }
 
-  // Verify secured rates in storage
-  const cached = await getSecuredRates();
-  if (cached) {
-    return cached;
-  }
+    // Verify secured rates in storage
+    const cached = await getSecuredRates();
+    if (cached) {
+      inMemoryRatesCache = { config: cached, timestamp: Date.now() };
+      return cached;
+    }
 
-  // If no record exists yet (e.g. initial offline launch), initialize secured storage with defaults
-  try {
-    await saveSecuredRates(DEFAULT_RATES_CONFIG);
-    return DEFAULT_RATES_CONFIG;
-  } catch (seedErr) {
-    console.error('Failed to initialize secured rates in storage:', seedErr);
-  }
+    // If no record exists yet (e.g. initial offline launch), initialize secured storage with defaults
+    try {
+      await saveSecuredRates(DEFAULT_RATES_CONFIG);
+      inMemoryRatesCache = { config: DEFAULT_RATES_CONFIG, timestamp: Date.now() };
+      return DEFAULT_RATES_CONFIG;
+    } catch (seedErr) {
+      console.error('Failed to initialize secured rates in storage:', seedErr);
+    }
 
-  throw new Error('Rates configuration is not available in secured storage.');
+    throw new Error('Rates configuration is not available in secured storage.');
+  })().finally(() => {
+    inFlightRatesPromise = null;
+  });
+
+  return inFlightRatesPromise;
 }

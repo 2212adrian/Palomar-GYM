@@ -174,19 +174,25 @@ export const UserManagement: React.FC = () => {
         });
     }
 
+    const channelId = Date.now();
+    let directoryDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     const directoryChannel = supabase
-      .channel('profiles-directory-sync')
+      .channel(`profiles-directory-sync-${channelId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'profiles' },
         () => {
-          fetchUsers();
+          if (directoryDebounceTimer) clearTimeout(directoryDebounceTimer);
+          directoryDebounceTimer = setTimeout(() => {
+            directoryDebounceTimer = null;
+            fetchUsers();
+          }, 1500);
         }
       )
       .subscribe();
 
     // Live staff presence tracking
-    const presenceChannel = supabase.channel('gym-staff-presence', {
+    const presenceChannel = supabase.channel(`gym-staff-presence-${channelId}`, {
       config: { presence: { key: user?.id || 'staff' } },
     });
 
@@ -197,6 +203,22 @@ export const UserManagement: React.FC = () => {
         Object.keys(state).forEach((k) => onlineSet.add(k));
         if (user?.id) onlineSet.add(user.id);
         setOnlineUserIds(onlineSet);
+
+        // Auto-heal: If any users in the directory are currently online and still marked 'pending', activate them in DB
+        setUsersList((prevUsers) => {
+          const pendingOnlineIds = prevUsers
+            .filter((u) => u.status === 'pending' && onlineSet.has(u.id))
+            .map((u) => u.id);
+
+          if (pendingOnlineIds.length > 0) {
+            supabase
+              .from('profiles')
+              .update({ status: 'active' })
+              .in('id', pendingOnlineIds)
+              .then(() => fetchUsers());
+          }
+          return prevUsers;
+        });
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED' && user?.id) {
@@ -208,6 +230,7 @@ export const UserManagement: React.FC = () => {
       });
 
     return () => {
+      if (directoryDebounceTimer) clearTimeout(directoryDebounceTimer);
       supabase.removeChannel(directoryChannel);
       supabase.removeChannel(presenceChannel);
     };
@@ -673,6 +696,17 @@ export const UserManagement: React.FC = () => {
 
           if (fallbackError) throw fallbackError;
         }
+
+        if (editTargetUser.email?.endsWith('@palomargym.noemail')) {
+          const newSlug = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (newSlug) {
+            const newLocalEmail = `${newSlug}@palomargym.noemail`;
+            await supabase
+              .from('profiles')
+              .update({ email: newLocalEmail })
+              .eq('id', editTargetUser.id);
+          }
+        }
       }
 
       // 3. Update Avatar URL in profiles table if modified
@@ -752,9 +786,11 @@ export const UserManagement: React.FC = () => {
           : originalDbStatus;
 
       const effectiveCurrent = draft.status || currentStatus;
-      const isCurrentlyDisabled =
-        effectiveCurrent === 'disabled' || effectiveCurrent === 'inactive';
-      const nextStatus: 'active' | 'disabled' = isCurrentlyDisabled
+      const isCurrentlyDisabledOrPending =
+        effectiveCurrent === 'disabled' ||
+        effectiveCurrent === 'inactive' ||
+        effectiveCurrent === 'pending';
+      const nextStatus: 'active' | 'disabled' = isCurrentlyDisabledOrPending
         ? 'active'
         : 'disabled';
 
@@ -888,15 +924,12 @@ export const UserManagement: React.FC = () => {
       return 'disabled';
     }
 
-    if (rawStatus === 'pending') {
-      if (onlineUserIds.has(u.id) || u.id === user?.id) {
-        return 'online';
-      }
-      return 'pending';
-    }
-
     if (onlineUserIds.has(u.id) || u.id === user?.id) {
       return 'online';
+    }
+
+    if (rawStatus === 'pending') {
+      return 'pending';
     }
 
     return 'offline';

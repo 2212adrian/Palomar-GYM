@@ -3,8 +3,154 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, X, ArrowRight } from 'lucide-react';
 import { Modal } from './Modal';
 import { Button } from './Button';
-import { getChangelogForVersion } from '../../lib/changelog';
+import {
+  getChangelogForVersion,
+  getAllChangelogs,
+} from '../../lib/changelog';
 import pkg from '../../../package.json';
+
+/**
+ * Standalone Changelog Modal allowing direct viewing of release details
+ * for any version string from System Information or release notes cards.
+ */
+export const VersionChangelogModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  version: string;
+  fallbackNotes?: string;
+}> = ({ isOpen, onClose, version, fallbackNotes }) => {
+  const [selectedVersion, setSelectedVersion] = useState<string>(version);
+
+  useEffect(() => {
+    setSelectedVersion(version);
+  }, [version, isOpen]);
+
+  const allEntries = useMemo(() => {
+    try {
+      return getAllChangelogs();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const changelog = useMemo(
+    () => getChangelogForVersion(selectedVersion),
+    [selectedVersion]
+  );
+
+  const cleanCurrentVer = selectedVersion.replace(/^v/i, '');
+
+  if (!isOpen) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title=""
+      className="max-w-lg p-6 text-left"
+    >
+      <div className="space-y-4 font-body">
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-(--color-primary)/10 text-(--color-primary) flex items-center justify-center shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-heading font-black uppercase tracking-wider text-(--color-text) truncate">
+              Release Notes
+            </h3>
+            <p className="text-[11px] text-slate-400 font-medium">
+              Browse changelog and release history.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close release details"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Version Switcher Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          {allEntries.map((entry: any) => {
+            const entryVer = String(entry.version).replace(/^v/i, '');
+            const isActive = entryVer === cleanCurrentVer;
+            return (
+              <button
+                key={entryVer}
+                type="button"
+                onClick={() => setSelectedVersion(entryVer)}
+                className={`px-3 py-1 rounded-full text-[11px] font-mono font-bold transition-all cursor-pointer shrink-0 border ${
+                  isActive
+                    ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:text-(--color-text) border-slate-200 dark:border-zinc-700'
+                }`}
+              >
+                v{entryVer}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Summary */}
+        {changelog.summary ? (
+          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+            {changelog.summary}
+          </p>
+        ) : fallbackNotes ? (
+          <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed whitespace-pre-wrap">
+            {fallbackNotes}
+          </p>
+        ) : null}
+
+        {/* Sections */}
+        {changelog.sections && changelog.sections.length > 0 ? (
+          <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+            {changelog.sections.map((section, sIdx) => (
+              <div key={sIdx} className="space-y-1.5">
+                <span className="text-[10px] font-heading font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                  {section.type}
+                </span>
+                <ul className="space-y-1.5">
+                  {section.items.map((item, iIdx) => (
+                    <li
+                      key={iIdx}
+                      className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 leading-relaxed"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-(--color-primary) mt-1.5 shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : fallbackNotes && !changelog.summary ? (
+          <div className="p-3.5 bg-(--bg-page) rounded-xl border border-(--border-color) text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed max-h-[45vh] overflow-y-auto">
+            {fallbackNotes}
+          </div>
+        ) : null}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-(--border-color)">
+          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+            Released: {changelog.date || 'Recent'}
+          </span>
+          <Button
+            variant="primary"
+            onClick={onClose}
+            className="px-5 py-2.5 text-[10px] font-heading tracking-widest uppercase cursor-pointer"
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 /**
  * localStorage key holding the app version the user last acknowledged.

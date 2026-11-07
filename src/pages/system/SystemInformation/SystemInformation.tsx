@@ -24,6 +24,7 @@ import {
   AgreementDocumentViewer,
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
+import { VersionChangelogModal } from '../../../components/ui/WhatsNewModal';
 
 import pkg from '../../../../package.json';
 import {
@@ -66,6 +67,7 @@ export const SystemInformation: React.FC = () => {
     AgreementDocument | 'developer' | null
   >(null);
   const [isReloadingCore, setIsReloadingCore] = useState<boolean>(false);
+  const [isReleaseDetailsOpen, setIsReleaseDetailsOpen] = useState<boolean>(false);
 
   // Storage and DB Gauges (Live from Supabase RPCs with safe defaults)
   const [totalDbBytes, setTotalDbBytes] = useState<number>(17.6 * 1024 * 1024);
@@ -297,38 +299,38 @@ export const SystemInformation: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6 font-body text-(--color-text)">
+    <div className="w-full space-y-6 font-body text-(--color-text)">
       {/* Page Header */}
       <div>
-        <h2 className="text-xl font-heading tracking-widest uppercase text-(--color-text)">
+        <h2 className="text-lg sm:text-xl font-heading tracking-widest uppercase text-(--color-text)">
           System Information
         </h2>
-        <p className="text-sm text-slate-400 mt-1 font-medium">
+        <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">
           Application specifications, live Supabase release updates, storage
           health, and facility legal documentation.
         </p>
       </div>
 
-      {/* Two-Column Layout Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: Specifications, Updates & Legal Links (5 Cols) */}
-        <div className="lg:col-span-5 space-y-6">
+      {/* Two-Column Balanced Layout Grid: 7 cols (Left) / 5 cols (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
+        {/* LEFT COLUMN: Specifications & App Release Updater Card (7 Cols) */}
+        <div className="lg:col-span-7 space-y-5 sm:space-y-6">
           {/* Build Specifications & App Release Updater Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-5 rounded-2xl space-y-5">
-            <div className="flex items-start justify-between gap-3">
+          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
                   Build Specifications
                 </h3>
-                <p className="text-xs text-slate-400 mt-1 font-semibold">
+                <p className="text-xs text-slate-400 mt-0.5 font-semibold">
                   Active runtime environment and live Supabase{' '}
                   <span className="font-mono">app_releases</span> status.
                 </p>
               </div>
               <span
-                className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
+                className={`self-start sm:self-auto shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
                   isUpdateAvailable
-                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30 '
+                    ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
                     : 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
                 }`}
               >
@@ -346,7 +348,47 @@ export const SystemInformation: React.FC = () => {
               </span>
             </div>
 
-            <div className="space-y-2.5 pt-2 border-t border-(--border-color) text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 pt-2 border-t border-(--border-color) text-xs">
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">Installed Version</span>
+                <span
+                  className={`font-mono font-bold ${
+                    isUpdateAvailable ? 'text-amber-500' : 'text-emerald-500'
+                  }`}
+                >
+                  v{installedVersion}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">Latest Release</span>
+                <span className="font-mono font-bold text-emerald-500 flex items-center gap-1.5">
+                  {isLoadingRelease ? (
+                    <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
+                  ) : null}
+                  <span>v{remoteVersion}</span>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">Release Package</span>
+                <span className="font-mono text-[11px] font-bold text-(--color-text) truncate max-w-[150px] text-right">
+                  {latestRelease?.fileSizeBytes && latestRelease.fileSizeBytes > 0
+                    ? `${formatBytes(latestRelease.fileSizeBytes)} • `
+                    : ''}
+                  {latestRelease?.storageHost || 'GitHub'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
+                <span className="text-slate-400 font-medium">Environment</span>
+                <span className="font-mono font-bold text-(--color-text) uppercase">
+                  {latestRelease?.environment ||
+                    import.meta.env.MODE ||
+                    'Production'}
+                </span>
+              </div>
+
               <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
                 <span className="text-slate-400 font-medium">Framework</span>
                 <span className="font-mono font-bold text-(--color-text)">
@@ -355,9 +397,7 @@ export const SystemInformation: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
-                <span className="text-slate-400 font-medium">
-                  Runtime Platform
-                </span>
+                <span className="text-slate-400 font-medium">Runtime Platform</span>
                 <span className="font-mono font-bold text-(--color-text) inline-flex items-center gap-1.5 uppercase">
                   {isNativePlatform ? (
                     <>
@@ -372,66 +412,20 @@ export const SystemInformation: React.FC = () => {
                   )}
                 </span>
               </div>
-
-              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
-                <span className="text-slate-400 font-medium">
-                  Installed Version
-                </span>
-                <span
-                  className={`font-mono font-bold ${
-                    isUpdateAvailable ? 'text-amber-500' : 'text-emerald-500'
-                  }`}
-                >
-                  v{installedVersion}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
-                <span className="text-slate-400 font-medium">
-                  Latest Release
-                </span>
-                <span className="font-mono font-bold text-emerald-500 flex items-center gap-1.5">
-                  {isLoadingRelease ? (
-                    <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
-                  ) : null}
-                  <span>v{remoteVersion}</span>
-                </span>
-              </div>
-
-              {latestRelease && (
-                <div className="flex items-center justify-between py-1.5 border-b border-(--border-color)">
-                  <span className="text-slate-400 font-medium">
-                    Release Package
-                  </span>
-                  <span className="font-mono text-[11px] font-bold text-(--color-text)">
-                    {latestRelease.fileSizeBytes > 0
-                      ? `${formatBytes(latestRelease.fileSizeBytes)} • `
-                      : ''}
-                    {latestRelease.storageHost}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-slate-400 font-medium">Environment</span>
-                <span className="font-mono font-bold text-(--color-text) uppercase">
-                  {latestRelease?.environment ||
-                    import.meta.env.MODE ||
-                    'Production'}
-                </span>
-              </div>
             </div>
 
-            {/* Release Notes / Update Banner when a release is fetched from app_releases */}
+            {/* Release Notes / Update Banner when a release is fetched from app_releases (Clickable) */}
             {latestRelease && (
               <div
-                className={`p-3.5 rounded-xl border text-left space-y-2 ${
+                onClick={() => setIsReleaseDetailsOpen(true)}
+                className={`group p-3.5 rounded-xl border text-left space-y-2 transition-all cursor-pointer ${
                   isUpdateAvailable
-                    ? 'bg-amber-500/10 border-amber-500/30'
-                    : 'bg-(--bg-page) border-(--border-color)'
+                    ? 'bg-amber-500/10 hover:bg-amber-500/15 border-amber-500/30 hover:border-amber-500/50'
+                    : 'bg-(--bg-page) hover:bg-(--bg-card) border-(--border-color) hover:border-(--color-primary)/40'
                 }`}
+                title="Click to view full release notes and changelog details"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[11px] font-heading font-black uppercase tracking-wider text-(--color-text) flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     <span>
@@ -440,20 +434,26 @@ export const SystemInformation: React.FC = () => {
                         : `Release v${latestRelease.version} Notes`}
                     </span>
                   </span>
-                  {latestRelease.publishedAt && (
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {new Date(latestRelease.publishedAt).toLocaleDateString(
-                        'en-GB',
-                        {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        }
-                      )}
+                  <div className="flex items-center gap-1.5">
+                    {latestRelease.publishedAt && (
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {new Date(latestRelease.publishedAt).toLocaleDateString(
+                          'en-GB',
+                          {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          }
+                        )}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-(--color-primary) font-heading font-bold uppercase tracking-wider flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                      <span>Details</span>
+                      <ChevronRight className="w-3 h-3" />
                     </span>
-                  )}
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                <p className="text-[11px] text-slate-500 dark:text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-3">
                   {latestRelease.releaseNotes}
                 </p>
               </div>
@@ -496,7 +496,7 @@ export const SystemInformation: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleOpenAndroidPermissionSettings}
-                  className="w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-heading font-black uppercase tracking-widest cursor-pointer transition-all"
+                  className="w-full py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-heading font-black uppercase tracking-widest cursor-pointer transition-all"
                 >
                   Open Android Install Settings
                 </button>
@@ -519,13 +519,13 @@ export const SystemInformation: React.FC = () => {
             )}
 
             {/* Update & Action Buttons */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {isUpdateAvailable && (
                 <button
                   type="button"
                   onClick={handleUpdateToLatest}
                   disabled={isUpdatingApp}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white"
+                  className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white"
                 >
                   <Download
                     className={`w-4 h-4 ${isUpdatingApp ? 'animate-bounce' : ''}`}
@@ -550,7 +550,7 @@ export const SystemInformation: React.FC = () => {
                       latestRelease.fileName
                     )
                   }
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                 >
                   <Smartphone className="w-4 h-4" />
                   <span>Download Android App</span>
@@ -561,7 +561,7 @@ export const SystemInformation: React.FC = () => {
                 type="button"
                 onClick={handleReloadCore}
                 disabled={isReloadingCore || isLoadingRelease}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-xl text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60"
+                className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) opacity-90 hover:opacity-100 rounded-xl text-xs font-heading tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${
@@ -576,107 +576,10 @@ export const SystemInformation: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {/* Legal Documentation & Developer Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-3">
-            <div>
-              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
-                Documentation &amp; Support
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
-                Facility terms, agreements, and support contacts.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color)">
-              <button
-                type="button"
-                onClick={() => setActiveModal('agreement')}
-                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <FileText className="w-3.5 h-3.5 text-indigo-500 dark:text-red-400 shrink-0" />
-                  <span className="text-[11px] font-bold text-(--color-text) truncate">
-                    Agreement
-                  </span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveModal('terms')}
-                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <Scale className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span className="text-[11px] font-bold text-(--color-text) truncate">
-                    Terms
-                  </span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveModal('privacy')}
-                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="text-[11px] font-bold text-(--color-text) truncate">
-                    Privacy
-                  </span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveModal('developer')}
-                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="text-[11px] font-bold text-(--color-text) truncate">
-                    Developer
-                  </span>
-                </div>
-                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* RIGHT COLUMN: Service Health & Resource Utilization (7 Cols) */}
-        <div className="lg:col-span-7 space-y-4 sm:space-y-6">
-          {/* Core Services Operational Status Card */}
-          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-3">
-            <div>
-              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
-                Core Services Status
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
-                Operational integrity across active application microservices.
-              </p>
-            </div>
-
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="font-semibold text-(--color-text)">
-                  All Core Services Operational
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Supabase Auth, Realtime Postgres, Release Distribution (
-                  <span className="font-mono">app_releases</span>), and Cloud
-                  Storage are synchronized and operating within normal
-                  operational parameters.
-                </p>
-              </div>
-            </div>
-          </div>
-
+        {/* RIGHT COLUMN: Service Health, Resource Utilization & Documentation (5 Cols) */}
+        <div className="lg:col-span-5 space-y-5 sm:space-y-6">
           {/* Infrastructure & Resource Allocation Card */}
           <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-4">
             <div>
@@ -688,7 +591,7 @@ export const SystemInformation: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-(--border-color)">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 pt-2 border-t border-(--border-color)">
               {/* Database Utilization Gauge */}
               <div className="space-y-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-xl">
                 <div className="flex items-center justify-between">
@@ -748,8 +651,88 @@ export const SystemInformation: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Legal Documentation & Developer Card */}
+          <div className="bg-(--bg-card) border border-(--border-color) p-4 sm:p-5 rounded-2xl space-y-3">
+            <div>
+              <h3 className="text-sm font-heading tracking-widest uppercase text-(--color-text)">
+                Documentation &amp; Support
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5 font-semibold">
+                Facility terms, agreements, and support contacts.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-(--border-color)">
+              <button
+                type="button"
+                onClick={() => setActiveModal('agreement')}
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <FileText className="w-3.5 h-3.5 text-indigo-500 dark:text-red-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Agreement
+                  </span>
+                </div>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModal('terms')}
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Scale className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Terms
+                  </span>
+                </div>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModal('privacy')}
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Privacy
+                  </span>
+                </div>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModal('developer')}
+                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Developer
+                  </span>
+                </div>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Full Release Notes & Changelog Modal */}
+      {latestRelease && (
+        <VersionChangelogModal
+          isOpen={isReleaseDetailsOpen}
+          onClose={() => setIsReleaseDetailsOpen(false)}
+          version={latestRelease.version}
+          fallbackNotes={latestRelease.releaseNotes}
+        />
+      )}
 
       {/* Shared Modals */}
       <AgreementDocumentViewer

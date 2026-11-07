@@ -1,3 +1,4 @@
+// src/pages/system/GymProfile.tsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -77,16 +78,69 @@ export const GymProfile: React.FC = () => {
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [initialConfig, setInitialConfig] = useState<any>(DEFAULT_GYM_CONFIG);
+  const [initialConfig, setInitialConfig] = useState<any>(null);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const carouselInputRef = useRef<HTMLInputElement>(null);
-  const initialConfigRef = useRef<any>(DEFAULT_GYM_CONFIG);
+  const initialConfigRef = useRef<any>(null);
   const currentConfigRef = useRef<any>(null);
 
-  const fetchGymProfile = useCallback(async () => {
+  const fetchGymProfile = useCallback(async (silent = false) => {
+    const cacheKey = 'palomar_gym_profile_cache_v2';
+    if (!silent) {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const parsedConfig = {
+            gymName: parsed.gymName ?? parsed.gym_name ?? DEFAULT_GYM_CONFIG.gymName,
+            gymDescription:
+              parsed.gymDescription ?? parsed.gym_description ?? DEFAULT_GYM_CONFIG.gymDescription,
+            gymAddress: parsed.gymAddress ?? parsed.gym_address ?? DEFAULT_GYM_CONFIG.gymAddress,
+            contactName1: parsed.contactName1 ?? parsed.contact_name_1 ?? DEFAULT_GYM_CONFIG.contactName1,
+            contactNumber1:
+              parsed.contactNumber1 ?? parsed.contact_number_1 ?? DEFAULT_GYM_CONFIG.contactNumber1,
+            contactName2: parsed.contactName2 ?? parsed.contact_name_2 ?? DEFAULT_GYM_CONFIG.contactName2,
+            contactNumber2:
+              parsed.contactNumber2 ?? parsed.contact_number_2 ?? DEFAULT_GYM_CONFIG.contactNumber2,
+            emailAddress: parsed.emailAddress ?? parsed.email_address ?? DEFAULT_GYM_CONFIG.emailAddress,
+            gymLogo: parsed.gymLogo ?? parsed.gym_logo ?? '',
+            carouselImages: Array.isArray(parsed.carouselImages)
+              ? parsed.carouselImages
+              : Array.isArray(parsed.carousel_images)
+              ? parsed.carousel_images
+              : [],
+          };
+          setGymName(parsedConfig.gymName);
+          setGymDescription(parsedConfig.gymDescription);
+          setGymAddress(parsedConfig.gymAddress);
+          setContactName1(parsedConfig.contactName1);
+          setContactNumber1(parsedConfig.contactNumber1);
+          setContactName2(parsedConfig.contactName2);
+          setContactNumber2(parsedConfig.contactNumber2);
+          setEmailAddress(parsedConfig.emailAddress);
+          setGymLogo(parsedConfig.gymLogo);
+          setCarouselImages(parsedConfig.carouselImages);
+          setInitialConfig(parsedConfig);
+          initialConfigRef.current = parsedConfig;
+          setIsLoading(false);
+        }
+      } catch {}
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_GYM_CONFIG);
+        initialConfigRef.current = DEFAULT_GYM_CONFIG;
+      }
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      setIsLoading(true);
+      if (!silent && !localStorage.getItem(cacheKey)) {
+        setIsLoading(true);
+      }
       const { data, error } = await supabase
         .from('gym_profile')
         .select('*')
@@ -109,7 +163,9 @@ export const GymProfile: React.FC = () => {
             data.contact_number_2 || DEFAULT_GYM_CONFIG.contactNumber2,
           emailAddress: data.email_address || DEFAULT_GYM_CONFIG.emailAddress,
           gymLogo: data.gym_logo || '',
-          carouselImages: data.carousel_images || [],
+          carouselImages: Array.isArray(data.carousel_images)
+            ? data.carousel_images
+            : [],
         };
 
         setGymName(parsedConfig.gymName);
@@ -125,9 +181,20 @@ export const GymProfile: React.FC = () => {
 
         setInitialConfig(parsedConfig);
         initialConfigRef.current = parsedConfig;
+
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(parsedConfig));
+        } catch {}
+      } else if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_GYM_CONFIG);
+        initialConfigRef.current = DEFAULT_GYM_CONFIG;
       }
     } catch (err: any) {
       console.warn('Failed to load gym profile configuration:', err.message);
+      if (!initialConfigRef.current) {
+        setInitialConfig(DEFAULT_GYM_CONFIG);
+        initialConfigRef.current = DEFAULT_GYM_CONFIG;
+      }
     } finally {
       setIsLoading(false);
     }
@@ -136,16 +203,24 @@ export const GymProfile: React.FC = () => {
   useEffect(() => {
     fetchGymProfile();
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel('gym_profile_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'gym_profile' },
-        fetchGymProfile
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null;
+            fetchGymProfile(true);
+          }, 2000);
+        }
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchGymProfile]);
@@ -174,8 +249,8 @@ export const GymProfile: React.FC = () => {
       contactNumber2 !== initialConfig.contactNumber2 ||
       emailAddress !== initialConfig.emailAddress ||
       gymLogo !== initialConfig.gymLogo ||
-      JSON.stringify(carouselImages) !==
-        JSON.stringify(initialConfig.carouselImages))
+      JSON.stringify(carouselImages || []) !==
+        JSON.stringify(initialConfig.carouselImages || []))
   );
 
   const handleSaveConfig = async () => {
@@ -203,39 +278,39 @@ export const GymProfile: React.FC = () => {
       if (error) throw error;
 
       const changes: string[] = [];
-      if (initialConfig.gymName !== current.gymName) {
-        changes.push(`Gym Name: "${initialConfig.gymName}" -> "${current.gymName}"`);
+      if (initialConfig?.gymName !== current.gymName) {
+        changes.push(`Gym Name: "${initialConfig?.gymName}" -> "${current.gymName}"`);
       }
-      if (initialConfig.gymDescription !== current.gymDescription) {
+      if (initialConfig?.gymDescription !== current.gymDescription) {
         changes.push(`Description updated`);
       }
-      if (initialConfig.gymAddress !== current.gymAddress) {
-        changes.push(`Address: "${initialConfig.gymAddress}" -> "${current.gymAddress}"`);
+      if (initialConfig?.gymAddress !== current.gymAddress) {
+        changes.push(`Address: "${initialConfig?.gymAddress}" -> "${current.gymAddress}"`);
       }
-      if (initialConfig.contactName1 !== current.contactName1) {
-        changes.push(`Primary Contact Name: "${initialConfig.contactName1}" -> "${current.contactName1}"`);
+      if (initialConfig?.contactName1 !== current.contactName1) {
+        changes.push(`Primary Contact Name: "${initialConfig?.contactName1}" -> "${current.contactName1}"`);
       }
-      if (initialConfig.contactNumber1 !== current.contactNumber1) {
-        changes.push(`Primary Contact Phone: "${initialConfig.contactNumber1}" -> "${current.contactNumber1}"`);
+      if (initialConfig?.contactNumber1 !== current.contactNumber1) {
+        changes.push(`Primary Contact Phone: "${initialConfig?.contactNumber1}" -> "${current.contactNumber1}"`);
       }
-      if (initialConfig.contactName2 !== current.contactName2) {
-        changes.push(`Secondary Contact Name: "${initialConfig.contactName2}" -> "${current.contactName2}"`);
+      if (initialConfig?.contactName2 !== current.contactName2) {
+        changes.push(`Secondary Contact Name: "${initialConfig?.contactName2}" -> "${current.contactName2}"`);
       }
-      if (initialConfig.contactNumber2 !== current.contactNumber2) {
-        changes.push(`Secondary Contact Phone: "${initialConfig.contactNumber2}" -> "${current.contactNumber2}"`);
+      if (initialConfig?.contactNumber2 !== current.contactNumber2) {
+        changes.push(`Secondary Contact Phone: "${initialConfig?.contactNumber2}" -> "${current.contactNumber2}"`);
       }
-      if (initialConfig.emailAddress !== current.emailAddress) {
-        changes.push(`Email Address: "${initialConfig.emailAddress}" -> "${current.emailAddress}"`);
+      if (initialConfig?.emailAddress !== current.emailAddress) {
+        changes.push(`Email Address: "${initialConfig?.emailAddress}" -> "${current.emailAddress}"`);
       }
-      if (initialConfig.gymLogo !== current.gymLogo) {
+      if (initialConfig?.gymLogo !== current.gymLogo) {
         changes.push(`Gym Logo updated`);
       }
       if (
-        JSON.stringify(initialConfig.carouselImages) !==
-        JSON.stringify(current.carouselImages)
+        JSON.stringify(initialConfig?.carouselImages || []) !==
+        JSON.stringify(current.carouselImages || [])
       ) {
         changes.push(
-          `Carousel Images: ${initialConfig.carouselImages.length} images -> ${current.carouselImages.length} images`
+          `Carousel Images: ${(initialConfig?.carouselImages || []).length} images -> ${(current.carouselImages || []).length} images`
         );
       }
       const diffStr = changes.length > 0 ? `: ${changes.join(', ')}` : '';
@@ -346,7 +421,8 @@ export const GymProfile: React.FC = () => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    const remainingSlots = 6 - carouselImages.length;
+    const currentImages = carouselImages || [];
+    const remainingSlots = 6 - currentImages.length;
     if (remainingSlots <= 0) {
       toast.error('Maximum 6 carousel images allowed.');
       return;
@@ -716,7 +792,7 @@ export const GymProfile: React.FC = () => {
             <div className="space-y-3.5 pt-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Carousel Images ({carouselImages.length > 0 ? `${carouselImages.length} / 6` : 'Default • 6 images'})
+                  Carousel Images ({(carouselImages || []).length > 0 ? `${carouselImages.length} / 6` : 'Default • 6 images'})
                 </label>
                 <input
                   type="file"
@@ -730,7 +806,7 @@ export const GymProfile: React.FC = () => {
                 />
                 <button
                   type="button"
-                  disabled={carouselImages.length >= 6 || isLoading}
+                  disabled={(carouselImages || []).length >= 6 || isLoading}
                   onClick={() => carouselInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider bg-white dark:bg-neutral-900 text-slate-700 dark:text-slate-300 hover:opacity-90 disabled:opacity-30 cursor-pointer"
                 >
@@ -748,7 +824,7 @@ export const GymProfile: React.FC = () => {
                     />
                   ))}
                 </div>
-              ) : carouselImages.length > 0 ? (
+              ) : (carouselImages || []).length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                   {carouselImages.map((src, index) => (
                     <div

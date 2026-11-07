@@ -759,7 +759,7 @@ export const LogbookPage: React.FC = () => {
   // TRUE STALE-WHILE-REVALIDATE (SWR) SANITIZED RPC FETCHING
   const fetchAttendanceFromSupabase = useCallback(
     async (isBackground: boolean = false) => {
-      const cacheKey = `logbook_sanitized_${dateStr}`;
+      const cacheKey = `logbook_sanitized_${dateStr}_v3`;
       const sessionsCacheKey = 'logbook_closed_sessions_cache';
       const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
@@ -815,14 +815,15 @@ export const LogbookPage: React.FC = () => {
             pendingRecords = pendingTxs
               .filter(
                 (tx) =>
-                  tx.type === 'attendance' ||
-                  tx.type === 'subscription' ||
-                  tx.type === 'card_purchase' ||
-                  tx.type === 'batch_card_purchase'
+                  (tx.status === 'pending' || tx.status === 'conflict') &&
+                  (tx.type === 'attendance' ||
+                    tx.type === 'subscription' ||
+                    tx.type === 'card_purchase' ||
+                    tx.type === 'batch_card_purchase')
               )
               .filter((tx) => {
                 const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
-                return !txDate || txDate === dateStr;
+                return txDate === dateStr;
               })
               .map(mapPendingTxToLogRecord);
           } catch {}
@@ -913,36 +914,16 @@ export const LogbookPage: React.FC = () => {
                 receiptNumber: row.receipt_number || null,
                 memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
                 cash_session_id: row.cash_session_id || null,
+                processed_by:
+                  row.processed_by ||
+                  row.processedBy ||
+                  row.staff_name ||
+                  row.staff_username ||
+                  row.created_by ||
+                  null,
               }));
 
-            // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online
-            if (
-              !isBatterySaver &&
-              (typeof navigator === 'undefined' || navigator.onLine)
-            ) {
-              const startOfDay = new Date(
-                `${dateStr}T00:00:00+08:00`
-              ).toISOString();
-              const endOfDay = new Date(
-                `${dateStr}T23:59:59.999+08:00`
-              ).toISOString();
-              supabase
-                .from('attendance')
-                .select('*')
-                .is('deleted_at', null)
-                .gte('check_in_time', startOfDay)
-                .lte('check_in_time', endOfDay)
-                .order('check_in_time', { ascending: false })
-                .then(() => {});
-              supabase
-                .from('receipts')
-                .select('*')
-                .gte('created_at', startOfDay)
-                .lte('created_at', endOfDay)
-                .order('created_at', { ascending: false })
-                .then(() => {});
             }
-          }
         } catch (rpcErr: any) {
           if (!isConnectionError(rpcErr)) {
             console.warn('RPC get_sanitized_logbook invocation error:', rpcErr);
@@ -1020,7 +1001,14 @@ export const LogbookPage: React.FC = () => {
                 receiptNumber: a.receipt_number || null,
                 memberIds: Array.isArray(a.member_ids) ? a.member_ids : [],
                 cash_session_id: a.cash_session_id || null,
-              });
+                processed_by:
+                  a.processed_by ||
+                  a.processedBy ||
+                  a.staff_name ||
+                  a.staff_username ||
+                  a.created_by ||
+                  null,
+              } as any);
             });
 
             rawReceipts.forEach((r: any) => {
@@ -1054,7 +1042,14 @@ export const LogbookPage: React.FC = () => {
                 receiptNumber: r.id || null,
                 memberIds: Array.isArray(r.member_ids) ? r.member_ids : [],
                 cash_session_id: r.cash_session_id || null,
-              });
+                processed_by:
+                  r.processed_by ||
+                  r.processedBy ||
+                  r.staff_name ||
+                  r.staff_username ||
+                  r.created_by ||
+                  null,
+              } as any);
             });
 
             if (rawAttendance.length > 0 || rawReceipts.length > 0) {
@@ -1079,14 +1074,15 @@ export const LogbookPage: React.FC = () => {
           pendingRecords = pendingTxs
             .filter(
               (tx) =>
-                tx.type === 'attendance' ||
-                tx.type === 'subscription' ||
-                tx.type === 'card_purchase' ||
-                tx.type === 'batch_card_purchase'
+                (tx.status === 'pending' || tx.status === 'conflict') &&
+                (tx.type === 'attendance' ||
+                  tx.type === 'subscription' ||
+                  tx.type === 'card_purchase' ||
+                  tx.type === 'batch_card_purchase')
             )
             .filter((tx) => {
               const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
-              return !txDate || txDate === dateStr;
+              return txDate === dateStr;
             })
             .map(mapPendingTxToLogRecord);
         } catch (vaultErr) {
@@ -1127,7 +1123,7 @@ export const LogbookPage: React.FC = () => {
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const triggerRealtimeSync = (includeHistory = false) => {
-      sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+      sessionStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
       if (!isBatterySaver) {
         if (includeHistory) loadHistory();
         fetchAttendanceFromSupabase(true);
@@ -1172,8 +1168,11 @@ export const LogbookPage: React.FC = () => {
       .subscribe();
 
     const handleBatchUpdated = () => {
-      sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
-      fetchAttendanceFromSupabase(true);
+      sessionStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
+      try {
+        localStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
+      } catch {}
+      fetchAttendanceFromSupabase(false);
     };
     window.addEventListener('palomar_logbook_updated', handleBatchUpdated);
 
@@ -1235,9 +1234,12 @@ export const LogbookPage: React.FC = () => {
       } else if (customerFilter === 'Subs') {
         matchesType =
           l.customerType === 'New Membership' ||
+          l.customerType === 'Membership Renewal' ||
+          l.customerType === 'Existing Member' ||
           !!l.isSubscription ||
           (l.categoryOrPlan || '').toLowerCase().includes('membership') ||
-          (l.categoryOrPlan || '').toLowerCase().includes('subscription');
+          (l.categoryOrPlan || '').toLowerCase().includes('subscription') ||
+          (l.categoryOrPlan || '').toLowerCase().includes('renewal');
       } else if ((customerFilter as string) === 'Card') {
         matchesType =
           l.customerType === 'Card' ||
@@ -1412,13 +1414,21 @@ export const LogbookPage: React.FC = () => {
 
     const updatedAtIso = getServerNow().toISOString();
     try {
-      const { error } = await supabase
-        .from('attendance')
-        .update({
-          payment_status: 'Paid',
-          updated_at: updatedAtIso,
-        })
-        .eq('id', log.id);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(log.id));
+      let query = supabase.from('attendance').update({
+        payment_status: 'Paid',
+        updated_at: updatedAtIso,
+      });
+
+      if (isUuid) {
+        query = query.eq('id', log.id);
+      } else if (log.receiptNumber) {
+        query = query.eq('receipt_number', log.receiptNumber);
+      } else {
+        query = query.eq('receipt_number', log.id);
+      }
+
+      const { error } = await query;
       if (error) throw error;
     } catch (dbErr) {
       console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
@@ -1448,13 +1458,21 @@ export const LogbookPage: React.FC = () => {
 
     const updatedAtIso = getServerNow().toISOString();
     try {
-      const { error } = await supabase
-        .from('attendance')
-        .update({
-          payment_status: 'Unpaid',
-          updated_at: updatedAtIso,
-        })
-        .eq('id', log.id);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(log.id));
+      let query = supabase.from('attendance').update({
+        payment_status: 'Unpaid',
+        updated_at: updatedAtIso,
+      });
+
+      if (isUuid) {
+        query = query.eq('id', log.id);
+      } else if (log.receiptNumber) {
+        query = query.eq('receipt_number', log.receiptNumber);
+      } else {
+        query = query.eq('receipt_number', log.id);
+      }
+
+      const { error } = await query;
       if (error) throw error;
     } catch (dbErr) {
       console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
@@ -1701,21 +1719,72 @@ export const LogbookPage: React.FC = () => {
           }
         }
 
-        let deleteQuery = supabase.from('attendance').update({
-          deleted_at: new Date().toISOString(),
-          deleted_by: user?.id || null,
-        });
+        const isSubscription = Boolean(
+          stagedLog.isSubscription ||
+          stagedLog.customerType === 'New Membership' ||
+          stagedLog.customerType === 'Membership Renewal'
+        );
 
-        if (isCard && rawReceiptId) {
-          deleteQuery = deleteQuery.or(
-            `receipt_number.eq.${rawReceiptId},id.eq.${stagedLog.id}`
-          );
+        if (isSubscription) {
+          if (rawReceiptId) {
+            await supabase
+              .from('receipts')
+              .delete()
+              .or(`id.eq.${rawReceiptId},id.eq.rcpt-${rawReceiptId}`);
+
+            await supabase
+              .from('attendance')
+              .delete()
+              .or(`receipt_number.eq.${rawReceiptId},receipt_number.eq.rcpt-${rawReceiptId},id.eq.${stagedLog.id}`);
+
+            await supabase
+              .from('subscriptions')
+              .update({
+                status: 'Voided',
+                payment_status: 'Cancelled',
+                voided_at: new Date().toISOString(),
+                voided_by: user?.id || 'Admin Staff',
+                void_reason: 'Purged from Logbook',
+                updated_at: new Date().toISOString(),
+              })
+              .or(`receipt_number.eq.${rawReceiptId},id.eq.${rawReceiptId}`);
+          } else if (stagedLog.memberId) {
+            await supabase
+              .from('receipts')
+              .delete()
+              .eq('member_id', stagedLog.memberId)
+              .eq('payment_status', 'Paid');
+
+            await supabase
+              .from('subscriptions')
+              .update({
+                status: 'Voided',
+                payment_status: 'Cancelled',
+                voided_at: new Date().toISOString(),
+                voided_by: user?.id || 'Admin Staff',
+                void_reason: 'Purged from Logbook',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('member_id', stagedLog.memberId)
+              .eq('status', 'Active');
+          }
         } else {
-          deleteQuery = deleteQuery.eq('id', stagedLog.id);
-        }
+          let deleteQuery = supabase.from('attendance').update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: user?.id || null,
+          });
 
-        const { error } = await deleteQuery;
-        if (error) throw error;
+          if (isCard && rawReceiptId) {
+            deleteQuery = deleteQuery.or(
+              `receipt_number.eq.${rawReceiptId},id.eq.${stagedLog.id}`
+            );
+          } else {
+            deleteQuery = deleteQuery.eq('id', stagedLog.id);
+          }
+
+          const { error } = await deleteQuery;
+          if (error) throw error;
+        }
 
         if (isCard) {
           const targetMemberIds: string[] = [];
@@ -2164,7 +2233,7 @@ export const LogbookPage: React.FC = () => {
 
   useEffect(() => {
     if (location.state && (location.state as any).refreshed) {
-      sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+      sessionStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
       fetchAttendanceFromSupabase(false);
     }
   }, [location.state, dateStr, fetchAttendanceFromSupabase]);
@@ -2735,27 +2804,20 @@ export const LogbookPage: React.FC = () => {
         </div>
 
         {/* VIEW 2: MEMBERS */}
-        {role === 'admin' && (
+        {role === 'admin' && activePage === 'members' && (
           <div
-            className={`w-full pb-1 max-w-full animate-fade-in ${
-              activePage === 'members'
-                ? 'h-auto'
-                : 'h-0 overflow-hidden pointer-events-none'
-            }`}
+            className="w-full pb-1 max-w-full animate-fade-in h-auto"
             style={{
               gridColumn: 1,
               gridRow: 1,
-              transform:
-                activePage === 'members' ? 'none' : 'translate3d(101%, 0, 0)',
-              opacity: activePage === 'members' ? 1 : 0,
-              pointerEvents: activePage === 'members' ? 'auto' : 'none',
-              transition:
-                'transform 800ms cubic-bezier(0.77, 0, 0.175, 1), opacity 800ms cubic-bezier(0.77, 0, 0.175, 1)',
+              transform: 'none',
+              opacity: 1,
+              pointerEvents: 'auto',
             }}
           >
             {/* ADMIN INDICATION GUIDE FOR MANAGING MEMBERS */}
             <IndicationGuideBanner topicId="members" className="mb-4" />
-            <MembersList hideHeaderActions={activePage !== 'members'} />
+            <MembersList hideHeaderActions={false} />
           </div>
         )}
       </div>
@@ -2822,7 +2884,13 @@ export const LogbookPage: React.FC = () => {
 
             return {
               receiptType:
-                selectedReceiptLog.customerType === 'New Membership'
+                selectedReceiptLog.isSubscription ||
+                selectedReceiptLog.customerType === 'New Membership' ||
+                selectedReceiptLog.customerType === 'Existing Member' ||
+                selectedReceiptLog.customerType === 'Membership Renewal' ||
+                (selectedReceiptLog.categoryOrPlan || '').toLowerCase().includes('membership') ||
+                (selectedReceiptLog.categoryOrPlan || '').toLowerCase().includes('subscription') ||
+                (selectedReceiptLog.categoryOrPlan || '').toLowerCase().includes('renewal')
                   ? 'subscription'
                   : isCard
                     ? 'card'
@@ -2841,9 +2909,13 @@ export const LogbookPage: React.FC = () => {
                 rawLog.paymentRef ||
                 gcashRefNo,
               transactionDate: selectedReceiptLog.timestamp,
-              processedBy: profile?.username
-                ? `${profile.username} (${profile.role || 'staff'})`
-                : 'Adrian (staff)',
+              processedBy:
+                rawLog.processed_by ||
+                rawLog.processedBy ||
+                rawLog.staff_username ||
+                rawLog.staff_name ||
+                rawLog.created_by ||
+                undefined,
             };
           })()}
         />
@@ -2854,7 +2926,7 @@ export const LogbookPage: React.FC = () => {
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
           onRestoreSuccess={() => {
-            sessionStorage.removeItem(`logbook_sanitized_${dateStr}`);
+            sessionStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
             fetchAttendanceFromSupabase(true);
           }}
         />

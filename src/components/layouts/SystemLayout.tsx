@@ -128,21 +128,53 @@ export const SystemLayout: React.FC = () => {
       if (profileActivationAttemptedRef.current === user.id) return;
       profileActivationAttemptedRef.current = user.id;
 
-      supabase
-        .from('profiles')
-        .update({ status: 'active' })
-        .eq('id', user.id)
-        .then(({ error }) => {
-          if (!error) {
-            useAuthStore.setState((state) => ({
-              profile: state.profile
-                ? { ...state.profile, status: 'active' }
-                : null,
-            }));
+      const activateAccount = async () => {
+        try {
+          const { error: rpcError } = await supabase.rpc('activate_own_profile');
+          if (rpcError) {
+            await supabase
+              .from('profiles')
+              .update({ status: 'active' })
+              .eq('id', user.id);
           }
-        });
+          useAuthStore.setState((state) => ({
+            profile: state.profile
+              ? { ...state.profile, status: 'active' }
+              : null,
+          }));
+        } catch {
+          await supabase
+            .from('profiles')
+            .update({ status: 'active' })
+            .eq('id', user.id);
+        }
+      };
+
+      activateAccount();
     }
   }, [user?.id, profile?.status]);
+
+  // Global live staff presence tracking across all console pages
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const presenceChannel = supabase.channel('gym-staff-presence', {
+      config: { presence: { key: user.id } },
+    });
+
+    presenceChannel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED' && user?.id) {
+        await presenceChannel.track({
+          userId: user.id,
+          onlineAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    return () => {
+      supabase.removeChannel(presenceChannel);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     loadActiveSession();

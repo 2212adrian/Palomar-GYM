@@ -375,7 +375,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                       active
                         ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-[0_4px_12px_rgba(18,60,115,0.25)] scale-[1.03] z-10 font-bold'
                         : selectable
-                          ? 'bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:shadow-xs font-bold active:scale-95'
+                          ? 'bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] dark:hover:bg-[#252b37] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:shadow-xs font-bold active:scale-95'
                           : 'bg-transparent border-transparent text-slate-400 dark:text-zinc-600 opacity-40 cursor-not-allowed'
                     }`}
                   >
