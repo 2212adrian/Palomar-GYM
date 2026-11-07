@@ -1277,6 +1277,12 @@ export const LogbookRecordAttendance: React.FC<
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
+    if (paymentMethod === 'GCash' && derivedBilling.totalDue > 0) {
+      if (!/^\d{13}$/.test(referenceNumber.trim())) {
+        toast.error('GCash reference number must be exactly 13 digits.');
+        return;
+      }
+    }
     const gcashFeeVal =
       paymentMethod === 'GCash' && derivedBilling.totalDue > 0
         ? derivedBilling.convenienceFee
@@ -1508,7 +1514,7 @@ export const LogbookRecordAttendance: React.FC<
     if (paymentMethod === 'Cash') {
       return (Number(amountReceived) || 0) >= derivedBilling.totalDue;
     } else {
-      return referenceNumber.trim().length >= 6;
+      return /^\d{13}$/.test(referenceNumber.trim());
     }
   }, [
     isSessionOpen,
@@ -2420,17 +2426,29 @@ export const LogbookRecordAttendance: React.FC<
                         ) : (
                           <div className="space-y-1">
                             <label className="text-[11px] font-bold text-(--color-text)/80 uppercase">
-                              GCash Reference Number
+                              GCash Reference Number (13 Digits) *
                             </label>
                             <input
                               type="text"
+                              maxLength={13}
                               value={referenceNumber}
                               onChange={(e) =>
-                                setReferenceNumber(e.target.value)
+                                setReferenceNumber(
+                                  e.target.value.replace(/\D/g, '').slice(0, 13)
+                                )
                               }
-                              placeholder="ENTER 6+ DIGIT REFERENCE CODE..."
-                              className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) placeholder:text-(--color-text)/30 font-mono font-bold text-xs uppercase focus:border-(--color-primary)"
+                              placeholder="ENTER 13-DIGIT REFERENCE CODE..."
+                              className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) placeholder:text-(--color-text)/30 font-mono font-bold text-xs focus:border-(--color-primary)"
                             />
+                            {/^\d{13}$/.test(referenceNumber.trim()) ? (
+                              <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans mt-0.5 flex items-center gap-1 font-bold">
+                                <Check className="w-3 h-3" /> 13-digit GCash reference code validated.
+                              </div>
+                            ) : referenceNumber.trim().length > 0 ? (
+                              <div className="text-[10px] text-amber-500 font-sans mt-0.5">
+                                {13 - referenceNumber.trim().length} more digits needed (13 digits required).
+                              </div>
+                            ) : null}
                           </div>
                         )}
                       </div>

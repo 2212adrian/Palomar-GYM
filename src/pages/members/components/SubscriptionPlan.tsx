@@ -1051,7 +1051,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const isGcashValid = useMemo(() => {
     const clean = gcashReference.trim();
-    return clean.length >= 10 && /^\d+$/.test(clean);
+    return clean.length === 13 && /^\d{13}$/.test(clean);
   }, [gcashReference]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -3439,19 +3439,24 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <div className="space-y-1 pt-1">
                     <label className="text-[10px] uppercase font-bold text-(--color-text)/80 block">
                       {isGcashValid
-                        ? '✓ GCash Reference Validated'
-                        : 'GCash Reference Number *'}
+                        ? '✓ 13-Digit GCash Reference Validated'
+                        : 'GCash Reference Number (13 Digits) *'}
                     </label>
                     <input
                       type="text"
                       maxLength={13}
                       value={gcashReference}
                       onChange={(e) =>
-                        setGcashReference(e.target.value.replace(/\D/g, ''))
+                        setGcashReference(e.target.value.replace(/\D/g, '').slice(0, 13))
                       }
-                      placeholder="Enter 10 to 13-digit Reference Code"
+                      placeholder="Enter 13-digit Reference Code"
                       className="w-full px-3 py-2 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-xl font-mono text-xs font-bold outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                     />
+                    {gcashReference.trim().length > 0 && !isGcashValid && (
+                      <p className="text-[10px] text-amber-500 font-sans mt-0.5">
+                        {13 - gcashReference.trim().length} more digits needed (13 digits required)
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -3634,7 +3639,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       paymentMethod: finishedIds.payment_method,
                       gcashRefNo: finishedIds.gcash_ref_no,
                       transactionDate: finishedIds.transaction_date,
-                      processedBy: 'FRONTDESK STAFF',
+                      processedBy: profile?.username
+                        ? `${profile.username} (${profile.role || 'staff'})`
+                        : 'Adrian (staff)',
                       qrValue: finishedIds.receipt_no,
                     }}
                   />

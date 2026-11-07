@@ -267,10 +267,10 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
     if (
       baseEntryFee > 0 &&
       paymentMethod === 'GCash' &&
-      referenceNumber.trim().length < 6
+      !/^\d{13}$/.test(referenceNumber.trim())
     ) {
       toast.error(
-        'Please enter a valid GCash reference number (min 6 characters).'
+        'Please enter a valid 13-digit GCash reference number.'
       );
       return;
     }
@@ -433,15 +433,29 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
               {paymentMethod === 'GCash' && (
                 <div className="space-y-1">
                   <label className="text-[9px] font-bold uppercase text-slate-500 block">
-                    GCash Reference Number
+                    GCash Reference Number (13 Digits)
                   </label>
                   <input
                     type="text"
+                    maxLength={13}
                     value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
-                    placeholder="ENTER REF NO. (MIN 6 DIGITS)..."
-                    className="w-full px-2 py-1 bg-(--bg-card) border border-(--border-color) rounded-lg font-mono text-xs font-bold uppercase outline-none focus:border-blue-500 text-(--color-text)"
+                    onChange={(e) =>
+                      setReferenceNumber(
+                        e.target.value.replace(/\D/g, '').slice(0, 13)
+                      )
+                    }
+                    placeholder="ENTER 13-DIGIT REF NO..."
+                    className="w-full px-2 py-1 bg-(--bg-card) border border-(--border-color) rounded-lg font-mono text-xs font-bold outline-none focus:border-blue-500 text-(--color-text)"
                   />
+                  {/^\d{13}$/.test(referenceNumber.trim()) ? (
+                    <span className="text-[9px] text-emerald-500 font-bold block">
+                      ✓ 13-digit GCash verified
+                    </span>
+                  ) : referenceNumber.trim().length > 0 ? (
+                    <span className="text-[9px] text-amber-500 block">
+                      {13 - referenceNumber.trim().length} more digits needed
+                    </span>
+                  ) : null}
                 </div>
               )}
             </div>

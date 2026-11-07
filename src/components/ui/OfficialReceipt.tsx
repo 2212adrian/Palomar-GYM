@@ -24,6 +24,7 @@ import { toast } from 'react-toastify';
 import { Modal } from './Modal';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
+import { useAuthStore } from '../../stores/authStore';
 
 export interface ReceiptItem {
   productName: string;
@@ -380,7 +381,29 @@ const itemsSubtotal = useMemo(() => {
     const vatAmount = vatEnabled ? totalDue - vatableSales : 0;
 
     const receiptNo = actualReceiptNo;
-    const processedBy = data.processedBy || 'WOLF PALOMAR STAFF';
+    const authProfile = useAuthStore((s) => s.profile);
+    const authUser = useAuthStore((s) => s.user);
+
+    const processedBy = useMemo(() => {
+      if (
+        data.processedBy &&
+        data.processedBy !== 'WOLF PALOMAR STAFF' &&
+        data.processedBy !== 'FRONTDESK STAFF' &&
+        data.processedBy !== 'Admin Staff' &&
+        data.processedBy !== 'Staff'
+      ) {
+        return data.processedBy;
+      }
+      if (authProfile?.username) {
+        const role = authProfile.role || 'staff';
+        return `${authProfile.username} (${role})`;
+      }
+      if (authUser?.email) {
+        const namePart = authUser.email.split('@')[0];
+        return `${namePart} (staff)`;
+      }
+      return data.processedBy || 'Staff (staff)';
+    }, [data.processedBy, authProfile, authUser]);
 
     const gcashRefDisplay = data.gcashRefNo || data.paymentRef || 'N/A';
 
@@ -571,7 +594,7 @@ if (effectiveCardFee > 0)
           renderRow('GCASH REF NO', gcashRefDisplay, true, '#0284c7');
 
         renderRow('TRANSACTION DATE', txDateStr);
-        renderRow('PROCESSED BY', processedBy.toUpperCase());
+        renderRow('PROCESSED BY', processedBy);
 
         if (displayItems.length > 0) {
           drawDashedLine(y);
@@ -1233,7 +1256,7 @@ if (effectiveCardFee > 0)
 
           <div className="flex justify-between">
             <span className="text-slate-500">PROCESSED BY</span>
-            <span className="font-semibold text-[var(--color-text)] uppercase">
+            <span className="font-semibold text-[var(--color-text)]">
               {processedBy}
             </span>
           </div>

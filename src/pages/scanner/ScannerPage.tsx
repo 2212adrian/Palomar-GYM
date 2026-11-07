@@ -715,13 +715,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         return;
       }
     } else {
-      if (
-        !saleReferenceNumber.trim() ||
-        saleReferenceNumber.trim().length < 6
-      ) {
-        toast.error(
-          'Please enter a valid GCash reference number (min 6 characters).'
-        );
+      const cleanRef = saleReferenceNumber.trim();
+      if (!cleanRef || !/^\d{13}$/.test(cleanRef)) {
+        toast.error('Please enter a valid 13-digit GCash reference number.');
         return;
       }
     }
@@ -825,9 +821,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         );
         return;
       }
-      if (paymentMethod === 'GCash' && referenceNumber.trim().length < 6) {
+      if (paymentMethod === 'GCash' && !/^\d{13}$/.test(referenceNumber.trim())) {
         toast.error(
-          'Please enter a valid GCash reference number (min 6 characters).'
+          'Please enter a valid 13-digit GCash reference number.'
         );
         return;
       }
@@ -932,7 +928,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const isLockedByPayment = Boolean(
     entryFee > 0 &&
     (!isPaymentConfirmed ||
-      (paymentMethod === 'GCash' && referenceNumber.trim().length < 6))
+      (paymentMethod === 'GCash' && !/^\d{13}$/.test(referenceNumber.trim())))
   );
 
   const isCartMode = productCart.length > 0;
@@ -1285,15 +1281,29 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           </div>
 
                           {paymentMethod === 'GCash' && (
-                            <input
-                              type="text"
-                              value={referenceNumber}
-                              onChange={(e) =>
-                                setReferenceNumber(e.target.value)
-                              }
-                              placeholder="ENTER GCASH REF NO. (MIN 6 DIGITS)..."
-                              className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-700 rounded-lg font-mono text-xs font-bold uppercase outline-none focus:border-cyan-500 text-white"
-                            />
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                maxLength={13}
+                                value={referenceNumber}
+                                onChange={(e) =>
+                                  setReferenceNumber(
+                                    e.target.value.replace(/\D/g, '').slice(0, 13)
+                                  )
+                                }
+                                placeholder="ENTER 13-DIGIT GCASH REF NO..."
+                                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-700 rounded-lg font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
+                              />
+                              {/^\d{13}$/.test(referenceNumber.trim()) ? (
+                                <span className="text-[10px] text-emerald-400 font-bold block">
+                                  ✓ 13-digit GCash validated
+                                </span>
+                              ) : referenceNumber.trim().length > 0 ? (
+                                <span className="text-[10px] text-amber-400 block">
+                                  {13 - referenceNumber.trim().length} more digits needed
+                                </span>
+                              ) : null}
+                            </div>
                           )}
 
                           <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
@@ -2022,17 +2032,29 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                               ) : (
                                 <div className="space-y-1">
                                   <label className="text-[9px] font-bold uppercase text-zinc-400 block">
-                                    GCash Reference Number
+                                    GCash Reference Number (13 Digits)
                                   </label>
                                   <input
                                     type="text"
+                                    maxLength={13}
                                     value={saleReferenceNumber}
                                     onChange={(e) =>
-                                      setSaleReferenceNumber(e.target.value)
+                                      setSaleReferenceNumber(
+                                        e.target.value.replace(/\D/g, '').slice(0, 13)
+                                      )
                                     }
-                                    placeholder="ENTER REF NO. (MIN 6 DIGITS)..."
-                                    className="w-full px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg font-mono text-xs font-bold uppercase outline-none focus:border-cyan-500 text-white"
+                                    placeholder="ENTER 13-DIGIT REF NO..."
+                                    className="w-full px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
                                   />
+                                  {/^\d{13}$/.test(saleReferenceNumber.trim()) ? (
+                                    <span className="text-[10px] text-emerald-400 font-bold block">
+                                      ✓ 13-digit GCash validated
+                                    </span>
+                                  ) : saleReferenceNumber.trim().length > 0 ? (
+                                    <span className="text-[10px] text-amber-400 block">
+                                      {13 - saleReferenceNumber.trim().length} more digits needed
+                                    </span>
+                                  ) : null}
                                 </div>
                               )}
 

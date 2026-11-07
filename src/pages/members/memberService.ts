@@ -1342,26 +1342,32 @@ export const subscriptionService = {
 
     // 1. Delete linked receipt so cash drawer balance reconciles immediately
     if (target.receipt_number) {
-      const { error: rcptErr } = await supabase
+      await supabase
         .from('receipts')
         .delete()
-        .eq('id', target.receipt_number);
+        .or(`id.eq.${target.receipt_number},id.eq.rcpt-${target.receipt_number}`);
 
-      if (rcptErr) {
-        console.error('Error purging receipt on void:', rcptErr.message);
-      }
-
-      const { error: attErr } = await supabase
+      await supabase
         .from('attendance')
         .delete()
         .eq('receipt_number', target.receipt_number);
-
-      if (attErr) {
-        console.warn('Attendance deletion on void:', attErr.message);
-      }
     }
 
-   // 2. Check and void member card if it was part of this subscription
+    if (target.member_id) {
+      const targetTime = new Date(target.created_at || target.start_date || Date.now()).getTime();
+      const timeWindowStart = new Date(targetTime - 3600000 * 24).toISOString();
+      const timeWindowEnd = new Date(targetTime + 3600000 * 24).toISOString();
+
+      await supabase
+        .from('receipts')
+        .delete()
+        .eq('member_id', target.member_id)
+        .gte('created_at', timeWindowStart)
+        .lte('created_at', timeWindowEnd)
+        .or('customer_type.ilike.%Membership%,item_description.ilike.%Subscription%,item_description.ilike.%Renewal%,item_description.ilike.%Monthly%,item_description.ilike.%Yearly%');
+    }
+
+    // 2. Check and void member card if it was part of this subscription
     const hasCardFeeInSub = Number(target.card_fee || 0) > 0;
     const { data: memberCard } = await supabase
       .from('cards')
@@ -1420,6 +1426,65 @@ export const subscriptionService = {
       throw new Error(voidErr.message);
     }
 
+    // 4. Reconcile member active status: if no active/queued contracts remain, mark Expired
+    if (target.member_id) {
+      try {
+        const nowMs = Date.now();
+        const { data: remainingSubs } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('member_id', target.member_id)
+          .neq('id', subscriptionId)
+          .not('status', 'in', '("Voided","voided","cancelled","Cancelled")')
+          .order('end_date', { ascending: false });
+
+        const activeSub = (remainingSubs || []).find((s: any) => {
+          const startMs = new Date(s.start_date).getTime();
+          const endMs = new Date(s.end_date).getTime();
+          return startMs <= nowMs && endMs >= nowMs;
+        });
+
+        const queuedSub = (remainingSubs || []).find((s: any) => {
+          const startMs = new Date(s.start_date).getTime();
+          return startMs > nowMs;
+        });
+
+        let updatedStatus = 'Expired';
+        let updatedExpiry: string | null = null;
+
+        if (activeSub) {
+          updatedStatus = 'Active';
+          updatedExpiry = activeSub.end_date;
+        } else if (queuedSub) {
+          updatedStatus = 'Active';
+          updatedExpiry = queuedSub.end_date;
+        } else if (remainingSubs && remainingSubs.length > 0) {
+          updatedStatus = 'Expired';
+          updatedExpiry = remainingSubs[0].end_date;
+        }
+
+        await supabase
+          .from('members')
+          .update({
+            status: updatedStatus,
+            membership_status: updatedStatus.toLowerCase(),
+            expiry_date: updatedExpiry,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`member_id.eq.${target.member_id},id.eq.${target.member_id}`);
+      } catch (reconErr) {
+        console.warn('Member status reconciliation note on void:', reconErr);
+      }
+    }
+
+    try {
+      sessionStorage.removeItem('members_sanitized_cache');
+      localStorage.removeItem('members_sanitized_cache');
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
+      });
+    } catch {}
+
     const auditDetail = `Voided subscription contract (${target.id}) and purged receipt ${target.receipt_number || 'N/A'}${
       isCardPartOfSubscription && memberCard
         ? ` (including member card ${memberCard.card_number})`
@@ -1433,6 +1498,122 @@ export const subscriptionService = {
       target.member_id,
       reason,
       auditDetail
+    );
+
+    window.dispatchEvent(new Event('palomar_logbook_updated'));
+    window.dispatchEvent(new Event('member-refresh'));
+  },
+
+  drop: async (
+    subscriptionId: string,
+    reason: string = 'SuperAdmin Immediate Termination',
+    user: string = 'SuperAdmin'
+  ): Promise<void> => {
+    const { data: target } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('id', subscriptionId)
+      .maybeSingle();
+
+    if (!target) return;
+
+    // Purge linked receipts and attendance
+    if (target.receipt_number) {
+      await supabase
+        .from('receipts')
+        .delete()
+        .or(`id.eq.${target.receipt_number},id.eq.rcpt-${target.receipt_number}`);
+
+      await supabase
+        .from('attendance')
+        .delete()
+        .eq('receipt_number', target.receipt_number);
+    }
+
+    if (target.member_id) {
+      const targetTime = new Date(target.created_at || target.start_date || Date.now()).getTime();
+      const timeWindowStart = new Date(targetTime - 3600000 * 24).toISOString();
+      const timeWindowEnd = new Date(targetTime + 3600000 * 24).toISOString();
+
+      await supabase
+        .from('receipts')
+        .delete()
+        .eq('member_id', target.member_id)
+        .gte('created_at', timeWindowStart)
+        .lte('created_at', timeWindowEnd)
+        .or('customer_type.ilike.%Membership%,item_description.ilike.%Subscription%,item_description.ilike.%Renewal%,item_description.ilike.%Monthly%,item_description.ilike.%Yearly%');
+    }
+
+    // Delete or cancel the subscription record
+    const { error: delErr } = await supabase
+      .from('subscriptions')
+      .delete()
+      .eq('id', subscriptionId);
+
+    if (delErr) {
+      await supabase
+        .from('subscriptions')
+        .update({
+          status: 'cancelled',
+          payment_status: 'Cancelled',
+          voided_at: new Date().toISOString(),
+          voided_by: user,
+          void_reason: reason,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', subscriptionId);
+    }
+
+    // Reconcile member status
+    if (target.member_id) {
+      try {
+        const nowMs = Date.now();
+        const { data: remainingSubs } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('member_id', target.member_id)
+          .neq('id', subscriptionId)
+          .not('status', 'in', '("Voided","voided","cancelled","Cancelled")')
+          .order('end_date', { ascending: false });
+
+        const activeSub = (remainingSubs || []).find((s: any) => {
+          const startMs = new Date(s.start_date).getTime();
+          const endMs = new Date(s.end_date).getTime();
+          return startMs <= nowMs && endMs >= nowMs;
+        });
+
+        const newStatus = activeSub ? 'Active' : 'Expired';
+        const newExpiry = activeSub ? activeSub.end_date : (remainingSubs?.[0]?.end_date || null);
+
+        await supabase
+          .from('members')
+          .update({
+            status: newStatus,
+            membership_status: newStatus.toLowerCase(),
+            expiry_date: newExpiry,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`member_id.eq.${target.member_id},id.eq.${target.member_id}`);
+      } catch (err) {
+        console.warn('Member status reconcile error in drop:', err);
+      }
+    }
+
+    try {
+      sessionStorage.removeItem('members_sanitized_cache');
+      localStorage.removeItem('members_sanitized_cache');
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
+      });
+    } catch {}
+
+    await writeAudit(
+      'SUPERADMIN_SUBSCRIPTION_DROPPED',
+      'Subscriptions',
+      user,
+      target.member_id,
+      reason,
+      `SuperAdmin immediately dropped subscription ${subscriptionId} and purged orphan records.`
     );
 
     window.dispatchEvent(new Event('palomar_logbook_updated'));

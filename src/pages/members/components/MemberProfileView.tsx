@@ -996,7 +996,9 @@ const hadCardInSub = Number(targetVoidSub.card_fee || 0) > 0;
       paymentMethod: payMethod,
       gcashRefNo: gcashRefNo,
       transactionDate: receipt.created_at || getServerNow().toISOString(),
-      processedBy: 'Admin Staff',
+      processedBy: profile?.username
+        ? `${profile.username} (${profile.role || 'staff'})`
+        : 'Adrian (staff)',
     };
     setSelectedReceiptData(data);
   };

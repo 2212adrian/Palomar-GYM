@@ -19,6 +19,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import type { Column } from '../../components/ui/Table';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
+import { subscriptionService } from '../members/memberService';
 import { toast } from 'react-toastify';
 import {
   Database,
@@ -947,21 +948,11 @@ export const DatabaseBackup: React.FC = () => {
         'Member';
 
       if (dropTarget.id) {
-        const { error: delErr } = await supabase
-          .from('subscriptions')
-          .delete()
-          .eq('id', dropTarget.id);
-
-        if (delErr) {
-          await supabase
-            .from('subscriptions')
-            .update({
-              status: 'cancelled',
-              end_date: nowIso,
-              updated_at: nowIso,
-            })
-            .eq('id', dropTarget.id);
-        }
+        await subscriptionService.drop(
+          dropTarget.id,
+          dropReason.trim() || 'Immediate Administrative Termination',
+          user?.email || profile?.username || 'SuperAdmin'
+        );
       }
 
       const memberKeys = [
@@ -977,46 +968,31 @@ export const DatabaseBackup: React.FC = () => {
           .delete()
           .eq('member_id', mKey)
           .in('status', ['cancelled', 'Voided', 'voided']);
-      }
 
-      if (memberId) {
         await supabase
           .from('members')
           .update({
-            membership_status: 'inactive',
+            status: 'Expired',
+            membership_status: 'expired',
+            expiry_date: null,
             updated_at: nowIso,
           })
-          .eq('id', memberId);
-      }
-
-      if (dropTarget.resolved_member?.id) {
-        await supabase
-          .from('members')
-          .update({
-            membership_status: 'inactive',
-            updated_at: nowIso,
-          })
-          .eq('id', dropTarget.resolved_member.id);
+          .or(`id.eq.${mKey},member_id.eq.${mKey}`);
       }
 
       try {
         sessionStorage.removeItem('members_sanitized_cache');
         localStorage.removeItem('members_sanitized_cache');
+        Object.keys(sessionStorage).forEach((k) => {
+          if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
+        });
       } catch {}
 
       window.dispatchEvent(new Event('member-refresh'));
       window.dispatchEvent(new Event('palomar_logbook_updated'));
 
-      await logAudit(
-        'SUPERADMIN_SUBSCRIPTION_DROPPED',
-        `SuperAdmin dropped subscription for member: ${memberName} (${memberId}). Reason: ${
-          dropReason.trim() || 'Immediate Administrative Termination'
-        }. Existing logbook records and cash management sessions remain preserved.`,
-        dropTarget.id || memberId
-      );
-
       toast.success(
-        `Subscription dropped successfully for ${memberName}. Logbook history and cash session balances remain preserved.`
+        `Subscription dropped and member record updated successfully for ${memberName}.`
       );
       setIsDropModalOpen(false);
       setDropTarget(null);
@@ -2032,6 +2008,25 @@ export const DatabaseBackup: React.FC = () => {
                   <RefreshCw
                     className={`w-4 h-4 ${tabLoading ? 'animate-spin' : ''}`}
                   />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (subscriptionsList.length > 0) {
+                      setDropTarget({ ...subscriptionsList[0], fromRow: false });
+                    } else {
+                      setDropTarget({ member_name: 'Manual Drop', fromRow: false });
+                    }
+                    setDropReason('');
+                    setIsDropModalOpen(true);
+                  }}
+                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
+                  title="Drop a member subscription immediately"
+                >
+                  <UserX className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Drop Subscription</span>
+                  <span className="sm:hidden">Drop Sub</span>
                 </button>
               </div>
 

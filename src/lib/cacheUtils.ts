@@ -17,9 +17,90 @@ export const getCachedImageUrlSync = (
   return objectUrlMap.get(trimmed) || null;
 };
 
+const PRODUCT_IMAGE_IDB_STORE = 'palomar_product_images_db';
+
+const openProductImageDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB not supported'));
+    }
+    const request = indexedDB.open(PRODUCT_IMAGE_IDB_STORE, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('images')) {
+        db.createObjectStore('images', { keyPath: 'url' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const saveImageToOfflineCache = async (
+  url: string,
+  dataOrBlob: string | Blob
+): Promise<void> => {
+  try {
+    const db = await openProductImageDB();
+    let dataToStore = dataOrBlob;
+    if (dataOrBlob instanceof Blob) {
+      dataToStore = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(dataOrBlob);
+      });
+    }
+    const tx = db.transaction('images', 'readwrite');
+    const store = tx.objectStore('images');
+    store.put({ url, data: dataToStore, timestamp: Date.now() });
+  } catch {
+    // Non-fatal if offline storage unavailable
+  }
+};
+
+export const getImageFromOfflineCache = async (
+  url: string
+): Promise<string | null> => {
+  try {
+    const db = await openProductImageDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('images', 'readonly');
+      const store = tx.objectStore('images');
+      const req = store.get(url);
+      req.onsuccess = () => resolve(req.result ? req.result.data : null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+};
+
+const convertImageUrlToDataUrl = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        resolve(dataUrl);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+};
+
 /**
- * Retrieves a cached image URL. If cached in Cache Storage, converts the response
- * to an Object URL so it can be loaded offline. If online, fetches and stores it in cache.
+ * Retrieves a cached image URL. If cached in Cache Storage or IndexedDB, returns
+ * an Object URL or data URL so it displays offline.
  */
 export const getCachedImageUrl = async (
   url: string | null | undefined
@@ -36,55 +117,63 @@ export const getCachedImageUrl = async (
     return objectUrlMap.get(trimmed)!;
   }
 
-  if (!('caches' in window)) {
-    return trimmed;
+  // 1. Check IndexedDB offline store first
+  const idbData = await getImageFromOfflineCache(trimmed);
+  if (idbData) {
+    objectUrlMap.set(trimmed, idbData);
+    return idbData;
   }
 
-  try {
-    const cache = await caches.open(PRODUCT_IMAGE_CACHE_NAME);
-    const cachedResponse = await cache.match(trimmed);
+  // 2. Check CacheStorage
+  if ('caches' in window) {
+    try {
+      const cache = await caches.open(PRODUCT_IMAGE_CACHE_NAME);
+      const cachedResponse = await cache.match(trimmed);
 
-    if (cachedResponse) {
-      const blob = await cachedResponse.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      objectUrlMap.set(trimmed, objectUrl);
-      return objectUrl;
-    }
-
-    if (navigator.onLine) {
-      try {
-        const fetchResponse = await fetch(trimmed, { mode: 'cors' });
-        if (fetchResponse.ok) {
-          await cache.put(trimmed, fetchResponse.clone());
-          const blob = await fetchResponse.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          objectUrlMap.set(trimmed, objectUrl);
-          return objectUrl;
-        }
-      } catch {
-        return trimmed;
+      if (cachedResponse) {
+        const blob = await cachedResponse.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        objectUrlMap.set(trimmed, objectUrl);
+        saveImageToOfflineCache(trimmed, blob).catch(() => {});
+        return objectUrl;
       }
+
+      if (navigator.onLine) {
+        try {
+          const fetchResponse = await fetch(trimmed, { mode: 'cors' });
+          if (fetchResponse.ok) {
+            await cache.put(trimmed, fetchResponse.clone());
+            const blob = await fetchResponse.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            objectUrlMap.set(trimmed, objectUrl);
+            saveImageToOfflineCache(trimmed, blob).catch(() => {});
+            return objectUrl;
+          }
+        } catch {
+          // If direct fetch fails (e.g. CORS), attempt canvas extraction
+          const dataUrl = await convertImageUrlToDataUrl(trimmed);
+          if (dataUrl) {
+            objectUrlMap.set(trimmed, dataUrl);
+            saveImageToOfflineCache(trimmed, dataUrl).catch(() => {});
+            return dataUrl;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error reading from image cache:', err);
     }
-  } catch (err) {
-    console.warn('Error reading from image cache:', err);
   }
 
   return trimmed;
 };
 
 /**
- * Prefetches and caches product image URLs into Cache Storage in the background.
+ * Prefetches and caches product image URLs into Cache Storage and IndexedDB in the background.
  */
 export const prefetchProductImages = async (
   urls: (string | null | undefined)[]
 ): Promise<void> => {
-  if (
-    typeof window === 'undefined' ||
-    !('caches' in window) ||
-    !navigator.onLine
-  ) {
-    return;
-  }
+  if (typeof window === 'undefined') return;
 
   const validUrls = Array.from(
     new Set(
@@ -102,27 +191,11 @@ export const prefetchProductImages = async (
   if (validUrls.length === 0) return;
 
   try {
-    const cache = await caches.open(PRODUCT_IMAGE_CACHE_NAME);
     await Promise.allSettled(
       validUrls.map(async (url) => {
         try {
-          const match = await cache.match(url);
-          if (!match) {
-            const res = await fetch(url, { mode: 'cors' });
-            if (res.ok) {
-              await cache.put(url, res.clone());
-              const blob = await res.blob();
-              const objectUrl = URL.createObjectURL(blob);
-              objectUrlMap.set(url, objectUrl);
-            }
-          } else if (!objectUrlMap.has(url)) {
-            const blob = await match.blob();
-            const objectUrl = URL.createObjectURL(blob);
-            objectUrlMap.set(url, objectUrl);
-          }
-        } catch {
-          // Ignore individual network or CORS failures
-        }
+          await getCachedImageUrl(url);
+        } catch {}
       })
     );
   } catch (err) {

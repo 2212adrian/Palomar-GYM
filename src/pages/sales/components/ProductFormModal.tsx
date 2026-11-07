@@ -28,6 +28,7 @@ import {
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
+import { getCachedImageUrl } from '../../../lib/cacheUtils';
 
 interface ProductFormModalProps {
   isEditing: boolean;
@@ -455,6 +456,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     };
 
     setStagedItems((prev) => [...prev, newItem]);
+    if (formImageUrl.trim()) {
+      getCachedImageUrl(formImageUrl.trim()).catch(() => {});
+    }
     toast.success(`"${newItem.product_name}" queued!`);
 
     setFormName('');
@@ -511,6 +515,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         return;
       }
 
+      // Pre-cache all queued images for offline use
+      itemsToSave.forEach((item) => {
+        if (item.image_url) {
+          getCachedImageUrl(item.image_url).catch(() => {});
+        }
+      });
+
       isSubmittingRef.current = true;
       setIsSubmitting(true);
 
@@ -537,6 +548,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setIsSubmitting(false);
       }
     } else {
+      if (formImageUrl.trim()) {
+        getCachedImageUrl(formImageUrl.trim()).catch(() => {});
+      }
       isSubmittingRef.current = true;
       setIsSubmitting(true);
 

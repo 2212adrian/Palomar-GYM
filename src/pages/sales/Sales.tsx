@@ -2110,7 +2110,9 @@ export const Sales: React.FC = () => {
               selectedReceiptTx.referenceNumber,
             transactionDate:
               selectedReceiptTx.created_at || selectedReceiptTx.createdAt,
-            processedBy: 'Staff',
+            processedBy: profile?.username
+              ? `${profile.username} (${profile.role || 'staff'})`
+              : 'Adrian (staff)',
           }}
         />
       )}

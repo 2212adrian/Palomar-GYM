@@ -448,8 +448,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         return;
       }
     } else {
-      if (!referenceNumber.trim() || referenceNumber.trim().length < 6) {
-        toast.error('A valid GCash reference number is required.');
+      const cleanRef = referenceNumber.trim();
+      if (!cleanRef || !/^\d{13}$/.test(cleanRef)) {
+        toast.error('GCash reference number must be exactly 13 digits.');
         return;
       }
     }
@@ -934,23 +935,31 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 ) : (
                   <div className="space-y-1 pt-1">
                     <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase block">
-                      GCash Reference Number
+                      GCash Reference Number (13 Digits) *
                     </label>
                     <input
                       type="text"
-                      placeholder="Enter reference code..."
+                      placeholder="Enter 13-digit reference code..."
+                      maxLength={13}
                       disabled={isSubmitting}
                       value={referenceNumber}
-                      onChange={(e) => setReferenceNumber(e.target.value)}
-                      className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-xs uppercase"
+                      onChange={(e) =>
+                        setReferenceNumber(
+                          e.target.value.replace(/\D/g, '').slice(0, 13)
+                        )
+                      }
+                      className="w-full px-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-xs"
                     />
 
-                    {referenceNumber.trim().length >= 6 && (
+                    {/^\d{13}$/.test(referenceNumber.trim()) ? (
                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans mt-1 flex items-center gap-1 font-bold">
-                        <Check className="w-3.5 h-3.5" /> GCash reference code
-                        recorded.
+                        <Check className="w-3.5 h-3.5" /> 13-digit GCash reference code validated.
                       </div>
-                    )}
+                    ) : referenceNumber.trim().length > 0 ? (
+                      <div className="text-[10px] text-amber-500 font-sans mt-1">
+                        {13 - referenceNumber.trim().length} more digits needed (13 digits required).
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>

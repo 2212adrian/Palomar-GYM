@@ -881,32 +881,39 @@ export const LogbookPage: React.FC = () => {
           ])) as any;
 
           if (!error && data) {
-            mappedLogs = (data || []).map((row: any) => ({
-              id: String(row.id),
-              timestamp: row.timestamp,
-              memberId: row.member_id || null,
-              customerName: row.customer_name,
-              customerType: row.customer_type,
-              categoryOrPlan: row.category_or_plan,
-              paymentMethod: row.payment_method,
-              amountPaid: Number(row.amount_paid || 0),
-              basePrice: Number(row.base_price || 0),
-              gcashFee: Number(row.gcash_fee || 0),
-              cardFee: Number(row.card_fee || 0),
-              gcashRefNo: row.gcash_ref_no,
-              referenceNumber: row.gcash_ref_no,
-              paymentRef: row.gcash_ref_no,
-              paymentStatus: (row.payment_status === 'Promo' ||
-              row.payment_status === 'Unpaid'
-                ? row.payment_status
-                : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
-              status: 'Active',
-              isSubscription: Boolean(row.is_subscription),
-              deletable: Boolean(row.deletable),
-              receiptNumber: row.receipt_number || null,
-              memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
-              cash_session_id: row.cash_session_id || null,
-            }));
+            mappedLogs = (data || [])
+              .filter(
+                (row: any) =>
+                  row.payment_status !== 'Cancelled' &&
+                  row.payment_status !== 'Voided' &&
+                  !row.deleted_at
+              )
+              .map((row: any) => ({
+                id: String(row.id),
+                timestamp: row.timestamp,
+                memberId: row.member_id || null,
+                customerName: row.customer_name,
+                customerType: row.customer_type,
+                categoryOrPlan: row.category_or_plan,
+                paymentMethod: row.payment_method,
+                amountPaid: Number(row.amount_paid || 0),
+                basePrice: Number(row.base_price || 0),
+                gcashFee: Number(row.gcash_fee || 0),
+                cardFee: Number(row.card_fee || 0),
+                gcashRefNo: row.gcash_ref_no,
+                referenceNumber: row.gcash_ref_no,
+                paymentRef: row.gcash_ref_no,
+                paymentStatus: (row.payment_status === 'Promo' ||
+                row.payment_status === 'Unpaid'
+                  ? row.payment_status
+                  : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
+                status: 'Active',
+                isSubscription: Boolean(row.is_subscription),
+                deletable: Boolean(row.deletable),
+                receiptNumber: row.receipt_number || null,
+                memberIds: Array.isArray(row.member_ids) ? row.member_ids : [],
+                cash_session_id: row.cash_session_id || null,
+              }));
 
             // Warm the Service Worker GET cache for /rest/v1/attendance and /rest/v1/receipts when online
             if (
@@ -1017,6 +1024,13 @@ export const LogbookPage: React.FC = () => {
             });
 
             rawReceipts.forEach((r: any) => {
+              if (
+                r.deleted_at ||
+                r.payment_status === 'Cancelled' ||
+                r.payment_status === 'Voided'
+              ) {
+                return;
+              }
               const amt = Number(r.amount || 0);
               fallbackList.push({
                 id: `rcpt-${r.id}`,
@@ -2827,7 +2841,9 @@ export const LogbookPage: React.FC = () => {
                 rawLog.paymentRef ||
                 gcashRefNo,
               transactionDate: selectedReceiptLog.timestamp,
-              processedBy: 'WOLF PALOMAR STAFF',
+              processedBy: profile?.username
+                ? `${profile.username} (${profile.role || 'staff'})`
+                : 'Adrian (staff)',
             };
           })()}
         />
