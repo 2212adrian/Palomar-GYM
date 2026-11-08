@@ -184,13 +184,13 @@ export const supabase = createClient(
     },
     global: {
       fetch: (input, init) => {
-        // Allow fetch to proceed so the Service Worker can intercept the request
-        // and serve cached responses (e.g. member lists, attendance logs) even when offline or network is unstable.
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          return Promise.reject(new TypeError(OFFLINE_STAFF_MESSAGE));
+        }
         return fetch(input, init).catch((err) => {
           if (
             err?.message === 'Failed to fetch' ||
-            err?.name === 'TypeError' ||
-            (typeof navigator !== 'undefined' && !navigator.onLine)
+            err?.name === 'TypeError'
           ) {
             return Promise.reject(new TypeError(OFFLINE_STAFF_MESSAGE));
           }

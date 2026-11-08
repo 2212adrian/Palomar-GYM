@@ -4,8 +4,9 @@
 -- includes cash_session_id for session-based grouping and lifecycle locks, and avoids adding any new database tables.
 
 DROP FUNCTION IF EXISTS public.get_sanitized_sales(date);
+DROP FUNCTION IF EXISTS public.get_sanitized_sales(text);
 
-CREATE OR REPLACE FUNCTION public.get_sanitized_sales(target_date date default null)
+CREATE OR REPLACE FUNCTION public.get_sanitized_sales(target_date text default null)
 RETURNS TABLE (
     id text,
     created_at timestamptz,
@@ -25,7 +26,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     WITH ref_date AS (
-        SELECT COALESCE(target_date, (now() AT TIME ZONE 'Asia/Manila')::date) AS d
+        SELECT COALESCE(NULLIF(target_date, '')::date, (now() AT TIME ZONE 'Asia/Manila')::date) AS d
     )
     SELECT
         s.id::text AS id,
@@ -47,4 +48,4 @@ AS $$
 $$;
 
 -- Grant execution privileges
-GRANT EXECUTE ON FUNCTION public.get_sanitized_sales(date) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.get_sanitized_sales(text) TO authenticated, anon;

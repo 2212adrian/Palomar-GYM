@@ -151,6 +151,15 @@ export const MembersList: React.FC<MembersListProps> = ({
     OnlineRegistration | undefined
   >(undefined);
 
+  useEffect(() => {
+    if (isOffline && isRecycleOpen) {
+      setIsRecycleOpen(false);
+      toast.warning('Recycle Bin closed: internet connection lost.', {
+        toastId: 'recycle-bin-offline-close',
+      });
+    }
+  }, [isOffline, isRecycleOpen]);
+
   // Batch Card Purchase Modal State
   const [isBatchBuyCardModalOpen, setIsBatchBuyCardModalOpen] = useState(false);
   const [batchPayMethod, setBatchPayMethod] = useState<'Cash' | 'GCash'>(
@@ -531,8 +540,16 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   // Custom Event Listeners for Header Actions Sync
   useEffect(() => {
-    const handlePrintEvent = () => handleOpenPrintModal();
-    const handleRecycleEvent = () => setIsRecycleOpen(true);
+   const handlePrintEvent = () => handleOpenPrintModal();
+    const handleRecycleEvent = () => {
+      if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        toast.error('Member\'s profile bin is unavailable while offline.', {
+          toastId: 'recycle-bin-offline-event',
+        });
+        return;
+      }
+      setIsRecycleOpen(true);
+    };
     const handleWizardEvent = () => {
       setWizardPrefillMember(undefined);
       setWizardPrefill(undefined);
@@ -548,7 +565,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
     };
-  }, [handleOpenPrintModal]);
+  }, [handleOpenPrintModal, isOffline]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -1436,9 +1453,27 @@ export const MembersList: React.FC<MembersListProps> = ({
             </Button>
 
             <Button
-              onClick={() => setIsRecycleOpen(true)}
+              disabled={isOffline}
+              onClick={() => {
+                if (isOffline) {
+                  toast.error('Recycle Bin is unavailable while offline.', {
+                    toastId: 'recycle-bin-offline',
+                  });
+                  return;
+                }
+                setIsRecycleOpen(true);
+              }}
               variant="secondary"
-              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 cursor-pointer font-bold animate-fade-in whitespace-nowrap"
+              title={
+                isOffline
+                  ? 'Recycle Bin is unavailable while offline'
+                  : 'Open Recycle Bin'
+              }
+              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                isOffline
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer'
+              }`}
             >
               <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
@@ -1474,6 +1509,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     isPlansPath,
     members,
     handleOpenPrintModal,
+    isOffline,
   ]);
 
   useEffect(() => {
@@ -2363,9 +2399,26 @@ export const MembersList: React.FC<MembersListProps> = ({
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => setIsRecycleOpen(true)}
-                className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-                title="Recycle Bin"
+                disabled={isOffline}
+                onClick={() => {
+                  if (isOffline) {
+                    toast.error('Recycle Bin is unavailable while offline.', {
+                      toastId: 'recycle-bin-offline',
+                    });
+                    return;
+                  }
+                  setIsRecycleOpen(true);
+                }}
+                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
+                  isOffline
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                }`}
+                title={
+                  isOffline
+                    ? 'Recycle Bin is unavailable while offline'
+                    : 'Recycle Bin'
+                }
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -2569,7 +2622,7 @@ export const MembersList: React.FC<MembersListProps> = ({
         />
       )}
 
-      {isRecycleOpen && (
+      {isRecycleOpen && !isOffline && (
         <MemberRecycleBin
           isOpen={isRecycleOpen}
           onClose={() => setIsRecycleOpen(false)}

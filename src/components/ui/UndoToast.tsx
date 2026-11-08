@@ -99,7 +99,6 @@ const [mounted, setMounted] = useState(false);
     setMounted(true);
   }, []);
 
-  // Whenever items are added to the stack, refresh timer to give the user full reaction time
   useEffect(() => {
     if (items.length > prevItemsLength.current) {
       setRemainingMs(totalMs);

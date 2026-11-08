@@ -12,10 +12,15 @@ export interface PendingTransaction {
   id: string; // client UUID: offline_tx_${timestamp}_${random}
   type:
     | 'sale'
+    | 'sale_restore'
+    | 'sale_delete'
     | 'attendance'
+    | 'attendance_restore'
+    | 'attendance_delete'
     | 'subscription'
     | 'card_purchase'
     | 'batch_card_purchase'
+    | 'cash_transaction'
     | 'product_create'
     | 'incident_create'
     | 'incident_update'
@@ -30,7 +35,7 @@ export interface PendingTransaction {
   iv: string; // base64 encoded initialization vector
   checksum: string; // SHA-256 hash of plaintext + salt
   status: 'pending' | 'conflict' | 'dropped';
-  conflictReason?: 'insufficient_stock' | 'duplicate_attendance' | 'session_closed' | 'tampered';
+  conflictReason?: 'insufficient_stock' | 'duplicate_attendance' | 'duplicate_restore' | 'session_closed' | 'tampered';
   conflictCloudData?: any;
 }
 
@@ -38,10 +43,15 @@ export interface DecryptedTransaction<T = any> {
   id: string;
   type:
     | 'sale'
+    | 'sale_restore'
+    | 'sale_delete'
     | 'attendance'
+    | 'attendance_restore'
+    | 'attendance_delete'
     | 'subscription'
     | 'card_purchase'
     | 'batch_card_purchase'
+    | 'cash_transaction'
     | 'product_create'
     | 'incident_create'
     | 'incident_update'

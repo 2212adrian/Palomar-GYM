@@ -75,28 +75,7 @@ export const getImageFromOfflineCache = async (
   }
 };
 
-const convertImageUrlToDataUrl = (url: string): Promise<string | null> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(null);
-        ctx.drawImage(img, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        resolve(dataUrl);
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-};
+const nonCorsUrls = new Set<string>();
 
 /**
  * Retrieves a cached image URL. If cached in Cache Storage or IndexedDB, returns
@@ -115,6 +94,10 @@ export const getCachedImageUrl = async (
 
   if (objectUrlMap.has(trimmed)) {
     return objectUrlMap.get(trimmed)!;
+  }
+
+  if (nonCorsUrls.has(trimmed)) {
+    return trimmed;
   }
 
   // 1. Check IndexedDB offline store first
@@ -138,7 +121,7 @@ export const getCachedImageUrl = async (
         return objectUrl;
       }
 
-      if (navigator.onLine) {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
         try {
           const fetchResponse = await fetch(trimmed, { mode: 'cors' });
           if (fetchResponse.ok) {
@@ -150,13 +133,10 @@ export const getCachedImageUrl = async (
             return objectUrl;
           }
         } catch {
-          // If direct fetch fails (e.g. CORS), attempt canvas extraction
-          const dataUrl = await convertImageUrlToDataUrl(trimmed);
-          if (dataUrl) {
-            objectUrlMap.set(trimmed, dataUrl);
-            saveImageToOfflineCache(trimmed, dataUrl).catch(() => {});
-            return dataUrl;
-          }
+          // Third-party image host does not allow CORS fetch.
+          // Remember URL to bypass further fetch/canvas attempts and let standard <img> load it directly.
+          nonCorsUrls.add(trimmed);
+          return trimmed;
         }
       }
     } catch (err) {

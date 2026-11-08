@@ -2,6 +2,12 @@
 -- Purpose: Sanitizes attendance check-ins and receipts into a display-safe DTO.
 -- Prevents DevTools from inspecting sensitive database columns (emails, addresses, phones, internal auth ids)
 -- and includes cash_session_id for session-based grouping and lifecycle locks.
+-- 20260824190000_get_sanitized_logbook.sql
+
+-- Ensure attendance table has payment_status and updated_at columns
+ALTER TABLE public.attendance 
+  ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'Paid',
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
 DROP FUNCTION IF EXISTS public.get_sanitized_logbook(date);
 
@@ -45,7 +51,7 @@ AS $$
         COALESCE(a.gcash_fee, 0.00)::numeric AS gcash_fee,
         COALESCE(a.card_fee, 0.00)::numeric AS card_fee,
         a.gcash_ref_no::text AS gcash_ref_no,
-        CASE WHEN COALESCE(a.entry_fee, 0.00) > 0 THEN 'Paid' ELSE 'Promo' END::text AS payment_status,
+        COALESCE(a.payment_status, CASE WHEN COALESCE(a.entry_fee, 0.00) > 0 THEN 'Paid' ELSE 'Promo' END)::text AS payment_status,
         false AS is_subscription,
         true AS deletable,
         a.cash_session_id::text AS cash_session_id

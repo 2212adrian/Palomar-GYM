@@ -103,17 +103,16 @@ export const getEntryCategory = (log: LogRecord): EntryCategory => {
     return 'card';
   }
 
+  if (cType === 'Existing Member' || cType === 'Member') {
+    return 'member';
+  }
+
   if (
     cType === 'New Membership' ||
     log.isSubscription ||
-    plan.includes('new membership') ||
-    plan.includes('subscription')
+    plan.includes('new membership')
   ) {
     return 'new_subscription';
-  }
-
-  if (cType === 'Existing Member' || cType === 'Member') {
-    return 'member';
   }
 
   if (plan.includes('student') || plan.includes('stud')) {
@@ -247,18 +246,23 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       log.categoryOrPlan.replace('Pass', '').replace('Membership', '').trim() ||
       log.categoryOrPlan;
 
+    const isExistingMember =
+      entryCategory === 'member' ||
+      log.customerType === 'Existing Member' ||
+      log.customerType === 'Member';
+
     const isSubscription =
-      Boolean(log.isSubscription) ||
-      entryCategory === 'new_subscription' ||
-      (log.categoryOrPlan || '').toLowerCase().includes('monthly') ||
-      (log.categoryOrPlan || '').toLowerCase().includes('yearly') ||
-      (log.categoryOrPlan || '').toLowerCase().includes('subscription');
+      !isExistingMember &&
+      (Boolean(log.isSubscription) ||
+        entryCategory === 'new_subscription' ||
+        log.customerType === 'New Membership');
 
-    const effectiveCanDelete = isSubscription ? false : canDelete;
+    const effectiveCanDelete = isExistingMember ? canDelete : isSubscription ? false : canDelete;
 
-    const effectiveDeleteDisabledReason = isSubscription
-      ? 'New membership enrollments and subscriptions cannot be deleted from the logbook.'
-      : deleteDisabledReason;
+    const effectiveDeleteDisabledReason =
+      !isExistingMember && isSubscription
+        ? 'New membership enrollments and subscriptions cannot be deleted from the logbook.'
+        : deleteDisabledReason;
 
     const syncStatus = log.sync_status || 'synced';
 

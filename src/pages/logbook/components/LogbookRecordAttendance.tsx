@@ -46,6 +46,7 @@ import beepSoundUrl from '../../../assets/beep-scanner.mp3';
 import {
   stagePendingTransaction,
   getCachedMembersFromIndexedDB,
+  getDecryptedPendingTransactions,
 } from '../../../lib/offlineVault';
 import { triggerHapticFormSuccess } from '../../../lib/hapticsService';
 
@@ -324,7 +325,7 @@ export const LogbookRecordAttendance: React.FC<
   LogbookRecordAttendanceProps
 > = ({ isOpen, initialSearch = '', onClose, onCheckInSuccess }) => {
   const navigate = useNavigate();
-  const { user } = useAuthStore() as any;
+  const { user, profile } = useAuthStore() as any;
   const { activeSession, isSessionOpen } = useCashSessionStore();
   const { isLocked, getLockReason } = useSessionLock();
   const { isBatterySaver } = useBatterySaver();
@@ -453,7 +454,14 @@ export const LogbookRecordAttendance: React.FC<
         walkinRegularFeeRef.current = regFee;
         setWalkinRegularFee(regFee);
         setWalkinStudentFee(Number(ratesData.student_walk_in));
-        setYearlyMemberFee(Number(ratesData.yearly_walk_in ?? 0));
+
+        const resolvedYearly =
+          ratesData.yearly_walk_in ??
+          ratesData.yearly_walkin ??
+          ratesData.yearly_member_checkin_fee ??
+          ratesData.yearly_checkin_fee;
+
+        setYearlyMemberFee(resolvedYearly !== null && resolvedYearly !== undefined ? Number(resolvedYearly) : 70.0);
         setGcashFeeRate(Number(ratesData.gcash_fee ?? 10));
       } else {
         const activeSettings = await settingsService.load().catch(() => null);
@@ -468,8 +476,15 @@ export const LogbookRecordAttendance: React.FC<
         walkinRegularFeeRef.current = regFee;
         setWalkinRegularFee(regFee);
         setWalkinStudentFee(Number(activeSettings.student_walkin_fee));
+        const resolvedSettingYearly =
+          activeSettings.yearly_member_checkin_fee ??
+          (activeSettings as any)?.yearly_walk_in ??
+          (activeSettings as any)?.yearly_walkin_fee;
+
         setYearlyMemberFee(
-          Number(activeSettings.yearly_member_checkin_fee ?? 0)
+          resolvedSettingYearly !== null && resolvedSettingYearly !== undefined
+            ? Number(resolvedSettingYearly)
+            : 70.0
         );
         setGcashFeeRate(Number(activeSettings.gcash_fee ?? 10));
       }
@@ -606,14 +621,37 @@ export const LogbookRecordAttendance: React.FC<
 
   const loadTodayLogs = useCallback(async () => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const { data } = await supabase
-        .from('attendance')
-        .select('*')
-        .is('deleted_at', null)
-        .gte('check_in_time', `${todayStr}T00:00:00Z`);
+      const todayDateStr = getServerNow().toLocaleDateString('en-CA');
+      const startOfDayIso = new Date(`${todayDateStr}T00:00:00+08:00`).toISOString();
+      const endOfDayIso = new Date(`${todayDateStr}T23:59:59.999+08:00`).toISOString();
 
-      setTodayLogs(data || []);
+      let remoteLogs: any[] = [];
+      try {
+        const { data } = await supabase
+          .from('attendance')
+          .select('*')
+          .is('deleted_at', null)
+          .gte('check_in_time', startOfDayIso)
+          .lte('check_in_time', endOfDayIso);
+
+        if (data) remoteLogs = data;
+      } catch (e) {
+        console.warn('Failed to load today logs:', e);
+      }
+
+      let pendingAttendance: any[] = [];
+      try {
+        const vaultItems = await getDecryptedPendingTransactions();
+        pendingAttendance = vaultItems
+          .filter((v: any) => v.type === 'attendance')
+          .map((v: any) => ({
+            id: v.id,
+            ...v.payload,
+            check_in_time: v.payload.check_in_time || v.createdAt,
+          }));
+      } catch {}
+
+      setTodayLogs([...pendingAttendance, ...remoteLogs]);
     } catch (e) {
       console.warn('Failed to load today logs:', e);
     }
@@ -621,9 +659,24 @@ export const LogbookRecordAttendance: React.FC<
 
   const duplicateLog = useMemo(() => {
     if (!selectedClient || selectedClient.isWalkIn) return null;
-    return todayLogs.find(
-      (log: any) => log.member_id === selectedClient.memberId
-    );
+
+    const sMemId = (selectedClient.memberId || '').trim().toLowerCase();
+    const sId = (selectedClient.id || '').trim().toLowerCase();
+    const sName = (selectedClient.name || '').trim().toLowerCase();
+
+    return todayLogs.find((log: any) => {
+      const lMemId = (log.member_id || '').trim().toLowerCase();
+      const lName = (log.customer_name || '').trim().toLowerCase();
+
+      const matchesMemberId = Boolean(
+        (sMemId && lMemId && sMemId === lMemId) ||
+        (sId && lMemId && sId === lMemId)
+      );
+
+      const matchesName = Boolean(sName && lName && sName === lName);
+
+      return matchesMemberId || matchesName;
+    });
   }, [selectedClient, todayLogs]);
 
   const isLockedByDuplicate = Boolean(
@@ -1300,6 +1353,14 @@ export const LogbookRecordAttendance: React.FC<
       );
     }
 
+    const currentProcessor =
+      profile?.username ||
+      (user?.email
+        ? user.email.toLowerCase().includes('wolf.palomar')
+          ? 'SUPERADMIN'
+          : user.email.split('@')[0]
+        : 'Staff');
+
     const insertPayload = {
       member_id: selectedClient.isWalkIn
         ? null
@@ -1313,7 +1374,8 @@ export const LogbookRecordAttendance: React.FC<
       card_fee: 0,
       gcash_ref_no: gcashRefVal || null,
       payment_method: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
-      staff_name: user?.email || 'Counter Staff',
+      staff_name: currentProcessor,
+      processed_by: currentProcessor,
       cash_session_id: sessionId || null,
     };
 
@@ -1325,7 +1387,7 @@ export const LogbookRecordAttendance: React.FC<
           type: 'attendance',
           cashSessionId: sessionId || '',
           userId: user?.id || 'staff',
-          userName: user?.email || 'Reception',
+          userName: currentProcessor,
           payload: insertPayload,
         });
 
@@ -1349,6 +1411,8 @@ export const LogbookRecordAttendance: React.FC<
             ? 'Active'
             : selectedClient.status || 'Active',
           cash_session_id: sessionId || null,
+          processed_by: currentProcessor,
+          staff_name: currentProcessor,
           sync_status: 'pending',
         };
 
@@ -1366,8 +1430,6 @@ export const LogbookRecordAttendance: React.FC<
           },
           isBatterySaver ? 600 : 1500
         );
-
-        toast.info('Attendance check-in held in encrypted offline vault (pending sync).');
         return;
       } catch (vaultErr: any) {
         toast.error(`Offline vault storage failed: ${vaultErr.message}`);
@@ -1412,8 +1474,12 @@ export const LogbookRecordAttendance: React.FC<
           ? 'Active'
           : selectedClient.status || 'Active',
         cash_session_id: inserted.cash_session_id || sessionId || null,
+        processed_by: currentProcessor,
+        staff_name: currentProcessor,
         sync_status: 'synced',
       };
+
+      useCashSessionStore.getState().recalculateMetrics();
 
       setIsSuccess(true);
       triggerHapticFormSuccess();

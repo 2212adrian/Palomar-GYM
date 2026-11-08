@@ -22,7 +22,7 @@ export const DEFAULT_RATES_CONFIG: RatesConfig = {
   yearly_rate: 8000.0,
   regular_walk_in: 100.0,
   student_walk_in: 80.0,
-  yearly_walk_in: 50.0,
+  yearly_walk_in: 70.0,
   gcash_fee: 10.0,
   new_card_fee: 150.0,
   vat_enabled: true,
@@ -143,9 +143,17 @@ export async function getEffectiveRates(): Promise<RatesConfig> {
         ])) as any;
 
         if (!error && data) {
+          const resolvedYearlyFee =
+            data.yearly_walk_in ??
+            data.yearly_walkin ??
+            data.yearly_member_checkin_fee ??
+            data.yearly_checkin_fee ??
+            DEFAULT_RATES_CONFIG.yearly_walk_in;
+
           const fullConfig: RatesConfig = {
             ...DEFAULT_RATES_CONFIG,
             ...data,
+            yearly_walk_in: Number(resolvedYearlyFee),
             monthly_membership: data.monthly_rate ?? DEFAULT_RATES_CONFIG.monthly_rate,
           };
           inMemoryRatesCache = { config: fullConfig, timestamp: Date.now() };

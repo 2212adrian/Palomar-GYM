@@ -42,6 +42,9 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
 
   fetchSafetyBackup: async () => {
     if (get().isLoading) return get().safetyBackup;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return get().safetyBackup;
+    }
 
     const cacheKey = 'palomar_safety_backup_check_ts';
     const now = Date.now();
@@ -78,6 +81,10 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
   },
 
   subscribeRealtime: () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return () => {};
+    }
+
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel('database_backups_safety_sync')

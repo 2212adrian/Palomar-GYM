@@ -156,6 +156,10 @@ export const fetchLatestRelease = async (
   targetPlatform: 'android' | 'ios' | 'windows' | 'web' | string = 'android',
   targetEnv: string = import.meta.env.MODE || 'production'
 ): Promise<AppReleaseInfo | null> => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return null;
+  }
+
   try {
     const { data: rows, error } = await supabase
       .from('app_releases')

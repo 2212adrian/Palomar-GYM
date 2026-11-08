@@ -253,29 +253,27 @@ const HeaderLayout: React.FC = () => {
   return (
     <HeaderActionsContext.Provider value={contextValue}>
       <div className="space-y-4 sm:space-y-6 min-h-full flex flex-col min-w-0 pt-1 md:pt-2 relative text-[var(--color-text,#0f172a)] dark:text-slate-100">
-        {headerInfo && (
-          <div className="hidden md:block shrink-0 pb-1">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200/60 dark:border-zinc-800/80 pb-4">
-              {/* Left Column: Title & Breadcrumbs */}
-              <div className="min-w-0 max-w-2xl">
-                <span className="text-[11px] font-heading font-bold tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase block">
-                  {headerInfo.subtitle}
-                </span>
-                <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider uppercase text-slate-900 dark:text-white mt-0.5 truncate">
-                  {headerInfo.title}
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                  {headerInfo.description}
-                </p>
-              </div>
-
-              {/* Right Column: Tablet & Desktop Control Toolbar */}
-              {actions && (
-                <div className="flex items-center gap-2.5 shrink-0 flex-wrap md:self-end">
-                  {actions}
-                </div>
-              )}
+{headerInfo && (
+          <div className="hidden md:flex flex-wrap items-center justify-between gap-4 px-6 pt-6 pb-2">
+            {/* Left Column: Title & Breadcrumbs */}
+            <div className="min-w-fit shrink-0">
+              <span className="text-xs font-semibold uppercase tracking-wider text-rose-500">
+                {headerInfo.subtitle}
+              </span>
+              <h1 className="text-2xl font-bold tracking-tight text-white uppercase mt-0.5">
+                {headerInfo.title}
+              </h1>
+              <p className={actions ? 'hidden 2xl:block text-xs text-zinc-400 mt-1 max-w-xl' : 'text-xs text-zinc-400 mt-1 max-w-xl'}>
+                {headerInfo.description}
+              </p>
             </div>
+
+            {/* Right Column: Tablet & Desktop Control Toolbar */}
+            {actions && (
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                {actions}
+              </div>
+            )}
           </div>
         )}
 

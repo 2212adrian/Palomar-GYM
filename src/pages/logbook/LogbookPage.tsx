@@ -68,7 +68,11 @@ import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
-import { getDecryptedPendingTransactions, dropPendingTransaction } from '../../lib/offlineVault';
+import {
+  getDecryptedPendingTransactions,
+  dropPendingTransaction,
+  stagePendingTransaction,
+} from '../../lib/offlineVault';
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
@@ -366,33 +370,56 @@ const isCardRecord = (log: LogRecord): boolean => {
 const deduplicateBatchCards = (records: LogRecord[]): LogRecord[] => {
   const seenKeys = new Set<string>();
   const seenTimestamps: { time: number; name: string; amount: number }[] = [];
+  const seenAttendanceLogs: { time: number; name: string; memberId: string; fee: number; plan: string }[] = [];
 
   return records.filter((log) => {
     const isCard = isCardRecord(log);
-    if (!isCard) return true;
+    if (isCard) {
+      if (log.receiptNumber) {
+        const rKey = `rcpt:${log.receiptNumber}`;
+        if (seenKeys.has(rKey)) return false;
+        seenKeys.add(rKey);
+      }
 
-    if (log.receiptNumber) {
-      const rKey = `rcpt:${log.receiptNumber}`;
-      if (seenKeys.has(rKey)) return false;
-      seenKeys.add(rKey);
+      const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+      const cleanName = (log.customerName || '').trim().toLowerCase();
+      const amount = Number(log.amountPaid || 0);
+
+      const isDuplicate = seenTimestamps.some(
+        (entry) =>
+          entry.name === cleanName &&
+          entry.amount === amount &&
+          Math.abs(entry.time - logTime) < 60000
+      );
+
+      if (isDuplicate) {
+        return false;
+      }
+
+      seenTimestamps.push({ time: logTime, name: cleanName, amount });
+      return true;
     }
 
+    // Deduplicate identical duplicate attendance entries within a 2-minute window
     const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
     const cleanName = (log.customerName || '').trim().toLowerCase();
-    const amount = Number(log.amountPaid || 0);
+    const cleanMemberId = (log.memberId || '').trim().toLowerCase();
+    const fee = Number(log.amountPaid || 0);
+    const plan = (log.categoryOrPlan || '').trim().toLowerCase();
 
-    const isDuplicate = seenTimestamps.some(
+    const isDuplicateAttendance = seenAttendanceLogs.some(
       (entry) =>
-        entry.name === cleanName &&
-        entry.amount === amount &&
-        Math.abs(entry.time - logTime) < 60000
+        (entry.name === cleanName || (cleanMemberId && entry.memberId === cleanMemberId)) &&
+        entry.plan === plan &&
+        Math.abs(entry.fee - fee) < 0.01 &&
+        Math.abs(entry.time - logTime) < 120000
     );
 
-    if (isDuplicate) {
+    if (isDuplicateAttendance) {
       return false;
     }
 
-    seenTimestamps.push({ time: logTime, name: cleanName, amount });
+    seenAttendanceLogs.push({ time: logTime, name: cleanName, memberId: cleanMemberId, fee, plan });
     return true;
   });
 };
@@ -403,8 +430,15 @@ export const LogbookPage: React.FC = () => {
   const { setActions } = useContext(HeaderActionsContext);
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
-  const { activeSession, isSessionOpen, history, loadHistory, canProcessOfflineTransactions } =
-    useCashSessionStore();
+  const {
+    activeSession,
+    isSessionOpen,
+    history,
+    loadHistory,
+    loadActiveSession,
+    subscribeRealtime,
+    canProcessOfflineTransactions,
+  } = useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
   const { isBatterySaver } = useBatterySaver();
 
@@ -432,8 +466,11 @@ export const LogbookPage: React.FC = () => {
   });
 
   useEffect(() => {
+    loadActiveSession();
     loadHistory();
-  }, [loadHistory]);
+    const unsub = subscribeRealtime();
+    return () => unsub();
+  }, [loadActiveSession, loadHistory, subscribeRealtime]);
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
@@ -1092,9 +1129,32 @@ export const LogbookPage: React.FC = () => {
         const combinedLogs = [...pendingRecords, ...(mappedLogs || [])];
         if (combinedLogs.length > 0 || mappedLogs !== null) {
           const consolidatedLogs = deduplicateBatchCards(combinedLogs);
-          setLogs(consolidatedLogs);
+          const stagedItems = stagedDeletionsRef.current;
+          const stagedIds = new Set([
+            ...stagedItems.map((l) => String(l.id)),
+            ...deletingIds,
+          ]);
+          const activeLogs = consolidatedLogs.filter((item) => {
+            if (stagedIds.has(String(item.id))) return false;
+            const itemTime = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+            const isStagedClone = stagedItems.some((s) => {
+              const sTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+              const sameMember =
+                (s.memberId && item.memberId === s.memberId) ||
+                (s.customerName &&
+                  item.customerName?.toLowerCase().trim() ===
+                    s.customerName.toLowerCase().trim());
+              return (
+                sameMember &&
+                item.categoryOrPlan === s.categoryOrPlan &&
+                Math.abs(itemTime - sTime) < 120000
+              );
+            });
+            return !isStagedClone;
+          });
+          setLogs(activeLogs);
           if (mappedLogs) {
-            const serialized = JSON.stringify(consolidatedLogs);
+            const serialized = JSON.stringify(activeLogs);
             sessionStorage.setItem(cacheKey, serialized);
             try {
               localStorage.setItem(cacheKey, serialized);
@@ -1401,37 +1461,44 @@ export const LogbookPage: React.FC = () => {
   };
 
   const handleTriggerCollectPayment = async (log: LogRecord) => {
+    const cacheKey = `logbook_sanitized_${dateStr}_v3`;
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
         item.id === log.id ? { ...item, paymentStatus: 'Paid' as const } : item
       );
-      sessionStorage.setItem(
-        `logbook_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
+      sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
 
     const updatedAtIso = getServerNow().toISOString();
+    const isRcpt = String(log.id).startsWith('rcpt-');
+    const cleanId = isRcpt ? String(log.id).replace(/^rcpt-/, '') : String(log.id);
+
     try {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(log.id));
-      let query = supabase.from('attendance').update({
-        payment_status: 'Paid',
-        updated_at: updatedAtIso,
-      });
-
-      if (isUuid) {
-        query = query.eq('id', log.id);
-      } else if (log.receiptNumber) {
-        query = query.eq('receipt_number', log.receiptNumber);
+      if (isRcpt) {
+        const { error } = await supabase
+          .from('receipts')
+          .update({
+            payment_status: 'Paid',
+            updated_at: updatedAtIso,
+          })
+          .eq('id', cleanId);
+        if (error) throw error;
       } else {
-        query = query.eq('receipt_number', log.id);
+        const { error } = await supabase
+          .from('attendance')
+          .update({
+            payment_status: 'Paid',
+            updated_at: updatedAtIso,
+          })
+          .eq('id', cleanId);
+        if (error) throw error;
       }
-
-      const { error } = await query;
-      if (error) throw error;
-    } catch (dbErr) {
-      console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
+    } catch (dbErr: any) {
+      console.error('Failed to update attendance payment status in DB:', dbErr);
     }
 
     toast.success(`Payment logged for ${log.customerName}`);
@@ -1440,42 +1507,50 @@ export const LogbookPage: React.FC = () => {
       `Collected payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Unpaid" to "Paid" via ${log.paymentMethod || 'Cash'}.`,
       log.id
     ).catch((e) => console.warn('Payment collect audit log failed:', e));
+    useCashSessionStore.getState().recalculateMetrics().catch(() => {});
   };
 
   const handleTriggerUndoPayment = async (log: LogRecord) => {
+    const cacheKey = `logbook_sanitized_${dateStr}_v3`;
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
         item.id === log.id
           ? { ...item, paymentStatus: 'Unpaid' as const }
           : item
       );
-      sessionStorage.setItem(
-        `logbook_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
+      sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(updated));
+      } catch {}
       return updated;
     });
 
     const updatedAtIso = getServerNow().toISOString();
+    const isRcpt = String(log.id).startsWith('rcpt-');
+    const cleanId = isRcpt ? String(log.id).replace(/^rcpt-/, '') : String(log.id);
+
     try {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(log.id));
-      let query = supabase.from('attendance').update({
-        payment_status: 'Unpaid',
-        updated_at: updatedAtIso,
-      });
-
-      if (isUuid) {
-        query = query.eq('id', log.id);
-      } else if (log.receiptNumber) {
-        query = query.eq('receipt_number', log.receiptNumber);
+      if (isRcpt) {
+        const { error } = await supabase
+          .from('receipts')
+          .update({
+            payment_status: 'Unpaid',
+            updated_at: updatedAtIso,
+          })
+          .eq('id', cleanId);
+        if (error) throw error;
       } else {
-        query = query.eq('receipt_number', log.id);
+        const { error } = await supabase
+          .from('attendance')
+          .update({
+            payment_status: 'Unpaid',
+            updated_at: updatedAtIso,
+          })
+          .eq('id', cleanId);
+        if (error) throw error;
       }
-
-      const { error } = await query;
-      if (error) throw error;
-    } catch (dbErr) {
-      console.warn('Failed to update attendance payment status in DB, queueing for offline sync:', dbErr);
+    } catch (dbErr: any) {
+      console.error('Failed to update attendance payment status in DB:', dbErr);
     }
 
     toast.info(`Undone payment. Set back to Unpaid.`);
@@ -1484,6 +1559,7 @@ export const LogbookPage: React.FC = () => {
       `Reverted payment of ₱${Number(log.amountPaid || 0).toFixed(2)} for "${log.customerName}": Payment status changed from "Paid" to "Unpaid".`,
       log.id
     ).catch((e) => console.warn('Payment undo audit log failed:', e));
+    useCashSessionStore.getState().recalculateMetrics().catch(() => {});
   };
 
   // ─── STACKABLE MULTI-UNDO & COMMIT CONTROLLERS ───
@@ -1679,6 +1755,79 @@ export const LogbookPage: React.FC = () => {
       );
       if (!stagedLog) return;
 
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+      if (!isOnline) {
+        try {
+          const sessionState = useCashSessionStore.getState();
+          const sessionId =
+            sessionState.activeSession?.id ||
+            sessionState.getLastKnownSessionId() ||
+            '';
+          const deletedIso = new Date().toISOString();
+
+          await stagePendingTransaction({
+            type: 'attendance_delete',
+            cashSessionId: sessionId,
+            userId: user?.id || 'offline_cashier',
+            userName: profile?.username || user?.email || 'Staff',
+            payload: {
+              attendanceId: stagedLog.id,
+              memberId: stagedLog.memberId,
+              customerName: stagedLog.customerName,
+              customerType: stagedLog.customerType,
+              planName: stagedLog.categoryOrPlan,
+              amountPaid: stagedLog.amountPaid,
+              receiptNumber: stagedLog.receiptNumber,
+              memberIds: stagedLog.memberIds,
+              cardFee: stagedLog.cardFee,
+              paymentMethod: stagedLog.paymentMethod,
+              timestamp: stagedLog.timestamp,
+              deletedAt: deletedIso,
+              isCard: isCardRecord(stagedLog),
+            },
+          });
+
+          try {
+            const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
+            const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+            const updatedRecycle = [
+              {
+                id: stagedLog.id,
+                check_in_time: stagedLog.timestamp,
+                member_id: stagedLog.memberId,
+                customer_name: stagedLog.customerName,
+                customer_type: stagedLog.customerType,
+                plan_name: stagedLog.categoryOrPlan,
+                entry_fee: stagedLog.amountPaid,
+                deleted_at: deletedIso,
+                receipt_number: stagedLog.receiptNumber,
+                member_ids: stagedLog.memberIds,
+                card_fee: stagedLog.cardFee,
+                payment_method: stagedLog.paymentMethod,
+              },
+              ...cachedRecycle.filter((l: any) => String(l.id) !== String(id)),
+            ];
+            localStorage.setItem(
+              'logbook_recycle_bin_cache',
+              JSON.stringify(updatedRecycle)
+            );
+          } catch {}
+
+          toast.info(
+            `Record for "${stagedLog.customerName}" moved to Recycle Bin offline (queued for sync).`
+          );
+        } catch (vaultErr: any) {
+          console.error('Failed to stage offline attendance delete:', vaultErr);
+          toast.error(`Offline delete failed: ${vaultErr.message}`);
+        } finally {
+          setStagedDeletions((prev) =>
+            prev.filter((item) => String(item.id) !== String(id))
+          );
+        }
+        return;
+      }
+
       try {
         const isCard = isCardRecord(stagedLog);
         let rawReceiptId =
@@ -1784,6 +1933,28 @@ export const LogbookPage: React.FC = () => {
 
           const { error } = await deleteQuery;
           if (error) throw error;
+
+          if (!isCard && !isSubscription && (stagedLog.memberId || stagedLog.customerName)) {
+            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+            const winStart = new Date(logMs - 120000).toISOString();
+            const winEnd = new Date(logMs + 120000).toISOString();
+            let cloneQ = supabase
+              .from('attendance')
+              .update({
+                deleted_at: new Date().toISOString(),
+                deleted_by: user?.id || null,
+              })
+              .is('deleted_at', null)
+              .gte('check_in_time', winStart)
+              .lte('check_in_time', winEnd);
+
+            if (stagedLog.memberId) {
+              cloneQ = cloneQ.eq('member_id', stagedLog.memberId);
+            } else {
+              cloneQ = cloneQ.eq('customer_name', stagedLog.customerName);
+            }
+            await cloneQ;
+          }
         }
 
         if (isCard) {
@@ -1837,6 +2008,32 @@ export const LogbookPage: React.FC = () => {
         }
 
         await deactivateCardsForLogRecord(stagedLog);
+
+        try {
+          const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
+          const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+          const updatedRecycle = [
+            {
+              id: stagedLog.id,
+              check_in_time: stagedLog.timestamp,
+              member_id: stagedLog.memberId,
+              customer_name: stagedLog.customerName,
+              customer_type: stagedLog.customerType,
+              plan_name: stagedLog.categoryOrPlan,
+              entry_fee: stagedLog.amountPaid,
+              deleted_at: new Date().toISOString(),
+              receipt_number: stagedLog.receiptNumber,
+              member_ids: stagedLog.memberIds,
+              card_fee: stagedLog.cardFee,
+              payment_method: stagedLog.paymentMethod,
+            },
+            ...cachedRecycle.filter((l: any) => String(l.id) !== String(id)),
+          ];
+          localStorage.setItem(
+            'logbook_recycle_bin_cache',
+            JSON.stringify(updatedRecycle)
+          );
+        } catch {}
 
         toast.success(
           `Record for "${stagedLog.customerName}" moved to Recycle Bin.`
@@ -1907,10 +2104,147 @@ export const LogbookPage: React.FC = () => {
     toast.info(`Restored check-in for "${stagedLog.customerName}".`);
   };
 
-  const handleConfirmAll = () => {
+  const handleConfirmAll = async () => {
     if (stagedDeletionsRef.current.length === 0) return;
     const itemsToCommit = [...stagedDeletionsRef.current];
-    itemsToCommit.forEach((log) => handleConfirmDelete(String(log.id)));
+    setStagedDeletions([]);
+    setDeletingIds([]);
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+    if (!isOnline) {
+      for (const log of itemsToCommit) {
+        await handleConfirmDelete(String(log.id));
+      }
+      return;
+    }
+
+    try {
+      const deletedIso = new Date().toISOString();
+      const standardAttendanceIds: string[] = [];
+      const cardLogs: LogRecord[] = [];
+      const subscriptionLogs: LogRecord[] = [];
+
+      itemsToCommit.forEach((log) => {
+        const isCard = isCardRecord(log);
+        const isSub = Boolean(
+          log.isSubscription ||
+          log.customerType === 'New Membership' ||
+          log.customerType === 'Membership Renewal'
+        );
+
+        if (isCard) {
+          cardLogs.push(log);
+        } else if (isSub) {
+          subscriptionLogs.push(log);
+        } else if (!String(log.id).startsWith('rcpt-')) {
+          standardAttendanceIds.push(String(log.id));
+        }
+      });
+
+      if (standardAttendanceIds.length > 0) {
+        const { error: batchErr } = await supabase
+          .from('attendance')
+          .update({
+            deleted_at: deletedIso,
+            deleted_by: user?.id || null,
+          })
+          .in('id', standardAttendanceIds);
+
+        if (batchErr) throw batchErr;
+
+        const cloneSweeps = itemsToCommit
+          .filter((l) => !isCardRecord(l) && (l.memberId || l.customerName))
+          .map((l) => {
+            const logMs = l.timestamp ? new Date(l.timestamp).getTime() : Date.now();
+            const winStart = new Date(logMs - 120000).toISOString();
+            const winEnd = new Date(logMs + 120000).toISOString();
+            let sweepQ = supabase
+              .from('attendance')
+              .update({
+                deleted_at: deletedIso,
+                deleted_by: user?.id || null,
+              })
+              .is('deleted_at', null)
+              .gte('check_in_time', winStart)
+              .lte('check_in_time', winEnd);
+
+            if (l.memberId) {
+              sweepQ = sweepQ.eq('member_id', l.memberId);
+            } else {
+              sweepQ = sweepQ.eq('customer_name', l.customerName);
+            }
+            return sweepQ;
+          });
+
+        if (cloneSweeps.length > 0) {
+          await Promise.allSettled(cloneSweeps);
+        }
+      }
+
+      for (const cardLog of cardLogs) {
+        await handleConfirmDelete(String(cardLog.id));
+      }
+
+      for (const subLog of subscriptionLogs) {
+        await handleConfirmDelete(String(subLog.id));
+      }
+
+      try {
+        const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
+        const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+        const committedIds = new Set(itemsToCommit.map((l) => String(l.id)));
+        const newRecycleEntries = itemsToCommit.map((l) => ({
+          id: l.id,
+          check_in_time: l.timestamp,
+          member_id: l.memberId,
+          customer_name: l.customerName,
+          customer_type: l.customerType,
+          plan_name: l.categoryOrPlan,
+          entry_fee: l.amountPaid,
+          deleted_at: deletedIso,
+          receipt_number: l.receiptNumber,
+          member_ids: l.memberIds,
+          card_fee: l.cardFee,
+          payment_method: l.paymentMethod,
+        }));
+
+        const updatedRecycle = [
+          ...newRecycleEntries,
+          ...cachedRecycle.filter((item: any) => !committedIds.has(String(item.id))),
+        ];
+        localStorage.setItem(
+          'logbook_recycle_bin_cache',
+          JSON.stringify(updatedRecycle)
+        );
+      } catch {}
+
+      toast.success(
+        `Moved ${itemsToCommit.length} record(s) to Recycle Bin.`
+      );
+
+      await logAudit(
+        'LOGBOOK_REMOVED',
+        `Moved ${itemsToCommit.length} record(s) to Recycle Bin.`
+      );
+    } catch (err: any) {
+      console.error('Failed to batch commit deletion to database:', err);
+      toast.error(err.message || 'Failed to move check-in records to Recycle Bin.');
+      setLogs((prev) => {
+        const existingIds = new Set(prev.map((i) => String(i.id)));
+        const toRestore = itemsToCommit.filter((i) => !existingIds.has(String(i.id)));
+        const updated = [...toRestore, ...prev].sort((a, b) => {
+          const dateA = a.timestamp || '';
+          const dateB = b.timestamp || '';
+          return dateB.localeCompare(dateA);
+        });
+        sessionStorage.setItem(
+          `logbook_sanitized_${dateStr}`,
+          JSON.stringify(updated)
+        );
+        return updated;
+      });
+    }
   };
 
   const handleUndoAll = () => {
@@ -1978,6 +2312,9 @@ export const LogbookPage: React.FC = () => {
           log.receiptNumber ||
           (strId.startsWith('rcpt-') ? strId.replace(/^rcpt-/, '') : null);
         const mId = log.memberId;
+        const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+        const cleanName = (log.customerName || '').trim().toLowerCase();
+        const cleanMemberId = (log.memberId || '').trim().toLowerCase();
 
         const updated: LogRecord[] = prev.filter((item) => {
           if (String(item.id) === strId) return false;
@@ -1993,6 +2330,17 @@ export const LogbookPage: React.FC = () => {
             if (mId && item.memberId === mId && isCardRecord(item)) {
               return false;
             }
+          }
+          const itemTime = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+          const isSameMember =
+            (cleanMemberId && (item.memberId || '').trim().toLowerCase() === cleanMemberId) ||
+            (cleanName && (item.customerName || '').trim().toLowerCase() === cleanName);
+          if (
+            isSameMember &&
+            item.categoryOrPlan === log.categoryOrPlan &&
+            Math.abs(itemTime - logTime) < 120000
+          ) {
+            return false;
           }
           return true;
         });
@@ -2927,6 +3275,9 @@ export const LogbookPage: React.FC = () => {
           onClose={() => setIsRecycleBinOpen(false)}
           onRestoreSuccess={() => {
             sessionStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
+            try {
+              localStorage.removeItem(`logbook_sanitized_${dateStr}_v3`);
+            } catch {}
             fetchAttendanceFromSupabase(true);
           }}
         />

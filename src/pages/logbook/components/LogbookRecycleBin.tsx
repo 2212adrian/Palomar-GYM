@@ -17,6 +17,12 @@ import {
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useAuthStore } from '../../../stores/authStore';
+import {
+  stagePendingTransaction,
+  getDecryptedPendingTransactions,
+} from '../../../lib/offlineVault';
 
 interface LogbookRecycleBinProps {
   isOpen: boolean;
@@ -64,43 +70,201 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(
     new Set()
   );
+  const [activeMemberKeys, setActiveMemberKeys] = useState<Set<string>>(
+    new Set()
+  );
   const itemsPerPage = 5;
+
+  const fetchActiveAttendance = useCallback(async () => {
+    const keys = new Set<string>();
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+
+    try {
+      const cachedRaw =
+        sessionStorage.getItem(`logbook_sanitized_${dateStr}_v3`) ||
+        localStorage.getItem(`logbook_sanitized_${dateStr}_v3`) ||
+        sessionStorage.getItem(`logbook_sanitized_${dateStr}`) ||
+        localStorage.getItem(`logbook_sanitized_${dateStr}`);
+
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item.memberId) keys.add(String(item.memberId).trim().toLowerCase());
+            if (item.customerName) keys.add(String(item.customerName).trim().toLowerCase());
+          });
+        }
+      }
+    } catch {}
+
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    if (isOnline) {
+      try {
+        const startOfDay = `${dateStr}T00:00:00.000Z`;
+        const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+        const { data } = await supabase
+          .from('attendance')
+          .select('member_id, customer_name')
+          .is('deleted_at', null)
+          .neq('customer_type', 'Card')
+          .not('plan_name', 'ilike', '%card%')
+          .gte('check_in_time', startOfDay)
+          .lte('check_in_time', endOfDay);
+
+        if (data) {
+          data.forEach((row: any) => {
+            if (row.member_id) keys.add(String(row.member_id).trim().toLowerCase());
+            if (row.customer_name) keys.add(String(row.customer_name).trim().toLowerCase());
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to fetch active attendance keys:', err);
+      }
+    }
+
+    setActiveMemberKeys(keys);
+  }, []);
+
+  const isLogActiveInLogbook = useCallback(
+    (log: LogItem): boolean => {
+      const isCard =
+        log.customerType === 'Card' ||
+        String(log.categoryOrPlan || '')
+          .toLowerCase()
+          .includes('card');
+      if (isCard) return false;
+
+      const cleanMid = log.memberId ? String(log.memberId).trim().toLowerCase() : '';
+      const cleanName = log.customerName ? String(log.customerName).trim().toLowerCase() : '';
+
+      return (
+        (Boolean(cleanMid) && activeMemberKeys.has(cleanMid)) ||
+        (Boolean(cleanName) && activeMemberKeys.has(cleanName))
+      );
+    },
+    [activeMemberKeys]
+  );
 
   const fetchDeletedLogs = useCallback(async () => {
     setLoading(true);
+    const recycleCacheKey = 'logbook_recycle_bin_cache';
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
     try {
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .not('deleted_at', 'is', null)
-        .neq('customer_type', 'New Membership')
-        .order('deleted_at', { ascending: false });
+      let rawData: any[] | null = null;
 
-      if (error) throw error;
+      if (isOnline) {
+        try {
+          const { data, error } = await supabase
+            .from('attendance')
+            .select('*')
+            .not('deleted_at', 'is', null)
+            .neq('customer_type', 'New Membership')
+            .order('deleted_at', { ascending: false });
 
-      if (data) {
-        const mappedLogs: LogItem[] = data
-          .filter((att: any) => att.customer_type !== 'New Membership')
-          .map((att: any) => ({
-            id: String(att.id),
-            timestamp: att.check_in_time,
-            memberId: att.member_id || null,
-            customerName: att.customer_name || 'Unnamed',
-            customerType: att.customer_type,
-            categoryOrPlan: att.plan_name || 'Regular Pass',
-            amountPaid: Number(att.entry_fee || 0),
-            deletedAt: att.deleted_at,
-            receiptNumber: att.receipt_number || null,
-            memberIds: Array.isArray(att.member_ids) ? att.member_ids : [],
-            cardFee: att.card_fee ? Number(att.card_fee) : null,
-            paymentMethod: att.payment_method || null,
-          }));
-
-        setDeletedLogs(mappedLogs);
+          if (!error && data) {
+            rawData = data;
+            try {
+              localStorage.setItem(recycleCacheKey, JSON.stringify(data));
+            } catch {}
+          }
+        } catch {
+          // Fall through to offline cache
+        }
       }
+
+      if (!rawData) {
+        const cachedRaw = localStorage.getItem(recycleCacheKey);
+        if (cachedRaw) {
+          try {
+            rawData = JSON.parse(cachedRaw);
+          } catch {}
+        }
+      }
+
+      if (!rawData) {
+        rawData = [];
+      }
+
+      let pendingRestoredIds = new Set<string>();
+      let pendingDeletedLogs: any[] = [];
+      try {
+        const pendingItems = await getDecryptedPendingTransactions();
+        pendingItems.forEach((i) => {
+          if (
+            i.type === 'attendance_restore' &&
+            (i.status === 'pending' || i.status === 'conflict')
+          ) {
+            const aid = i.payload?.attendanceId || i.payload?.id;
+            if (aid) pendingRestoredIds.add(String(aid));
+          }
+          if (
+            i.type === 'attendance_delete' &&
+            (i.status === 'pending' || i.status === 'conflict')
+          ) {
+            if (i.payload) {
+              pendingDeletedLogs.push({
+                id: String(i.payload.attendanceId || i.id),
+                check_in_time: i.payload.timestamp || i.createdAt,
+                member_id: i.payload.memberId || null,
+                customer_name: i.payload.customerName || 'Member',
+                customer_type: i.payload.customerType || 'Walk-In',
+                plan_name: i.payload.planName || i.payload.categoryOrPlan || 'Regular Pass',
+                entry_fee: i.payload.entryFee || i.payload.amountPaid || 0,
+                deleted_at: i.payload.deletedAt || i.createdAt,
+                receipt_number: i.payload.receiptNumber || null,
+                member_ids: i.payload.memberIds || [],
+                card_fee: i.payload.cardFee || null,
+                payment_method: i.payload.paymentMethod || 'Cash',
+              });
+            }
+          }
+        });
+      } catch {}
+
+      const combined = [...pendingDeletedLogs, ...rawData];
+      const seenIds = new Set<string>();
+      const mappedLogs: LogItem[] = [];
+
+      for (const att of combined) {
+        const strId = String(att.id);
+        if (seenIds.has(strId) || pendingRestoredIds.has(strId)) continue;
+        if (att.customer_type === 'New Membership') continue;
+        seenIds.add(strId);
+
+        mappedLogs.push({
+          id: strId,
+          timestamp: att.check_in_time || att.timestamp,
+          memberId: att.member_id || att.memberId || null,
+          customerName: att.customer_name || att.customerName || 'Unnamed',
+          customerType: att.customer_type || att.customerType || 'Walk-In',
+          categoryOrPlan: att.plan_name || att.categoryOrPlan || 'Regular Pass',
+          amountPaid: Number(att.entry_fee ?? att.amountPaid ?? 0),
+          deletedAt: att.deleted_at || att.deletedAt || new Date().toISOString(),
+          receiptNumber: att.receipt_number || att.receiptNumber || null,
+          memberIds: Array.isArray(att.member_ids)
+            ? att.member_ids
+            : Array.isArray(att.memberIds)
+              ? att.memberIds
+              : [],
+          cardFee: att.card_fee
+            ? Number(att.card_fee)
+            : att.cardFee
+              ? Number(att.cardFee)
+              : null,
+          paymentMethod: att.payment_method || att.paymentMethod || null,
+        });
+      }
+
+      setDeletedLogs(mappedLogs);
     } catch (err: any) {
       console.error('Error fetching soft-deleted logs:', err);
-      toast.error('Failed to load transaction data from Recycle Bin.');
+      const cachedRaw = localStorage.getItem(recycleCacheKey);
+      if (!cachedRaw) {
+        toast.error('Failed to load transaction data from Recycle Bin.');
+      }
     } finally {
       setLoading(false);
     }
@@ -108,13 +272,14 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      fetchActiveAttendance();
       fetchDeletedLogs();
       setSelectedIds([]);
       setCurrentPage(1);
       setSearchQuery('');
       setExpandedGroupKeys(new Set());
     }
-  }, [isOpen, fetchDeletedLogs]);
+  }, [isOpen, fetchDeletedLogs, fetchActiveAttendance]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -207,7 +372,11 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
 
       const grp = groupsMap.get(groupKey)!;
       grp.items.push(log);
-      grp.totalAmount += log.amountPaid;
+      if (isCard) {
+        grp.totalAmount += log.amountPaid;
+      } else {
+        grp.totalAmount = grp.items[0].amountPaid;
+      }
       grp.isGroup = grp.items.length > 1;
       if (
         new Date(log.deletedAt).getTime() >
@@ -234,13 +403,34 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   const checkDuplicateActiveAttendance = async (
     log: LogItem
   ): Promise<boolean> => {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+    if (!isOnline) {
+      try {
+        const todayDateStr = log.timestamp ? log.timestamp.split('T')[0] : '';
+        const cacheKey = `logbook_sanitized_${todayDateStr}_v3`;
+        const cachedRaw =
+          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const cachedLogs: any[] = JSON.parse(cachedRaw);
+          return cachedLogs.some(
+            (item) =>
+              (log.memberId && item.memberId === log.memberId) ||
+              (log.customerName &&
+                item.customerName?.toLowerCase().trim() ===
+                  log.customerName.toLowerCase().trim())
+          );
+        }
+      } catch {}
+      return false;
+    }
+
     const isCard =
       log.customerType === 'Card' ||
       String(log.categoryOrPlan || '')
         .toLowerCase()
         .includes('card');
 
-    // For Card transactions, check if the member already has an active PAID card from a DIFFERENT transaction
     if (isCard) {
       const targetMemberIds: string[] = [];
       if (log.memberId) targetMemberIds.push(log.memberId);
@@ -249,17 +439,19 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       }
 
       if (log.receiptNumber) {
-        const { data: rcpt } = await supabase
-          .from('receipts')
-          .select('member_ids, member_id')
-          .eq('id', log.receiptNumber)
-          .maybeSingle();
-        if (rcpt) {
-          if (rcpt.member_id) targetMemberIds.push(rcpt.member_id);
-          if (Array.isArray(rcpt.member_ids)) {
-            rcpt.member_ids.forEach((id: string) => targetMemberIds.push(id));
+        try {
+          const { data: rcpt } = await supabase
+            .from('receipts')
+            .select('member_ids, member_id')
+            .eq('id', log.receiptNumber)
+            .maybeSingle();
+          if (rcpt) {
+            if (rcpt.member_id) targetMemberIds.push(rcpt.member_id);
+            if (Array.isArray(rcpt.member_ids)) {
+              rcpt.member_ids.forEach((id: string) => targetMemberIds.push(id));
+            }
           }
-        }
+        } catch {}
       }
 
       const uniqueTargets = Array.from(new Set(targetMemberIds)).filter(
@@ -267,61 +459,95 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       );
       if (uniqueTargets.length === 0) return false;
 
-      // Check cards table: ONLY a conflict if member already has another active PAID card with a DIFFERENT receipt
-      let cardQuery = supabase
-        .from('cards')
-        .select('id, status, payment_status, member_id, receipt_number')
-        .in('member_id', uniqueTargets)
-        .eq('status', 'Active')
-        .eq('payment_status', 'PAID');
+      try {
+        let cardQuery = supabase
+          .from('cards')
+          .select('id, status, payment_status, member_id, receipt_number')
+          .in('member_id', uniqueTargets)
+          .eq('status', 'Active')
+          .eq('payment_status', 'PAID');
 
-      if (log.receiptNumber) {
-        cardQuery = cardQuery.neq('receipt_number', log.receiptNumber);
+        if (log.receiptNumber) {
+          cardQuery = cardQuery.neq('receipt_number', log.receiptNumber);
+        }
+
+        const { data: conflictingCards } = await cardQuery;
+        return !!(conflictingCards && conflictingCards.length > 0);
+      } catch {
+        return false;
       }
-
-      const { data: conflictingCards } = await cardQuery;
-      return !!(conflictingCards && conflictingCards.length > 0);
     }
 
-    // Standard attendance check
     if (!log.timestamp) return false;
     const dateStr = log.timestamp.split('T')[0];
     const startOfDay = `${dateStr}T00:00:00.000Z`;
     const endOfDay = `${dateStr}T23:59:59.999Z`;
 
-    let query = supabase
-      .from('attendance')
-      .select('id, customer_name, check_in_time')
-      .is('deleted_at', null)
-      .neq('customer_type', 'Card')
-      .not('plan_name', 'ilike', '%card%')
-      .gte('check_in_time', startOfDay)
-      .lte('check_in_time', endOfDay);
+    try {
+      let query = supabase
+        .from('attendance')
+        .select('id, customer_name, check_in_time')
+        .is('deleted_at', null)
+        .neq('customer_type', 'Card')
+        .not('plan_name', 'ilike', '%card%')
+        .gte('check_in_time', startOfDay)
+        .lte('check_in_time', endOfDay);
 
-    if (log.memberId) {
-      query = query.eq('member_id', log.memberId);
-    } else if (log.customerName) {
-      query = query.ilike('customer_name', log.customerName);
-    } else {
+      if (log.memberId) {
+        query = query.eq('member_id', log.memberId);
+      } else if (log.customerName) {
+        query = query.ilike('customer_name', log.customerName);
+      } else {
+        return false;
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        return false;
+      }
+      return !!(data && data.length > 0);
+    } catch {
       return false;
     }
-
-    const { data, error } = await query;
-    if (error) {
-      console.warn('Error verifying active duplicate attendance:', error);
-      return false;
-    }
-    return !!(data && data.length > 0);
   };
 
   const handleBulkRestore = async (selectedList: LogItem[]) => {
     if (selectedList.length === 0) return;
     setLoading(true);
     try {
+      const seenMembers = new Set<string>();
+      const deduplicatedList: LogItem[] = [];
+
+      for (const item of selectedList) {
+        const isCard =
+          item.customerType === 'Card' ||
+          String(item.categoryOrPlan || '').toLowerCase().includes('card');
+
+        if (isCard) {
+          deduplicatedList.push(item);
+          continue;
+        }
+
+        const memberKey = (
+          item.memberId ||
+          item.customerName ||
+          item.id
+        ).trim().toLowerCase();
+
+        if (seenMembers.has(memberKey)) continue;
+        seenMembers.add(memberKey);
+        deduplicatedList.push(item);
+      }
+
+      if (deduplicatedList.length === 0) {
+        setLoading(false);
+        return;
+      }
+
       const duplicates: LogItem[] = [];
       const validToRestore: LogItem[] = [];
 
-      for (const log of selectedList) {
+      for (const log of deduplicatedList) {
         const isDuplicate = await checkDuplicateActiveAttendance(log);
         if (isDuplicate) {
           duplicates.push(log);
@@ -351,6 +577,111 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       }
 
       const restoreTxIds = validToRestore.map((l) => l.id);
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+      const sessionStore = useCashSessionStore.getState();
+      const authStore = useAuthStore.getState();
+      const currentSessionId =
+        sessionStore.activeSession?.id || sessionStore.getLastKnownSessionId();
+      const currentProcessor =
+        authStore.profile?.username ||
+        authStore.user?.email?.split('@')[0] ||
+        'Staff';
+
+      if (!isOnline) {
+        if (
+          !sessionStore.canProcessOfflineTransactions() &&
+          !sessionStore.isSessionOpen
+        ) {
+          toast.error(
+            'Cannot restore while offline: Cash drawer session is closed.'
+          );
+          setLoading(false);
+          return;
+        }
+
+        for (const log of validToRestore) {
+          await stagePendingTransaction({
+            type: 'attendance_restore',
+            cashSessionId: currentSessionId || '',
+            userId: authStore.user?.id || 'offline_cashier',
+            userName: currentProcessor,
+            payload: {
+              attendanceId: log.id,
+              memberId: log.memberId,
+              customerName: log.customerName,
+              customerType: log.customerType,
+              planName: log.categoryOrPlan,
+              entryFee: log.amountPaid,
+              receiptNumber: log.receiptNumber,
+              memberIds: log.memberIds,
+              cardFee: log.cardFee,
+              paymentMethod: log.paymentMethod,
+              timestamp: log.timestamp,
+              restoredAt: new Date().toISOString(),
+            },
+          });
+        }
+
+        try {
+          const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
+          if (cachedRecycleRaw) {
+            const cachedList = JSON.parse(cachedRecycleRaw);
+            const remaining = cachedList.filter(
+              (item: any) => !restoreTxIds.includes(String(item.id))
+            );
+            localStorage.setItem('logbook_recycle_bin_cache', JSON.stringify(remaining));
+          }
+        } catch {}
+
+        try {
+          const todayDateStr = new Date().toISOString().substring(0, 10);
+          const activeKey = `logbook_sanitized_${todayDateStr}_v3`;
+          const activeRaw =
+            sessionStorage.getItem(activeKey) || localStorage.getItem(activeKey);
+          const activeList = activeRaw ? JSON.parse(activeRaw) : [];
+          const restoredEntries = validToRestore.map((l) => ({
+            id: l.id,
+            timestamp: l.timestamp,
+            memberId: l.memberId,
+            customerName: l.customerName,
+            customerType: l.customerType,
+            categoryOrPlan: l.categoryOrPlan,
+            paymentMethod: l.paymentMethod || 'Cash',
+            amountPaid: l.amountPaid,
+            basePrice: l.amountPaid,
+            gcashFee: 0,
+            cardFee: l.cardFee || 0,
+            paymentStatus: l.amountPaid > 0 ? 'Paid' : 'Promo',
+            status: 'Active',
+            isSubscription: false,
+            deletable: true,
+            receiptNumber: l.receiptNumber || null,
+            memberIds: l.memberIds || [],
+            cash_session_id: currentSessionId || null,
+            sync_status: 'pending',
+          }));
+          const merged = [...restoredEntries, ...activeList];
+          sessionStorage.setItem(activeKey, JSON.stringify(merged));
+          localStorage.setItem(activeKey, JSON.stringify(merged));
+        } catch {}
+
+        window.dispatchEvent(new CustomEvent('member-refresh'));
+        window.dispatchEvent(new CustomEvent('cards-refresh'));
+        window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+
+        setDeletedLogs((prev) =>
+          prev.filter((l) => !restoreTxIds.includes(l.id))
+        );
+        setSelectedIds((prev) =>
+          prev.filter((id) => !restoreTxIds.includes(id))
+        );
+        onRestoreSuccess();
+        toast.info(
+          `Restored ${validToRestore.length} record(s) offline. Secured in vault and queued for sync.`
+        );
+        setLoading(false);
+        return;
+      }
 
       // 1. Restore Attendance Table Entries
       const { error: attError } = await supabase
@@ -438,7 +769,6 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       );
 
       if (uniqueMemberIds.length > 0) {
-        // Resolve both members.id and members.member_id
         const { data: memberRows } = await supabase
           .from('members')
           .select('id, member_id')
@@ -454,7 +784,6 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
           ])
         ).filter(Boolean);
 
-        // Update cards table (the source of truth)
         const { error: cardsErr } = await supabase
           .from('cards')
           .update({
@@ -469,7 +798,6 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
           console.warn('Error updating cards table:', cardsErr);
         }
 
-        // Also update member_cards table for backward compatibility
         await supabase
           .from('member_cards')
           .update({
@@ -480,9 +808,26 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
           .in('member_id', allPossibleIds);
       }
 
-      // Notify other views (MembersList, MemberProfileView, etc.) to refresh
+      try {
+        const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
+        if (cachedRecycleRaw) {
+          const cachedList = JSON.parse(cachedRecycleRaw);
+          const remaining = cachedList.filter(
+            (item: any) => !restoreTxIds.includes(String(item.id))
+          );
+          localStorage.setItem('logbook_recycle_bin_cache', JSON.stringify(remaining));
+        }
+      } catch {}
+
       window.dispatchEvent(new CustomEvent('member-refresh'));
       window.dispatchEvent(new CustomEvent('cards-refresh'));
+
+      const updatedActiveKeys = new Set(activeMemberKeys);
+      validToRestore.forEach((item) => {
+        if (item.memberId) updatedActiveKeys.add(String(item.memberId).trim().toLowerCase());
+        if (item.customerName) updatedActiveKeys.add(String(item.customerName).trim().toLowerCase());
+      });
+      setActiveMemberKeys(updatedActiveKeys);
 
       setDeletedLogs((prev) =>
         prev.filter((l) => !restoreTxIds.includes(l.id))
@@ -513,20 +858,32 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   };
 
   const isGroupFullySelected = (stack: LogGroupStack) => {
-    return (
-      stack.items.length > 0 &&
-      stack.items.every((item) => selectedIds.includes(item.id))
-    );
+    if (stack.items.length === 0) return false;
+    if (stack.isCard) {
+      return stack.items.every((item) => selectedIds.includes(item.id));
+    }
+    return selectedIds.includes(stack.items[0].id);
   };
 
   const toggleGroupSelection = (stack: LogGroupStack) => {
-    const itemIds = stack.items.map((i) => i.id);
-    const fullySelected = isGroupFullySelected(stack);
+    if (stack.items.length === 0) return;
+    if (isLogActiveInLogbook(stack.items[0])) return;
 
-    if (fullySelected) {
-      setSelectedIds((prev) => prev.filter((id) => !itemIds.includes(id)));
+    if (stack.isCard) {
+      const itemIds = stack.items.map((i) => i.id);
+      const fullySelected = isGroupFullySelected(stack);
+      if (fullySelected) {
+        setSelectedIds((prev) => prev.filter((id) => !itemIds.includes(id)));
+      } else {
+        setSelectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+      }
     } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...itemIds])));
+      const primaryId = stack.items[0].id;
+      setSelectedIds((prev) =>
+        prev.includes(primaryId)
+          ? prev.filter((id) => id !== primaryId)
+          : [...prev, primaryId]
+      );
     }
   };
 
@@ -537,17 +894,29 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   };
 
   const handleSelectAllPage = () => {
-    const pageItemIds = paginatedStacks.flatMap((s) =>
-      s.items.map((i) => i.id)
-    );
+    const selectableIds: string[] = [];
+    paginatedStacks.forEach((stack) => {
+      if (stack.items.length === 0) return;
+      if (isLogActiveInLogbook(stack.items[0])) return;
+
+      if (stack.isCard) {
+        stack.items.forEach((item) => {
+          selectableIds.push(item.id);
+        });
+      } else {
+        selectableIds.push(stack.items[0].id);
+      }
+    });
+
     const allSelected =
-      pageItemIds.length > 0 &&
-      pageItemIds.every((id) => selectedIds.includes(id));
+      selectableIds.length > 0 &&
+      selectableIds.every((id) => selectedIds.includes(id));
 
     if (allSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !pageItemIds.includes(id)));
+      const selectableSet = new Set(selectableIds);
+      setSelectedIds((prev) => prev.filter((id) => !selectableSet.has(id)));
     } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...pageItemIds])));
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...selectableIds])));
     }
   };
 
@@ -652,127 +1021,182 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                     className="border border-(--border-color) bg-slate-50 dark:bg-zinc-900/90 rounded-2xl overflow-hidden transition-all shadow-xs"
                   >
                     {/* Main Group Header Row */}
-                    <div
-                      onClick={() => toggleGroupSelection(stack)}
-                      className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                        groupSelected
-                          ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
-                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={groupSelected}
-                          onChange={() => {}}
-                          className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
-                        />
-                        <div className="min-w-0 flex-1 text-left font-mono">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-[11px] text-(--color-text) truncate">
-                              {stack.primaryTitle}
-                            </span>
-                            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase flex items-center gap-1">
-                              <Layers className="w-2.5 h-2.5" />
-                              <span>×{stack.items.length} items</span>
-                            </span>
-                            {stack.isCard && (
-                              <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded text-[8px] font-bold uppercase flex items-center gap-0.5">
-                                <CreditCard className="w-2.5 h-2.5" />
-                                Card
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-                            <span>{stack.subtitle}</span>
-                            {stack.totalAmount > 0 && (
-                              <span className="font-bold text-slate-600 dark:text-slate-300">
-                                Total: ₱{stack.totalAmount.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                    {(() => {
+                      const isItemActive = isLogActiveInLogbook(stack.items[0]);
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleBulkRestore(stack.items);
-                          }}
-                          className="py-1.5 px-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 transition-all shadow-xs"
-                        >
-                          Restore All ({stack.items.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleGroupExpansion(stack.key);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
-                          aria-label="Toggle details"
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Accordion Sub-Items List */}
-                    {isExpanded && (
-                      <div className="border-t border-(--border-color) bg-white/50 dark:bg-zinc-950/40 divide-y divide-(--border-color)">
-                        {stack.items.map((subItem) => {
-                          const subSelected = selectedIds.includes(subItem.id);
-                          return (
-                            <div
-                              key={subItem.id}
-                              onClick={() => toggleItemSelection(subItem.id)}
-                              className={`p-2.5 pl-9 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
-                                subSelected
-                                  ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
-                                  : 'hover:bg-slate-100/70 dark:hover:bg-zinc-800/60'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <input
-                                  type="checkbox"
-                                  checked={subSelected}
-                                  onChange={() => {}}
-                                  className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
-                                />
-                                <div className="min-w-0 text-left font-mono">
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
-                                    {subItem.customerName}
+                      return (
+                        <>
+                          <div
+                            onClick={() => {
+                              if (!isItemActive) toggleGroupSelection(stack);
+                            }}
+                            className={`p-3.5 flex items-center justify-between gap-3 transition-colors ${
+                              isItemActive
+                                ? 'bg-slate-100/60 dark:bg-zinc-900/50 cursor-default opacity-80'
+                                : groupSelected
+                                  ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20 cursor-pointer'
+                                  : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <input
+                                type="checkbox"
+                                disabled={isItemActive}
+                                checked={groupSelected && !isItemActive}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
+                              />
+                              <div className="min-w-0 flex-1 text-left font-mono">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-[11px] text-(--color-text) truncate">
+                                    {stack.primaryTitle}
                                   </span>
-                                  <span className="text-[9px] text-slate-400">
-                                    {subItem.categoryOrPlan}
-                                    {subItem.amountPaid > 0 &&
-                                      ` • ₱${subItem.amountPaid.toFixed(2)}`}
+                                  <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 rounded-full text-[9px] font-bold uppercase flex items-center gap-1">
+                                    <Layers className="w-2.5 h-2.5" />
+                                    <span>×{stack.items.length} records</span>
                                   </span>
+                                  {stack.isCard && (
+                                    <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded text-[8px] font-bold uppercase flex items-center gap-0.5">
+                                      <CreditCard className="w-2.5 h-2.5" />
+                                      Card
+                                    </span>
+                                  )}
+                                </div>
+                                                               <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                                  <span>{stack.subtitle}</span>
+                                  {stack.items[0]?.timestamp && (
+                                    <span className="text-slate-500 dark:text-zinc-400">
+                                      • Latest: {new Date(stack.items[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  )}
+                                  {stack.totalAmount > 0 && (
+                                    <span className="font-bold text-slate-600 dark:text-slate-300">
+                                      • {stack.isCard ? `Total: ₱${stack.totalAmount.toFixed(2)}` : `Fee: ₱${stack.totalAmount.toFixed(2)}`}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isItemActive ? (
+                                <span className="py-1 px-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold select-none border border-slate-300 dark:border-zinc-700">
+                                  Active in Logbook
+                                </span>
+                              ) : stack.isCard ? (
+                                <button
+                                  type="button"
+                                  disabled={loading}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleBulkRestore(stack.items);
+                                  }}
+                                  className="py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 transition-all shadow-xs"
+                                  title="Restore all cards in this batch receipt"
+                                >
+                                  Restore Cards ({stack.items.length})
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={loading}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleBulkRestore([stack.items[0]]);
+                                  }}
+                                  className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-heading text-[9px] tracking-wider uppercase font-black cursor-pointer disabled:opacity-50 transition-all shadow-xs"
+                                  title="Restore check-in to Logbook"
+                                >
+                                  Restore
+                                </button>
+                              )}
+
                               <button
                                 type="button"
-                                disabled={loading}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleBulkRestore([subItem]);
+                                  toggleGroupExpansion(stack.key);
                                 }}
-                                className="py-1 px-2 bg-emerald-500/80 hover:bg-emerald-600 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
+                                aria-label="Toggle details"
                               >
-                                Restore
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4" />
+                                )}
                               </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </div>
+
+                          {/* Accordion Sub-Items List */}
+                          {isExpanded && (
+                            <div className="border-t border-(--border-color) bg-white/50 dark:bg-zinc-950/40 divide-y divide-(--border-color)">
+                              {stack.items.map((subItem) => {
+                                const subSelected = selectedIds.includes(subItem.id);
+                                const isSubActive = isLogActiveInLogbook(subItem);
+
+                                return (
+                                  <div
+                                    key={subItem.id}
+                                    onClick={() => {
+                                      if (!isSubActive) toggleItemSelection(subItem.id);
+                                    }}
+                                    className={`p-2.5 pl-9 flex items-center justify-between gap-3 text-[10px] transition-colors ${
+                                      isSubActive
+                                        ? 'bg-slate-100/40 dark:bg-zinc-900/30 cursor-default opacity-70'
+                                        : subSelected
+                                          ? 'bg-blue-500/10 hover:bg-blue-500/15 dark:hover:bg-blue-500/20 cursor-pointer'
+                                          : 'hover:bg-slate-100/70 dark:hover:bg-zinc-800/60 cursor-pointer'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        disabled={isSubActive}
+                                        checked={subSelected && !isSubActive}
+                                        onChange={() => {}}
+                                        className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
+                                      />
+                                      <div className="min-w-0 text-left font-mono">
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
+                                          {subItem.customerName}
+                                        </span>
+                                        <span className="text-[9px] text-slate-400">
+                                          {subItem.categoryOrPlan}
+                                          {subItem.timestamp &&
+                                            ` • ${new Date(subItem.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                          {subItem.amountPaid > 0 &&
+                                            ` • ₱${subItem.amountPaid.toFixed(2)}`}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {isSubActive ? (
+                                      <span className="py-0.5 px-2 bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 rounded font-heading text-[7px] tracking-wider uppercase font-bold select-none">
+                                        Unavailable
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleBulkRestore([subItem]);
+                                        }}
+                                        className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
+                                      >
+                                        Restore
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 );
               }
@@ -780,23 +1204,29 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
               // Single Record (No Grouping Needed)
               const tx = stack.items[0];
               const isSelected = selectedIds.includes(tx.id);
+              const isTxActive = isLogActiveInLogbook(tx);
 
               return (
                 <div key={tx.id} className="space-y-1.5 animate-fade-in">
                   <div
-                    onClick={() => toggleItemSelection(tx.id)}
-                    className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-blue-500/10 border-blue-500 hover:bg-blue-500/15 dark:hover:bg-blue-500/20'
-                        : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border-(--border-color)'
+                    onClick={() => {
+                      if (!isTxActive) toggleItemSelection(tx.id);
+                    }}
+                    className={`p-3 border rounded-xl flex items-center justify-between gap-3 transition-all ${
+                      isTxActive
+                        ? 'bg-slate-100/60 dark:bg-zinc-900/40 border-(--border-color) cursor-default opacity-75'
+                        : isSelected
+                          ? 'bg-blue-500/10 border-blue-500 hover:bg-blue-500/15 dark:hover:bg-blue-500/20 cursor-pointer'
+                          : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 border-(--border-color) cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <input
                         type="checkbox"
-                        checked={isSelected}
+                        disabled={isTxActive}
+                        checked={isSelected && !isTxActive}
                         onChange={() => {}}
-                        className="w-4.5 h-4.5 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                        className="w-4.5 h-4.5 rounded text-blue-600 cursor-pointer accent-(--color-primary) disabled:opacity-40 disabled:cursor-not-allowed"
                       />
                       <div className="min-w-0 text-left font-mono flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -812,22 +1242,31 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
                         </div>
                         <span className="text-[10px] text-slate-400 mt-0.5 block">
                           {tx.categoryOrPlan}
+                          {tx.timestamp &&
+                            ` • ${new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                           {tx.amountPaid > 0 &&
                             ` • ₱${tx.amountPaid.toFixed(2)}`}
                         </span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBulkRestore([tx]);
-                      }}
-                      className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 shrink-0"
-                    >
-                      Restore
-                    </button>
+
+                    {isTxActive ? (
+                      <span className="py-1 px-2.5 bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold select-none border border-slate-300 dark:border-zinc-700 shrink-0">
+                        Active in Logbook
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBulkRestore([tx]);
+                        }}
+                        className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 shrink-0"
+                      >
+                        Restore
+                      </button>
+                    )}
                   </div>
                 </div>
               );

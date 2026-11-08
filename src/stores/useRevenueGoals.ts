@@ -215,6 +215,11 @@ export function useRevenueGoals() {
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { start, end } = getDateRange(timeframe);
       const startIso = start.toISOString();

@@ -124,6 +124,303 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
   return new Blob([u8arr], { type: mime });
 };
 
+const GF_EXP: number[] = new Array(256);
+const GF_LOG: number[] = new Array(256);
+for (let i = 0, x = 1; i < 256; i++) {
+  GF_EXP[i] = x;
+  GF_LOG[x] = i;
+  x <<= 1;
+  if (x & 256) x ^= 0x11d;
+}
+
+const gfMul = (a: number, b: number): number => {
+  if (a === 0 || b === 0) return 0;
+  return GF_EXP[(GF_LOG[a] + GF_LOG[b]) % 255];
+};
+
+const getQrGeneratorPoly = (degree: number): number[] => {
+  let poly = [1];
+  for (let i = 0; i < degree; i++) {
+    const next = new Array(poly.length + 1).fill(0);
+    const factor = GF_EXP[i];
+    for (let j = 0; j < poly.length; j++) {
+      next[j] ^= gfMul(poly[j], factor);
+      next[j + 1] ^= poly[j];
+    }
+    poly = next;
+  }
+  return poly;
+};
+
+const computeQrEC = (data: number[], ecCount: number): number[] => {
+  const gen = getQrGeneratorPoly(ecCount);
+  const remainder = new Array(ecCount).fill(0);
+  for (let i = 0; i < data.length; i++) {
+    const factor = data[i] ^ remainder[0];
+    remainder.shift();
+    remainder.push(0);
+    if (factor !== 0) {
+      for (let j = 0; j < ecCount; j++) {
+        remainder[j] ^= gfMul(gen[j], factor);
+      }
+    }
+  }
+  return remainder;
+};
+
+export const generateOfflineQrDataUrl = (text: string, pixelSize = 240): string => {
+  const rawBytes: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 128) rawBytes.push(code);
+    else if (code < 2048) {
+      rawBytes.push((code >> 6) | 192, (code & 63) | 128);
+    } else {
+      rawBytes.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128);
+    }
+  }
+
+  const QR_VERSIONS = [
+    { version: 1, size: 21, dataCap: 17, totalData: 19, ecCount: 7, align: [] },
+    { version: 2, size: 25, dataCap: 32, totalData: 34, ecCount: 10, align: [6, 18] },
+    { version: 3, size: 29, dataCap: 53, totalData: 55, ecCount: 15, align: [6, 22] },
+    { version: 4, size: 33, dataCap: 78, totalData: 80, ecCount: 20, align: [6, 26] },
+    { version: 5, size: 37, dataCap: 106, totalData: 108, ecCount: 26, align: [6, 30] },
+  ];
+
+  let chosen = QR_VERSIONS[0];
+  for (const v of QR_VERSIONS) {
+    if (rawBytes.length <= v.dataCap) {
+      chosen = v;
+      break;
+    }
+    chosen = v;
+  }
+
+  const { size, totalData, ecCount, align } = chosen;
+
+  const bitBuffer: number[] = [];
+  const appendBits = (val: number, len: number) => {
+    for (let i = len - 1; i >= 0; i--) {
+      bitBuffer.push((val >> i) & 1);
+    }
+  };
+
+  appendBits(4, 4);
+  appendBits(rawBytes.length, 8);
+  for (const b of rawBytes) {
+    appendBits(b, 8);
+  }
+
+  const maxDataBits = totalData * 8;
+  const terminatorLen = Math.min(4, maxDataBits - bitBuffer.length);
+  for (let i = 0; i < terminatorLen; i++) bitBuffer.push(0);
+  while (bitBuffer.length % 8 !== 0) bitBuffer.push(0);
+
+  const dataCodewords: number[] = [];
+  for (let i = 0; i < bitBuffer.length; i += 8) {
+    let byte = 0;
+    for (let b = 0; b < 8; b++) byte = (byte << 1) | bitBuffer[i + b];
+    dataCodewords.push(byte);
+  }
+
+  const padBytes = [0xec, 0x11];
+  let padIdx = 0;
+  while (dataCodewords.length < totalData) {
+    dataCodewords.push(padBytes[padIdx % 2]);
+    padIdx++;
+  }
+
+  const ecCodewords = computeQrEC(dataCodewords, ecCount);
+  const fullCodewords = [...dataCodewords, ...ecCodewords];
+
+  const matrix: (number | null)[][] = Array.from({ length: size }, () =>
+    new Array(size).fill(null)
+  );
+  const isFunctionModule: boolean[][] = Array.from({ length: size }, () =>
+    new Array(size).fill(false)
+  );
+
+  const setModule = (r: number, c: number, val: number, isFunc = true) => {
+    if (r >= 0 && r < size && c >= 0 && c < size) {
+      matrix[r][c] = val;
+      if (isFunc) isFunctionModule[r][c] = true;
+    }
+  };
+
+  const drawFinder = (topR: number, leftC: number) => {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        if (
+          r === 0 ||
+          r === 6 ||
+          c === 0 ||
+          c === 6 ||
+          (r >= 2 && r <= 4 && c >= 2 && c <= 4)
+        ) {
+          setModule(topR + r, leftC + c, 1);
+        } else {
+          setModule(topR + r, leftC + c, 0);
+        }
+      }
+    }
+    for (let r = -1; r <= 7; r++) {
+      for (let c = -1; c <= 7; c++) {
+        if (
+          (r === -1 || r === 7 || c === -1 || c === 7) &&
+          topR + r >= 0 &&
+          topR + r < size &&
+          leftC + c >= 0 &&
+          leftC + c < size
+        ) {
+          setModule(topR + r, leftC + c, 0);
+        }
+      }
+    }
+  };
+
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+
+  for (let c = 8; c < size - 8; c++) {
+    setModule(6, c, c % 2 === 0 ? 1 : 0);
+  }
+  for (let r = 8; r < size - 8; r++) {
+    setModule(r, 6, r % 2 === 0 ? 1 : 0);
+  }
+
+  if (align.length > 0) {
+    for (const r of align) {
+      for (const c of align) {
+        if (matrix[r][c] !== null) continue;
+        for (let dr = -2; dr <= 2; dr++) {
+          for (let dc = -2; dc <= 2; dc++) {
+            if (
+              Math.abs(dr) === 2 ||
+              Math.abs(dc) === 2 ||
+              (dr === 0 && dc === 0)
+            ) {
+              setModule(r + dr, c + dc, 1);
+            } else {
+              setModule(r + dr, c + dc, 0);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  setModule(4 * chosen.version + 9, 8, 1);
+
+  const FORMAT_BITS = 0x77c4;
+  for (let i = 0; i < 15; i++) {
+    const bit = (FORMAT_BITS >> i) & 1;
+    if (i < 6) setModule(8, i, bit);
+    else if (i === 6) setModule(8, 7, bit);
+    else if (i === 7) setModule(8, 8, bit);
+    else if (i === 8) setModule(7, 8, bit);
+    else setModule(14 - i, 8, bit);
+
+    if (i < 8) setModule(size - 1 - i, 8, bit);
+    else setModule(8, size - 15 + i, bit);
+  }
+
+  let fullBits: number[] = [];
+  for (const cw of fullCodewords) {
+    for (let b = 7; b >= 0; b--) {
+      fullBits.push((cw >> b) & 1);
+    }
+  }
+
+  let bitIdx = 0;
+  let dir = -1;
+  for (let c = size - 1; c > 0; c -= 2) {
+    if (c === 6) c--;
+    const rows = [];
+    if (dir === -1) {
+      for (let r = size - 1; r >= 0; r--) rows.push(r);
+    } else {
+      for (let r = 0; r < size; r++) rows.push(r);
+    }
+    dir = -dir;
+
+    for (const r of rows) {
+      for (const colOffset of [0, 1]) {
+        const curC = c - colOffset;
+        if (!isFunctionModule[r][curC]) {
+          const rawBit = bitIdx < fullBits.length ? fullBits[bitIdx++] : 0;
+          const mask = (r + curC) % 2 === 0 ? 1 : 0;
+          matrix[r][curC] = rawBit ^ mask;
+        }
+      }
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelSize;
+  canvas.height = pixelSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, pixelSize, pixelSize);
+
+  const quietZone = 2;
+  const totalGrid = size + quietZone * 2;
+  const moduleSize = pixelSize / totalGrid;
+
+  ctx.fillStyle = '#000000';
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (matrix[r][c] === 1) {
+        ctx.fillRect(
+          Math.floor((c + quietZone) * moduleSize),
+          Math.floor((r + quietZone) * moduleSize),
+          Math.ceil(moduleSize),
+          Math.ceil(moduleSize)
+        );
+      }
+    }
+  }
+
+  return canvas.toDataURL('image/png');
+};
+
+const getCachedGymProfile = (): GymProfileConfig => {
+  try {
+    const raw = localStorage.getItem('palomar_gym_profile');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    gym_name: DEFAULT_GYM_NAME,
+    gym_address: DEFAULT_GYM_ADDRESS,
+    contact_name_1: 'STAFF',
+    contact_number_1: '09098893819',
+    contact_name_2: 'ADMIN',
+    contact_number_2: '09054380792',
+    gym_logo: DEFAULT_LOGO,
+  };
+};
+
+const getCachedRatesConfig = (): RatesConfig => {
+  try {
+    const raw = localStorage.getItem('palomar_rates_config');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    monthly_rate: 1000,
+    yearly_rate: 10000,
+    regular_walk_in: 100,
+    student_walk_in: 80,
+    yearly_walk_in: 60,
+    gcash_fee: 10,
+    new_card_fee: 100,
+    vat_enabled: true,
+    vat_percentage: 12,
+  };
+};
+
 const loadQrImage = (url: string): Promise<HTMLImageElement | null> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -151,25 +448,18 @@ export const OfficialReceipt = forwardRef<
     },
     ref
   ) => {
-    const [gymProfile, setGymProfile] = useState<GymProfileConfig | null>(
-      data.gymProfile || null
+    const [gymProfile, setGymProfile] = useState<GymProfileConfig>(
+      data.gymProfile || getCachedGymProfile()
     );
-    const [ratesConfig, setRatesConfig] = useState<RatesConfig | null>(
-      data.ratesConfig || null
+    const [ratesConfig, setRatesConfig] = useState<RatesConfig>(
+      data.ratesConfig || getCachedRatesConfig()
     );
-    const [loadingConfig, setLoadingConfig] = useState(
-      !data.gymProfile || !data.ratesConfig
-    );
+    const [loadingConfig,] = useState<boolean>(false);
     const [cardItems, setCardItems] = useState<ReceiptItem[]>([]);
 
     const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
     const [copied, setCopied] = useState<boolean>(false);
-
-    const [actualReceiptNo, setActualReceiptNo] = useState<string>(
-      data.receiptNo || 'RCPT-PREVIEW-001'
-    );
-    const [resolvedProcessor, setResolvedProcessor] = useState<string>('');
 
     const isUuid = (val?: string | null): boolean => {
       if (!val) return false;
@@ -190,12 +480,14 @@ export const OfficialReceipt = forwardRef<
       );
     };
 
-    const isPreviewCheck =
-      !data.receiptNo && !data.paymentRef;
-
-    const [isResolvingProcessor, setIsResolvingProcessor] = useState<boolean>(
-      () => Boolean(!data.processedBy && !isPreviewCheck)
+    const [actualReceiptNo, setActualReceiptNo] = useState<string>(
+      data.receiptNo || 'RCPT-PREVIEW-001'
     );
+    const [resolvedProcessor, setResolvedProcessor] = useState<string>(
+      data.processedBy && !isGenericStaff(data.processedBy) ? data.processedBy : ''
+    );
+
+    const [, setIsResolvingProcessor] = useState<boolean>(false);
 
     useEffect(() => {
       setActualReceiptNo(data.receiptNo || 'RCPT-PREVIEW-001');
@@ -217,10 +509,13 @@ export const OfficialReceipt = forwardRef<
       return 'subscription';
     }, [data.receiptType, data.items, data.customerType]);
 
-    // Auto-fetch each recipient member only if it's a dedicated card purchase receipt
     useEffect(() => {
       if (!isOpen || receiptType !== 'card') {
         setCardItems([]);
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
         return;
       }
       
@@ -230,55 +525,57 @@ export const OfficialReceipt = forwardRef<
 
         let targetReceiptNumber = searchKey.replace(/^rcpt-/i, '');
 
-        // If the ID is a check-in ID (CHK-...), resolve its actual receipt_number from attendance table
-        if (targetReceiptNumber.startsWith('CHK-')) {
-          let attQuery = supabase.from('attendance').select('receipt_number');
-          if (isUuid(targetReceiptNumber)) {
-            attQuery = attQuery.eq('id', targetReceiptNumber);
-          } else {
-            attQuery = attQuery.or(
-              `receipt_number.eq.${targetReceiptNumber},reference_number.eq.${targetReceiptNumber}`
-            );
+        try {
+          if (targetReceiptNumber.startsWith('CHK-')) {
+            let attQuery = supabase.from('attendance').select('receipt_number');
+            if (isUuid(targetReceiptNumber)) {
+              attQuery = attQuery.eq('id', targetReceiptNumber);
+            } else {
+              attQuery = attQuery.or(
+                `receipt_number.eq.${targetReceiptNumber},reference_number.eq.${targetReceiptNumber}`
+              );
+            }
+            const { data: attRow } = await attQuery.maybeSingle();
+
+            if (attRow?.receipt_number) {
+              targetReceiptNumber = attRow.receipt_number;
+              setActualReceiptNo(attRow.receipt_number);
+            }
           }
-          const { data: attRow } = await attQuery.maybeSingle();
 
-          if (attRow?.receipt_number) {
-            targetReceiptNumber = attRow.receipt_number;
-            setActualReceiptNo(attRow.receipt_number);
+          const { data: cardRows } = await supabase
+            .from('cards')
+            .select(
+              `
+            card_fee_paid,
+            member_id,
+            members (
+              full_name,
+              member_id
+            )
+          `
+            )
+            .eq('receipt_number', targetReceiptNumber);
+
+          if (cardRows && cardRows.length > 0) {
+            const totalCardFee = Number(data.cardFee || 0);
+            const feePerMember =
+              totalCardFee > 0 ? totalCardFee / cardRows.length : 10;
+
+            const mapped = cardRows.map((row: any) => ({
+              productName: `${row.members?.full_name || 'Member'} (#${row.members?.member_id || row.member_id})`,
+              quantity: 1,
+              price: Number(row.card_fee_paid || feePerMember),
+            }));
+            setCardItems(mapped);
           }
-        }
-
-        // Query cards table for all members with this batch receipt_number
-        const { data: cardRows } = await supabase
-          .from('cards')
-          .select(
-            `
-          card_fee_paid,
-          member_id,
-          members (
-            full_name,
-            member_id
-          )
-        `
-          )
-          .eq('receipt_number', targetReceiptNumber);
-
-        if (cardRows && cardRows.length > 0) {
-          const totalCardFee = Number(data.cardFee || 0);
-          const feePerMember =
-            totalCardFee > 0 ? totalCardFee / cardRows.length : 10;
-
-          const mapped = cardRows.map((row: any) => ({
-            productName: `${row.members?.full_name || 'Member'} (#${row.members?.member_id || row.member_id})`,
-            quantity: 1,
-            price: Number(row.card_fee_paid || feePerMember),
-          }));
-          setCardItems(mapped);
+        } catch {
+          // Keep offline resilience without hanging
         }
       };
 
       fetchCardRecipients();
-    }, [isOpen, data.receiptNo, data.paymentRef, data.cardFee]);
+    }, [isOpen, data.receiptNo, data.paymentRef, data.cardFee, receiptType]);
 
 const displayItems = useMemo(() => {
       if (data.items && data.items.length > 0) return data.items;
@@ -296,29 +593,50 @@ const displayItems = useMemo(() => {
 
     useEffect(() => {
       if (data.gymProfile && data.ratesConfig) {
-        setLoadingConfig(false);
         return;
       }
       if (variant === 'modal' && !isOpen) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
       let isMounted = true;
       const fetchConfigs = async () => {
-        setLoadingConfig(true);
         try {
-          const [profileRes, ratesRes] = await Promise.all([
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 2500)
+          );
+
+          const queryPromise = Promise.all([
             supabase.from('gym_profile').select('*').eq('id', 1).maybeSingle(),
             supabase.from('rates_config').select('*').eq('id', 1).maybeSingle(),
           ]);
 
+          const [profileRes, ratesRes] = (await Promise.race([
+            queryPromise,
+            timeoutPromise,
+          ])) as any;
+
           if (isMounted) {
-            if (!profileRes.error && profileRes.data)
+            if (!profileRes?.error && profileRes?.data) {
               setGymProfile(profileRes.data);
-            if (!ratesRes.error && ratesRes.data) setRatesConfig(ratesRes.data);
+              try {
+                localStorage.setItem(
+                  'palomar_gym_profile',
+                  JSON.stringify(profileRes.data)
+                );
+              } catch {}
+            }
+            if (!ratesRes?.error && ratesRes?.data) {
+              setRatesConfig(ratesRes.data);
+              try {
+                localStorage.setItem(
+                  'palomar_rates_config',
+                  JSON.stringify(ratesRes.data)
+                );
+              } catch {}
+            }
           }
-        } catch (err) {
-          console.warn('Failed to load dynamic receipt settings:', err);
-        } finally {
-          if (isMounted) setLoadingConfig(false);
+        } catch {
+          // Graceful offline fallback from local cache without blocking receipt
         }
       };
 
@@ -345,9 +663,41 @@ const vatEnabled = ratesConfig?.vat_enabled ?? true;
     const vatPercentage = Number(ratesConfig?.vat_percentage ?? 12);
 
     const receiptTitle = RECEIPT_TITLES[receiptType] || 'Official Receipt';
-    const hasQr =
-      receiptType === 'subscription' || receiptType === 'attendance';
-      
+
+    const hasQr = useMemo(() => {
+      const receiptNoUpper = (actualReceiptNo || data.receiptNo || '').toUpperCase();
+      const paymentRefUpper = (data.paymentRef || '').toUpperCase();
+      const qrValueUpper = (data.qrValue || '').toUpperCase();
+
+      const startsWithChk =
+        receiptNoUpper.startsWith('CHK-') ||
+        receiptNoUpper.replace(/^RCPT-/, '').startsWith('CHK-') ||
+        paymentRefUpper.startsWith('CHK-') ||
+        paymentRefUpper.replace(/^RCPT-/, '').startsWith('CHK-') ||
+        qrValueUpper.startsWith('CHK-');
+
+      const customerTypeLower = (data.customerType || '').toLowerCase();
+      const planTypeLower = (data.planType || '').toLowerCase();
+      const isExistingMember =
+        customerTypeLower.includes('existing member') ||
+        customerTypeLower === 'member' ||
+        planTypeLower.includes('existing member');
+
+      if (startsWithChk || isExistingMember) {
+        return false;
+      }
+
+      return receiptType === 'subscription' || receiptType === 'attendance';
+    }, [
+      actualReceiptNo,
+      data.receiptNo,
+      data.paymentRef,
+      data.qrValue,
+      data.customerType,
+      data.planType,
+      receiptType,
+    ]);
+
     const paymentMethod = (data.paymentMethod || 'cash').toUpperCase();
     const isGCash = paymentMethod.includes('GCASH');
 
@@ -427,14 +777,12 @@ const itemsSubtotal = useMemo(() => {
             try {
               const { data: prof } = await supabase
                 .from('profiles')
-                .select('username, role')
+                .select('username, email, role')
                 .eq('id', trimmed)
                 .maybeSingle();
 
-              if (isMounted && prof?.username) {
-                setResolvedProcessor(
-                  prof.role ? `${prof.username} (${prof.role})` : prof.username
-                );
+              if (isMounted) {
+                setResolvedProcessor(prof?.email || prof?.username || trimmed);
                 return;
               }
             } catch (err) {
@@ -442,27 +790,22 @@ const itemsSubtotal = useMemo(() => {
             }
           }
 
-          if (trimmed.includes('@')) {
-            try {
-              const { data: prof } = await supabase
-                .from('profiles')
-                .select('username, role')
-                .eq('email', trimmed)
-                .maybeSingle();
-
-              if (isMounted && prof?.username) {
-                setResolvedProcessor(
-                  prof.role ? `${prof.username} (${prof.role})` : prof.username
-                );
-                return;
-              }
-            } catch (err) {
-              console.warn('Failed to resolve email to profile:', err);
-            }
-          }
-
           if (isMounted) {
             setResolvedProcessor(trimmed);
+          }
+          return;
+        }
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          if (isMounted) {
+            if (data.processedBy && !isGenericStaff(data.processedBy)) {
+              setResolvedProcessor(data.processedBy);
+            } else if (authUser?.email) {
+              setResolvedProcessor(authUser.email);
+            } else if (authProfile?.username) {
+              setResolvedProcessor(authProfile.username);
+            }
+            setIsResolvingProcessor(false);
           }
           return;
         }
@@ -650,17 +993,28 @@ const itemsSubtotal = useMemo(() => {
       authUser,
     ]);
 
-    const processedBy = useMemo(() => {
+   const processedBy = useMemo(() => {
+      const formatUsername = (val: string) => {
+        if (!val.includes('@')) return val;
+        const lower = val.toLowerCase();
+        if (
+          lower === 'wolf.palomar@gmail.com' ||
+          lower === 'wolfpalomargym@gmail.com'
+        ) {
+          return 'SUPERADMIN';
+        }
+        if (authProfile?.username) {
+          return authProfile.username;
+        }
+        return val.split('@')[0];
+      };
+
       if (data.processedBy && !isGenericStaff(data.processedBy)) {
-        return data.processedBy;
+        return formatUsername(data.processedBy);
       }
 
       if (resolvedProcessor && !isGenericStaff(resolvedProcessor)) {
-        return resolvedProcessor;
-      }
-
-      if (isResolvingProcessor) {
-        return '...';
+        return formatUsername(resolvedProcessor);
       }
 
       if (authProfile?.username) {
@@ -668,14 +1022,15 @@ const itemsSubtotal = useMemo(() => {
       }
 
       if (authUser?.email) {
-        return authUser.email.split('@')[0];
+        return authUser.email.toLowerCase().includes('wolf.palomar')
+          ? 'SUPERADMIN'
+          : authUser.email.split('@')[0];
       }
 
       return 'SUPERADMIN';
     }, [
       data.processedBy,
       resolvedProcessor,
-      isResolvingProcessor,
       authProfile,
       authUser,
     ]);
@@ -693,7 +1048,14 @@ const itemsSubtotal = useMemo(() => {
     }, [data.transactionDate]);
 
     const qrPayload = data.qrValue || receiptNo;
-    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+    const qrDataUrl = useMemo(() => {
+      if (!hasQr) return '';
+      try {
+        return generateOfflineQrDataUrl(qrPayload, 240);
+      } catch {
+        return '';
+      }
+    }, [hasQr, qrPayload]);
 
     const generateReceiptCanvasDataUrl = async (): Promise<string | null> => {
       try {
@@ -791,7 +1153,7 @@ let itemCount = 0;
           ctx.strokeStyle = '#e2e8f0';
           ctx.strokeRect(qrX - 3, y + 20, qrSize + 6, qrSize + 6);
 
-          const qrImg = await loadQrImage(qrImageUrl);
+          const qrImg = qrDataUrl ? await loadQrImage(qrDataUrl) : null;
           if (qrImg) {
             ctx.drawImage(qrImg, qrX, y + 23, qrSize, qrSize);
           } else {
@@ -1406,11 +1768,17 @@ if (effectiveCardFee > 0)
             </div>
 
             <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm inline-block">
-              <img
-                src={qrImageUrl}
-                alt="Check-in QR Code"
-                className="receipt-qr-img w-20 h-20 object-contain block mx-auto"
-              />
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt="Check-in QR Code"
+                  className="receipt-qr-img w-20 h-20 object-contain block mx-auto"
+                />
+              ) : (
+                <div className="w-20 h-20 flex items-center justify-center text-[8px] font-mono text-slate-400">
+                  [QR READY]
+                </div>
+              )}
             </div>
 
             <span className="receipt-qr-code-text font-mono font-bold text-[8.5px] text-[var(--color-text)] tracking-wider uppercase mt-1 select-all">
@@ -1655,19 +2023,13 @@ if (effectiveCardFee > 0)
           )}
 
           <div className="space-y-3 pt-1">
-            {loadingConfig ? (
-              <div className="p-4 text-center animate-pulse text-slate-400">
-                Loading receipt details...
-              </div>
-            ) : (
-              receiptBody
-            )}
+            {receiptBody}
 
             <div className="grid grid-cols-2 gap-2 pt-2">
               {isNative ? (
                 <button
                   type="button"
-                  disabled={loadingConfig}
+                  disabled={isLoading}
                   onClick={handleShareReceipt}
                   className="col-span-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
                   title="Save or Share Receipt Image"
@@ -1680,7 +2042,7 @@ if (effectiveCardFee > 0)
                   {showDownloadButton && (
                     <button
                       type="button"
-                      disabled={loadingConfig}
+                      disabled={isLoading}
                       onClick={handleDownloadJpg}
                       className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
                       title="Download Receipt Image File"
@@ -1693,7 +2055,7 @@ if (effectiveCardFee > 0)
                   {showShareButton && (
                     <button
                       type="button"
-                      disabled={loadingConfig}
+                      disabled={isLoading}
                       onClick={handleShareReceipt}
                       className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
                       title="Share Receipt Image"
@@ -1707,7 +2069,7 @@ if (effectiveCardFee > 0)
 
               <button
                 type="button"
-                disabled={loadingConfig}
+                disabled={isLoading}
                 onClick={handleCopyImageToClipboard}
                 className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 text-white font-heading text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md font-bold border-none"
                 title="Copy Image to Clipboard"
@@ -1723,7 +2085,7 @@ if (effectiveCardFee > 0)
               {showPrintButton && (
                 <button
                   type="button"
-                  disabled={loadingConfig}
+                  disabled={isLoading}
                   onClick={handlePrint}
                   className={`${
                     isNative ? 'col-span-2' : ''

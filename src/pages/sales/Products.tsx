@@ -329,18 +329,36 @@ export const Products: React.FC<ProductsProps> = ({
 
       if (error) throw error;
       if (isMountedRef.current && data) {
-        const payloadStr = JSON.stringify(data);
-        const cachedRaw =
-          sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
-        if (cachedRaw !== payloadStr) {
-          setProducts(data);
-        }
-        sessionStorage.setItem(cacheKey, payloadStr);
-        try {
-          localStorage.setItem(cacheKey, payloadStr);
-        } catch {
-          // ignore storage quota errors
-        }
+        const uniqueDbMap = new Map<string, Product>();
+        data.forEach((item: Product) => {
+          if (!uniqueDbMap.has(item.id)) {
+            uniqueDbMap.set(item.id, item);
+          }
+        });
+        const deduplicatedDb = Array.from(uniqueDbMap.values());
+
+        setProducts((prev) => {
+          const pendingOffline = prev.filter(
+            (p) =>
+              (p.id.startsWith('offline-') ||
+                p.id.startsWith('prod_off_') ||
+                (p as any).sync_status === 'pending') &&
+              !deduplicatedDb.some(
+                (d) =>
+                  d.product_name.trim().toLowerCase() ===
+                  p.product_name.trim().toLowerCase()
+              )
+          );
+          const combined = [...deduplicatedDb, ...pendingOffline].sort((a, b) =>
+            a.product_name.localeCompare(b.product_name)
+          );
+          const payloadStr = JSON.stringify(combined);
+          sessionStorage.setItem(cacheKey, payloadStr);
+          try {
+            localStorage.setItem(cacheKey, payloadStr);
+          } catch {}
+          return combined;
+        });
       }
     } catch {
       if (isMountedRef.current) {
@@ -448,33 +466,97 @@ export const Products: React.FC<ProductsProps> = ({
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
+            const incoming = newRecord as Product;
             setProducts((prev) => {
-              if (prev.some((p) => p.id === newRecord.id)) return prev;
-              return [...prev, newRecord as Product].sort((a, b) =>
+              const cleaned = prev.filter((p) => {
+                if (p.id === incoming.id) return false;
+                const isOfflinePlaceholder =
+                  p.id.startsWith('offline-') ||
+                  p.id.startsWith('prod_off_') ||
+                  (p as any).sync_status === 'pending';
+                if (
+                  isOfflinePlaceholder &&
+                  p.product_name.trim().toLowerCase() ===
+                    incoming.product_name.trim().toLowerCase()
+                ) {
+                  return false;
+                }
+                return true;
+              });
+              const nextList = [...cleaned, incoming].sort((a, b) =>
                 a.product_name.localeCompare(b.product_name)
               );
+              try {
+                localStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(nextList)
+                );
+                sessionStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(nextList)
+                );
+              } catch {}
+              return nextList;
             });
           } else if (eventType === 'UPDATE') {
             const updated = newRecord as Product;
 
             if (updated.deleted_at) {
-              setProducts((prev) => prev.filter((p) => p.id !== updated.id));
+              setProducts((prev) => {
+                const filtered = prev.filter((p) => p.id !== updated.id);
+                try {
+                  localStorage.setItem(
+                    'products_sanitized_list',
+                    JSON.stringify(filtered)
+                  );
+                  sessionStorage.setItem(
+                    'products_sanitized_list',
+                    JSON.stringify(filtered)
+                  );
+                } catch {}
+                return filtered;
+              });
               setSelectedProductIds((prev) =>
                 prev.filter((id) => id !== updated.id)
               );
             } else {
               setProducts((prev) => {
-                const updatedList = prev.some((p) => p.id === updated.id)
+                const exists = prev.some((p) => p.id === updated.id);
+                const updatedList = exists
                   ? prev.map((p) => (p.id === updated.id ? updated : p))
-                  : [...prev, updated];
-                return updatedList.sort((a, b) =>
+                  : [...prev.filter((p) => p.id !== updated.id), updated];
+                const sorted = updatedList.sort((a, b) =>
                   a.product_name.localeCompare(b.product_name)
                 );
+                try {
+                  localStorage.setItem(
+                    'products_sanitized_list',
+                    JSON.stringify(sorted)
+                  );
+                  sessionStorage.setItem(
+                    'products_sanitized_list',
+                    JSON.stringify(sorted)
+                  );
+                } catch {}
+                return sorted;
               });
             }
           } else if (eventType === 'DELETE') {
             const targetId = oldRecord.id;
-            setProducts((prev) => prev.filter((p) => p.id !== targetId));
+            setProducts((prev) => {
+              const filtered = prev.filter((p) => p.id !== targetId);
+              try {
+                localStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(filtered)
+                );
+                sessionStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(filtered)
+                );
+              } catch {}
+              return filtered;
+            });
             setSelectedProductIds((prev) =>
               prev.filter((id) => id !== targetId)
             );
@@ -1040,50 +1122,75 @@ export const Products: React.FC<ProductsProps> = ({
 
     setDeleteConfirmId(null);
 
-    // Keep row in memory, but show as deleted highlight
-    setActiveDiffs((prev) => ({
-      ...prev,
-      [id]: {
-        type: 'deleted',
-        previous: {
-          product_name: targetProduct.product_name,
-          selling_price: targetProduct.selling_price,
-        },
-      },
-    }));
+    const isOfflineItem =
+      id.startsWith('offline-') ||
+      id.startsWith('prod_off_') ||
+      (targetProduct as any).sync_status === 'pending';
+
+    const purgeProductLocally = () => {
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
+      clearDiff(id);
+      try {
+        const cached = localStorage.getItem('products_sanitized_list');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((p: any) => p.id !== id);
+            localStorage.setItem(
+              'products_sanitized_list',
+              JSON.stringify(filtered)
+            );
+            sessionStorage.setItem(
+              'products_sanitized_list',
+              JSON.stringify(filtered)
+            );
+          }
+        }
+      } catch {}
+    };
+
+    if (isOfflineItem) {
+      purgeProductLocally();
+      toast.success(
+        `Removed offline product "${targetProduct.product_name}".`
+      );
+      return;
+    }
+
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    if (isOffline) {
+      purgeProductLocally();
+      try {
+        await stagePendingTransaction({
+          type: 'product_create',
+          cashSessionId: '',
+          userId: user?.id || 'admin',
+          userName: profile?.username || user?.email || 'Admin',
+          payload: { id, deleted_at: new Date().toISOString() },
+        });
+      } catch {}
+      toast.success(
+        `Product "${targetProduct.product_name}" moved to Recycle Bin offline.`
+      );
+      return;
+    }
 
     try {
-      let deleteSuccess = false;
-      try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        if (error) throw error;
-        deleteSuccess = true;
-      } catch (netErr) {
-        console.error('Error deleting product:', netErr);
-        throw new Error('Error deleting product.', {
-          cause: netErr,
-        });
-      }
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) throw error;
 
-      if (deleteSuccess) {
-        await logAudit(
-          'PRODUCT_DELETED',
-          `Moved product "${targetProduct?.product_name || 'Unknown Item'}" to Recycle Bin.`,
-          id
-        ).catch(() => {});
+      purgeProductLocally();
 
-        // Once toast dismisses, cleanly purge the row from state
-        toast.success(`Moved "${targetProduct.product_name}" to Recycle Bin.`, {
-          autoClose: 4000,
-          onClose: () => {
-            setProducts((prev) => prev.filter((p) => p.id !== id));
-            setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
-            clearDiff(id);
-          },
-        });
+      await logAudit(
+        'PRODUCT_DELETED',
+        `Moved product "${targetProduct?.product_name || 'Unknown Item'}" to Recycle Bin.`,
+        id
+      ).catch(() => {});
 
-        fetchProducts(true);
-      }
+      toast.success(`Moved "${targetProduct.product_name}" to Recycle Bin.`);
+      fetchProducts(true).catch(() => {});
     } catch {
       clearDiff(id);
       toast.error('Action denied.');
@@ -1115,44 +1222,54 @@ export const Products: React.FC<ProductsProps> = ({
     setShowBulkDeleteModal(false);
     setSelectedProductIds([]);
 
-    // Register all IDs as deleted in highlights
-    setActiveDiffs((prev) => {
-      const next = { ...prev };
-      idsToDelete.forEach((id) => {
-        next[id] = { type: 'deleted' };
-      });
-      return next;
-    });
+    setProducts((prev) => prev.filter((p) => !idsToDelete.includes(p.id)));
+    idsToDelete.forEach((id) => clearDiff(id));
+
+    try {
+      const cached = localStorage.getItem('products_sanitized_list');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((p: any) => !idsToDelete.includes(p.id));
+          localStorage.setItem(
+            'products_sanitized_list',
+            JSON.stringify(filtered)
+          );
+          sessionStorage.setItem(
+            'products_sanitized_list',
+            JSON.stringify(filtered)
+          );
+        }
+      }
+    } catch {}
+
+    const onlineIds = idsToDelete.filter(
+      (id) => !id.startsWith('offline-') && !id.startsWith('prod_off_')
+    );
+
+    if (onlineIds.length === 0) {
+      toast.success(`Moved ${idsToDelete.length} items to Recycle Bin.`);
+      return;
+    }
 
     try {
       setSaving(true);
       const { error } = await supabase
         .from('products')
         .delete()
-        .in('id', idsToDelete);
+        .in('id', onlineIds);
 
       if (error) throw error;
 
       await logAudit(
         'BULK_PRODUCTS_DELETED',
-        `Moved ${idsToDelete.length} products to Recycle Bin: "${targetTitles}".`
+        `Moved ${onlineIds.length} products to Recycle Bin: "${targetTitles}".`
       );
 
-      toast.success(`Moved ${idsToDelete.length} items to Recycle Bin.`, {
-        autoClose: 4000,
-        onClose: () => {
-          setProducts((prev) =>
-            prev.filter((p) => !idsToDelete.includes(p.id))
-          );
-          idsToDelete.forEach((id) => clearDiff(id));
-        },
-      });
-
-      fetchProducts(true);
+      toast.success(`Moved ${idsToDelete.length} items to Recycle Bin.`);
+      fetchProducts(true).catch(() => {});
     } catch {
-      idsToDelete.forEach((id) => clearDiff(id));
-      setSelectedProductIds(idsToDelete);
-      toast.error('Failed to perform bulk deletion.');
+      toast.error('Failed to perform bulk deletion on server.');
     } finally {
       setSaving(false);
     }

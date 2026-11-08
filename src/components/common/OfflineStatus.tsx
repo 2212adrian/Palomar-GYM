@@ -6,7 +6,7 @@ import { Network } from '@capacitor/network';
 
 interface OfflineStatusProps {
   className?: string;
-  position?: 'bottom-left' | 'bottom-right' | 'top-center' | 'bottom-center';
+  position?: 'top-left' | 'top-right' | 'top-center' | 'bottom-left' | 'bottom-right' | 'bottom-center';
 }
 
 /**
@@ -16,7 +16,7 @@ interface OfflineStatusProps {
  */
 export const OfflineStatus: React.FC<OfflineStatusProps> = ({
   className = '',
-  position = 'top-center',
+  position = 'top-left', // Changed default to 'top-left'
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -86,10 +86,13 @@ export const OfflineStatus: React.FC<OfflineStatusProps> = ({
     };
   }, [wasOffline]);
 
-  const positionClasses = {
+const positionClasses = {
+    // top-16 (~64px) pushes it right below the header on mobile, md:top-4 resets it on desktop
+    'top-left': 'top-18 md:top-5 md:left-1/2 left-4',
+    'top-right': 'top-16 md:top-4 right-4',
+    'top-center': 'top-16 md:top-4 left-1/2 -translate-x-1/2',
     'bottom-left': 'bottom-4 left-4',
     'bottom-right': 'bottom-4 right-4',
-    'top-center': 'top-4 left-1/2 -translate-x-1/2',
     'bottom-center': 'bottom-4 left-1/2 -translate-x-1/2',
   }[position];
 
@@ -98,9 +101,9 @@ export const OfflineStatus: React.FC<OfflineStatusProps> = ({
       {!isOnline && (
         <motion.div
           key="offline-badge"
-          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+          initial={{ opacity: 0, y: -10, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.95 }}
+          exit={{ opacity: 0, y: -8, scale: 0.95 }}
           transition={{ duration: 0.2 }}
           className={`fixed ${positionClasses} z-50 select-none pointer-events-none ${className}`}
         >
@@ -118,9 +121,9 @@ export const OfflineStatus: React.FC<OfflineStatusProps> = ({
       {showReconnected && (
         <motion.div
           key="reconnected-badge"
-          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+          initial={{ opacity: 0, y: -10, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.95 }}
+          exit={{ opacity: 0, y: -8, scale: 0.95 }}
           transition={{ duration: 0.2 }}
           className={`fixed ${positionClasses} z-50 select-none pointer-events-none ${className}`}
         >

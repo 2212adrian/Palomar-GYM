@@ -118,11 +118,14 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
       });
 
       const formattedAmount = `₱${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+      const isOfflineMode = typeof navigator !== 'undefined' && !navigator.onLine;
+      const offlineSuffix = isOfflineMode ? ' (Saved offline, will sync when reconnected)' : '';
+
       if (type === 'cash_in')
-        toast.success(`${formattedAmount} added to drawer.`);
+        toast.success(`${formattedAmount} added to drawer.${offlineSuffix}`);
       else if (type === 'cash_out')
-        toast.success(`${formattedAmount} deducted from drawer.`);
-      else toast.success(`${formattedAmount} logged as digital collection.`);
+        toast.success(`${formattedAmount} deducted from drawer.${offlineSuffix}`);
+      else toast.success(`${formattedAmount} logged as digital collection.${offlineSuffix}`);
 
       onClose();
       await onSuccess();

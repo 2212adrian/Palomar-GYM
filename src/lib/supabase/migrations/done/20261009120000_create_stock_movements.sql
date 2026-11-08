@@ -1,5 +1,5 @@
 -- Migration: Create Stock Movements (Restock & Inventory Adjustment Ledger) Table
--- Timestamp: 20261009120000
+-- Timestamp: 20261009120000_create_stock_movements.sql
 
 -- 1. Create the stock_movements table
 CREATE TABLE IF NOT EXISTS public.stock_movements (

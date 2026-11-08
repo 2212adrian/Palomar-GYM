@@ -142,9 +142,9 @@ export const CashManagementPage: React.FC = () => {
     try {
       setIsOpeningSession(true);
       const actorName =
+        user?.email ||
         profile?.username ||
         user?.user_metadata?.full_name ||
-        user?.email ||
         'Admin';
 
       if (isOffline) {
@@ -319,10 +319,12 @@ export const CashManagementPage: React.FC = () => {
        <div className="flex items-center gap-3">
           <div
             className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform ${
-              isOffline
-                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                : isSessionOpen
-                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              isSessionOpen
+                ? isOffline
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                : isOffline
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                   : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
             }`}
           >
@@ -339,32 +341,44 @@ export const CashManagementPage: React.FC = () => {
               </h2>
               <span
                 className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
-                  isOffline
-                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                    : isSessionOpen
-                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                  isSessionOpen
+                    ? isOffline
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                      : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                    : isOffline
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
                       : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                 }`}
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    isOffline
-                      ? 'bg-amber-500'
-                      : isSessionOpen
-                        ? 'bg-emerald-500 animate-pulse'
-                        : 'bg-rose-500'
+                    isSessionOpen
+                      ? isOffline
+                        ? 'bg-amber-500 animate-pulse'
+                        : 'bg-emerald-500 animate-pulse'
+                      : 'bg-rose-500'
                   }`}
                 />
-                {isOffline
-                  ? 'OFFLINE • SESSIONS RESTRICTED'
-                  : isSessionOpen
-                    ? 'DRAWER OPEN'
-                    : 'SESSION CLOSED'}
+                {isOffline && isSessionOpen
+                  ? 'DRAWER OPEN • OFFLINE'
+                  : isOffline
+                    ? 'OFFLINE • SESSION CLOSED'
+                    : isSessionOpen
+                      ? 'DRAWER OPEN'
+                      : 'SESSION CLOSED'}
               </span>
             </div>
-            {isOffline ? (
+            {isOffline && isSessionOpen && activeSession ? (
+              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+                Session{' '}
+                <span className="font-mono font-bold">
+                  {activeSession.session_number}
+                </span>{' '}
+                • Offline Mode. Cash In, Cash Out, and Digital In are active and will sync when reconnected.
+              </p>
+            ) : isOffline ? (
               <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                No internet connection. Drawer sessions and money transactions require live cloud sync.
+                No internet connection. Opening a new session requires an active network connection.
               </p>
             ) : isSessionOpen && activeSession ? (
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">

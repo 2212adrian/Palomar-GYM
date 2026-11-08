@@ -266,7 +266,63 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
     setLoading(true);
 
     try {
-      const selectedProductIds = selectedList.map((t: any) => t.id);
+      const uniqueSelectedMap = new Map<string, any>();
+      selectedList.forEach((item) => {
+        const normalizedName = (item.product_name || '').trim().toLowerCase();
+        if (
+          !uniqueSelectedMap.has(normalizedName) ||
+          new Date(item.deleted_at).getTime() >
+            new Date(uniqueSelectedMap.get(normalizedName).deleted_at).getTime()
+        ) {
+          uniqueSelectedMap.set(normalizedName, item);
+        }
+      });
+      const candidatesToRestore = Array.from(uniqueSelectedMap.values());
+
+      const { data: activeCatalog, error: activeErr } = await supabase
+        .from('products')
+        .select('id, product_name, barcode_id')
+        .is('deleted_at', null);
+
+      if (activeErr) throw activeErr;
+
+      const activeNames = new Set(
+        (activeCatalog || []).map((p) => p.product_name.trim().toLowerCase())
+      );
+      const activeBarcodes = new Set(
+        (activeCatalog || []).map((p) => p.barcode_id).filter(Boolean)
+      );
+
+      const toRestore: any[] = [];
+      const duplicatesSkipped: string[] = [];
+
+      candidatesToRestore.forEach((item) => {
+        const normName = (item.product_name || '').trim().toLowerCase();
+        const normBarcode = (item.barcode_id || '').trim();
+        if (
+          activeNames.has(normName) ||
+          (normBarcode && activeBarcodes.has(normBarcode))
+        ) {
+          duplicatesSkipped.push(item.product_name);
+        } else {
+          toRestore.push(item);
+        }
+      });
+
+      if (duplicatesSkipped.length > 0) {
+        toast.warn(
+          `Skipped restoring duplicate(s) already active in inventory: ${duplicatesSkipped.join(', ')}`,
+          { toastId: 'recycle-bin-duplicate-restore-prevented' }
+        );
+      }
+
+      if (toRestore.length === 0) {
+        setSelectedIds([]);
+        setLoading(false);
+        return;
+      }
+
+      const selectedProductIds = toRestore.map((t: any) => t.id);
 
       const { error: restoreError } = await supabase
         .from('products')
@@ -278,18 +334,18 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
 
       if (restoreError) throw restoreError;
 
-      const restoredDetails = selectedList
+      const restoredDetails = toRestore
         .map((t) => `${t.product_name} (${t.barcode_id})`)
         .join(', ');
       await logAudit(
         'PRODUCTS_RESTORED',
-        `Successfully restored ${selectedList.length} products back to inventory:\n\n${restoredDetails}`
+        `Successfully restored ${toRestore.length} products back to inventory:\n\n${restoredDetails}`
       );
 
       setSelectedIds([]);
       onRestoreSuccess();
       toast.success(
-        `Successfully restored ${selectedList.length} products back to your store catalog.`
+        `Successfully restored ${toRestore.length} product(s) back to your store catalog.`
       );
       await fetchDeletedProducts();
     } catch (err) {

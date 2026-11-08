@@ -20,6 +20,12 @@ import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
+import { useCashSessionStore } from '../../../stores/useCashSessionStore';
+import { useAuthStore } from '../../../stores/authStore';
+import {
+  stagePendingTransaction,
+  getDecryptedPendingTransactions,
+} from '../../../lib/offlineVault';
 
 interface SalesRecycleBinProps {
   isOpen: boolean;
@@ -89,36 +95,92 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     setDbProducts(parentProducts);
   }, [parentProducts]);
 
-  // Fetch soft-deleted records from Supabase
+  // Fetch soft-deleted records with resilient offline caching & sync awareness
   const fetchDeletedTransactions = async () => {
     setLoading(true);
+    const recycleCacheKey = 'sales_recycle_bin_cache';
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
     try {
-      const { data, error } = await supabase
-        .from('sales')
-        .select('*')
-        .not('deleted_at', 'is', null)
-        .order('deleted_at', { ascending: false });
+      let rawData: any[] | null = null;
 
-      if (error) throw error;
+      if (isOnline) {
+        try {
+          const { data, error } = await supabase
+            .from('sales')
+            .select('*')
+            .not('deleted_at', 'is', null)
+            .order('deleted_at', { ascending: false });
 
-      const { data: latestProducts, error: prodError } = await supabase
-        .from('products')
-        .select('*')
-        .is('deleted_at', null);
+          if (!error && data) {
+            rawData = data;
+            try {
+              localStorage.setItem(recycleCacheKey, JSON.stringify(data));
+            } catch {}
+          }
+        } catch {
+          // Fall through to offline cache
+        }
 
-      if (!prodError && latestProducts) {
-        setDbProducts(latestProducts);
+        try {
+          const { data: latestProducts, error: prodError } = await supabase
+            .from('products')
+            .select('*')
+            .is('deleted_at', null);
+
+          if (!prodError && latestProducts) {
+            setDbProducts(latestProducts);
+          }
+        } catch {}
       }
 
-      const mapped = (data || []).map((t: any) => ({
-        ...t,
-        id: String(t.id),
-        productName: t.product_name,
-        totalAmount: Number(t.total_amount || 0),
-        archivedAt: t.deleted_at,
-        items: t.items || [],
-        paymentMethod: t.payment_method,
-      }));
+      if (!rawData) {
+        const cachedRaw = localStorage.getItem(recycleCacheKey);
+        if (cachedRaw) {
+          try {
+            rawData = JSON.parse(cachedRaw);
+          } catch {}
+        }
+      }
+
+      if (!rawData) {
+        rawData = [];
+      }
+
+      const cachedProds =
+        localStorage.getItem('products_sanitized_list') ||
+        sessionStorage.getItem('products_sanitized_list');
+      if (cachedProds && (!isOnline || dbProducts.length === 0)) {
+        try {
+          const parsedProds = JSON.parse(cachedProds);
+          if (Array.isArray(parsedProds) && parsedProds.length > 0) {
+            setDbProducts(parsedProds);
+          }
+        } catch {}
+      }
+
+      let pendingRestoredIds = new Set<string>();
+      try {
+        const pendingItems = await getDecryptedPendingTransactions();
+        pendingItems
+          .filter((i) => i.type === 'sale_restore' && i.status === 'pending')
+          .forEach((i) => {
+            const sid = i.payload?.saleId || i.payload?.id;
+            if (sid) pendingRestoredIds.add(String(sid));
+          });
+      } catch {}
+
+      const mapped = (rawData || [])
+        .filter((t: any) => !pendingRestoredIds.has(String(t.id)))
+        .map((t: any) => ({
+          ...t,
+          id: String(t.id),
+          productName: t.product_name,
+          totalAmount: Number(t.total_amount || 0),
+          archivedAt: t.deleted_at,
+          items: t.items || [],
+          paymentMethod: t.payment_method,
+        }));
 
       setDeletedTransactions(mapped);
     } catch (err) {
@@ -183,15 +245,24 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     let hasInsufficientStock = false;
     let productNotFound = false;
 
-    if (tx.items && Array.isArray(tx.items)) {
+    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
       for (const item of tx.items) {
-        const product = dbProducts.find((p: any) => p.id === item.productId);
+        const pId = item.productId || item.product_id || item.id;
+        if (!pId) continue;
+        const product = dbProducts.find(
+          (p: any) => String(p.id) === String(pId)
+        );
+
         if (!product) {
-          productNotFound = true;
+          if (dbProducts.length > 0) {
+            productNotFound = true;
+          }
         } else if (product.has_stock_limit) {
-          if (product.stock_quantity === 0) {
+          const availableStock = Number(product.stock_quantity ?? 0);
+          const reqQty = Number(item.quantity || 1);
+          if (availableStock === 0) {
             hasOutOfStock = true;
-          } else if (product.stock_quantity < item.quantity) {
+          } else if (availableStock < reqQty) {
             hasInsufficientStock = true;
           }
         }
@@ -375,22 +446,160 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const handleBulkRestore = async (selectedList: any[]) => {
-    const restorableList = selectedList.filter(
-      (t: any) => !getRestorationStatus(t).cannotRestore
-    );
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+    let latestProds = dbProducts;
+
+    if (isOnline) {
+      try {
+        const { data: refreshedProds } = await supabase
+          .from('products')
+          .select('*')
+          .is('deleted_at', null);
+        if (refreshedProds) {
+          latestProds = refreshedProds;
+          setDbProducts(refreshedProds);
+        }
+      } catch {
+        // continue with existing dbProducts
+      }
+    }
+
+    const restorableList = selectedList.filter((t: any) => {
+      const isExpired = isOlderThan24Hours(t.archivedAt);
+      if (isExpired) return false;
+
+      if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+        for (const item of t.items) {
+          const pId = item.productId || item.product_id || item.id;
+          if (!pId) continue;
+          const prod = latestProds.find(
+            (p: any) => String(p.id) === String(pId)
+          );
+          if (
+            prod &&
+            prod.has_stock_limit &&
+            Number(prod.stock_quantity ?? 0) < Number(item.quantity || 1)
+          ) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
     if (restorableList.length === 0) {
       toast.error(
-        'No restorable items selected. Verify that stock limits are not exceeded.'
+        'Cannot restore: Selected item(s) exceed available product stock. Please restock before restoring.'
       );
       return;
     }
 
     setLoading(true);
 
-    try {
-      const selectedTxIds = restorableList.map((t: any) => t.id);
+    const selectedTxIds = restorableList.map((t: any) => String(t.id));
+    const sessionStore = useCashSessionStore.getState();
+    const authStore = useAuthStore.getState();
+    const currentSessionId = sessionStore.activeSession?.id || sessionStore.getLastKnownSessionId();
+    const currentProcessor = authStore.profile?.username || authStore.user?.email?.split('@')[0] || 'Staff';
 
-      // 1. Clear soft delete flags
+    if (!isOnline) {
+      if (!sessionStore.canProcessOfflineTransactions() && !sessionStore.isSessionOpen) {
+        toast.error('Cannot restore while offline: Cash drawer session is closed.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        for (const tx of restorableList) {
+          await stagePendingTransaction({
+            type: 'sale_restore',
+            cashSessionId: currentSessionId || '',
+            userId: authStore.user?.id || 'offline_cashier',
+            userName: currentProcessor,
+            payload: {
+              saleId: tx.id,
+              productName: tx.productName || tx.product_name,
+              totalAmount: Number(tx.totalAmount || tx.total_amount || 0),
+              items: tx.items || [],
+              paymentMethod: tx.paymentMethod || tx.payment_method,
+              receipt_no: tx.receipt_no,
+              restoredAt: new Date().toISOString(),
+            },
+          });
+        }
+
+        // Deduct inventory stock locally so other offline sales/restores reflect accurate availability
+       setDbProducts((prev) => {
+        const updated = prev.map((p) => {
+          let deduction = 0;
+          restorableList.forEach((tx) => {
+            (tx.items || []).forEach((item: any) => {
+              const pId = item.productId || item.product_id || item.id;
+              if (String(pId) === String(p.id) && p.has_stock_limit) {
+                deduction += Number(item.quantity || 1);
+              }
+            });
+          });
+          if (deduction > 0) {
+            return { ...p, stock_quantity: Math.max(0, (p.stock_quantity ?? 0) - deduction) };
+          }
+          return p;
+        });
+        try {
+          localStorage.setItem('products_sanitized_list', JSON.stringify(updated));
+          sessionStorage.setItem('products_sanitized_list', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+        // Update recycle bin cache
+        try {
+          const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
+          if (cachedRecycleRaw) {
+            const cachedList = JSON.parse(cachedRecycleRaw);
+            const remainingCached = cachedList.filter((item: any) => !selectedTxIds.includes(String(item.id)));
+            localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(remainingCached));
+          }
+        } catch {}
+
+        // Add restored sales back into active sales session cache
+        try {
+          const todayDateStr = new Date().toISOString().substring(0, 10);
+          const salesCacheKey = `sales_sanitized_${todayDateStr}_v3`;
+          const activeSalesRaw = sessionStorage.getItem(salesCacheKey) || localStorage.getItem(salesCacheKey);
+          const activeList = activeSalesRaw ? JSON.parse(activeSalesRaw) : [];
+          const restoredEntries = restorableList.map((tx) => ({
+            ...tx,
+            deleted_at: null,
+            deleted_by: null,
+            sync_status: 'pending',
+          }));
+          const merged = [...restoredEntries, ...activeList];
+          sessionStorage.setItem(salesCacheKey, JSON.stringify(merged));
+          localStorage.setItem(salesCacheKey, JSON.stringify(merged));
+        } catch {}
+
+        setSelectedIds((prev) => prev.filter((id) => !selectedTxIds.includes(id)));
+        setDeletedTransactions((prev) => prev.filter((t) => !selectedTxIds.includes(String(t.id))));
+
+        toast.info(
+          `Restored ${restorableList.length} transaction(s) offline. Secured in vault and queued for cloud sync.`,
+          { toastId: 'offline-restore-success' }
+        );
+
+        onRestoreSuccess();
+        window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+        setLoading(false);
+        return;
+      } catch (vaultErr: any) {
+        console.error('Failed to stage offline restore:', vaultErr);
+        toast.error(`Offline restoration failed: ${vaultErr.message}`);
+        setLoading(false);
+        return;
+      }
+    }
+
+    try {
       const { error: restoreError } = await supabase
         .from('sales')
         .update({
@@ -401,25 +610,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
       if (restoreError) throw restoreError;
 
-      // 2. Re-deduct product quantities since sale is active again
       for (const tx of restorableList) {
-        if (tx.items && Array.isArray(tx.items)) {
-          for (const item of tx.items) {
-            const matchedProduct = dbProducts.find(
-              (p: any) => p.id === item.productId
-            );
-            if (matchedProduct && matchedProduct.has_stock_limit) {
-              const currentStock = matchedProduct.stock_quantity ?? 0;
-              const updatedStock = Math.max(0, currentStock - item.quantity);
-
-              await supabase
-                .from('products')
-                .update({ stock_quantity: updatedStock })
-                .eq('id', item.productId);
-            }
-          }
-        }
-
         const itemsList =
           tx.items
             ?.map(
@@ -433,6 +624,16 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         await logAudit('SALE_RESTORED', auditDetails, tx.id);
       }
 
+      // Update cached recycle bin
+      try {
+        const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
+        if (cachedRecycleRaw) {
+          const cachedList = JSON.parse(cachedRecycleRaw);
+          const remainingCached = cachedList.filter((item: any) => !selectedTxIds.includes(String(item.id)));
+          localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(remainingCached));
+        }
+      } catch {}
+
       setSelectedIds((prev) =>
         prev.filter((id) => !selectedTxIds.includes(id))
       );
@@ -441,9 +642,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
         `Successfully restored ${restorableList.length} transaction(s) back to the sales ledger.`
       );
       await fetchDeletedTransactions();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error executing database restoration:', err);
-      toast.error('Failed to complete transaction database restoration.');
+      toast.error(err?.message || 'Failed to complete transaction database restoration.');
+      await fetchDeletedTransactions();
     } finally {
       setLoading(false);
     }

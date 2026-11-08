@@ -275,8 +275,15 @@ export const Sales: React.FC = () => {
   const { user, profile } = useAuthStore() as any;
   const { isLocked, getLockReason } = useSessionLock();
   const { isBatterySaver } = useBatterySaver();
-  const { activeSession, isSessionOpen, history, loadHistory, canProcessOfflineTransactions } =
-    useCashSessionStore();
+  const {
+    activeSession,
+    isSessionOpen,
+    history,
+    loadHistory,
+    loadActiveSession,
+    subscribeRealtime,
+    canProcessOfflineTransactions,
+  } = useCashSessionStore();
   const isNavFloatingOpen = Boolean(useNavbarStore((s) => s.activeFloating));
 
   const canOperateSession = isSessionOpen || canProcessOfflineTransactions();
@@ -287,8 +294,11 @@ export const Sales: React.FC = () => {
   >([]);
 
   useEffect(() => {
+    loadActiveSession();
     loadHistory();
-  }, [loadHistory]);
+    const unsub = subscribeRealtime();
+    return () => unsub();
+  }, [loadActiveSession, loadHistory, subscribeRealtime]);
 
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
@@ -533,6 +543,38 @@ export const Sales: React.FC = () => {
         }
       }
 
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+      if (!isOnline) {
+        try {
+          const pendingVaultItems = await getDecryptedPendingTransactions();
+          const pendingSales = pendingVaultItems
+            .filter((p) => p.type === 'sale')
+            .map((p) => ({
+              ...p.payload,
+              id: p.id,
+              created_at: p.createdAt,
+              sync_status: p.status || 'pending',
+            }))
+            .filter((s) => (s.created_at || '').startsWith(dateStr));
+
+          if (pendingSales.length > 0) {
+            setTransactions((prev) => {
+              const existingIds = new Set(prev.map((t) => String(t.id)));
+              const uniquePending = pendingSales.filter((p) => !existingIds.has(String(p.id)));
+              return [...uniquePending, ...prev];
+            });
+          }
+        } catch (vaultErr) {
+          console.warn('Error reading offline vault for sales:', vaultErr);
+        } finally {
+          if (!isBackground) {
+            setLoadingTransactions(false);
+          }
+        }
+        return;
+      }
+
       try {
         try {
           const { data: closedSessionsData } = await supabase
@@ -567,14 +609,28 @@ export const Sales: React.FC = () => {
         ).toISOString();
 
         try {
-          const { data, error } = await supabase.rpc('get_sanitized_sales', {
-            target_date: dateStr,
-          });
+          const { data: salesData, error: salesErr } = await supabase
+            .from('sales')
+            .select('*')
+            .is('deleted_at', null)
+            .gte('created_at', startOfDayIso)
+            .lte('created_at', endOfDayIso)
+            .order('created_at', { ascending: false });
 
-          if (!error && data) {
-            freshTransactions = data.map((s: any) => ({
-              ...s,
+          if (!salesErr && salesData) {
+            freshTransactions = salesData.map((s: any) => ({
+              id: String(s.id),
               cash_session_id: s.cash_session_id || null,
+              created_at: s.created_at,
+              receipt_no: s.receipt_no || String(s.id),
+              items: s.items || [],
+              product_name: s.product_name || 'Multiple Items',
+              payment_method: s.payment_method,
+              amount_received: s.amount_received,
+              change_calculated: s.change_calculated,
+              total_amount: s.total_amount,
+              gcash_fee_applied: s.gcash_fee_applied || 0,
+              reference_number: s.reference_number,
               processed_by:
                 s.processed_by ||
                 s.processedBy ||
@@ -583,53 +639,15 @@ export const Sales: React.FC = () => {
                 s.created_by ||
                 null,
             }));
+          } else {
+            const { data, error } = await supabase.rpc('get_sanitized_sales', {
+              target_date: dateStr,
+            });
 
-            } else if (error) {
-            const isOfflineErr =
-              error?.message?.includes('No internet connection') ||
-              (typeof navigator !== 'undefined' && !navigator.onLine);
-            if (!isOfflineErr) {
-              console.warn(
-                'RPC get_sanitized_sales fallback triggered:',
-                error.message || error
-              );
-            }
-          }
-        } catch (rpcErr: any) {
-          const isOfflineErr =
-            rpcErr?.message?.includes('No internet connection') ||
-            (typeof navigator !== 'undefined' && !navigator.onLine);
-          if (!isOfflineErr) {
-            console.warn('RPC get_sanitized_sales invocation error:', rpcErr);
-          }
-        }
-
-        // Always allow the REST GET fallback so the Service Worker (palomar-critical-data-cache)
-        // can intercept and return cached /rest/v1/sales responses even when offline or unstable.
-        if (!freshTransactions) {
-          try {
-            const { data: salesData, error: salesErr } = await supabase
-              .from('sales')
-              .select('*')
-              .is('deleted_at', null)
-              .gte('created_at', startOfDayIso)
-              .lte('created_at', endOfDayIso)
-              .order('created_at', { ascending: false });
-
-            if (!salesErr && salesData) {
-              freshTransactions = salesData.map((s: any) => ({
-                id: String(s.id),
+            if (!error && data) {
+              freshTransactions = data.map((s: any) => ({
+                ...s,
                 cash_session_id: s.cash_session_id || null,
-                created_at: s.created_at,
-                receipt_no: s.receipt_no || String(s.id),
-                items: s.items || [],
-                product_name: s.product_name || 'Multiple Items',
-                payment_method: s.payment_method,
-                amount_received: s.amount_received,
-                change_calculated: s.change_calculated,
-                total_amount: s.total_amount,
-                gcash_fee_applied: s.gcash_fee_applied || 0,
-                reference_number: s.reference_number,
                 processed_by:
                   s.processed_by ||
                   s.processedBy ||
@@ -639,9 +657,9 @@ export const Sales: React.FC = () => {
                   null,
               }));
             }
-          } catch {
-            // Direct query failed; fall back to localStorage/sessionStorage below
           }
+        } catch {
+          // Direct query failed; fall back to localStorage/sessionStorage below
         }
 
         if (freshTransactions) {
@@ -990,8 +1008,9 @@ export const Sales: React.FC = () => {
     const sessionId = activeSession?.id || useCashSessionStore.getState().getLastKnownSessionId();
 
     const currentProcessor =
+      user?.email ||
       profile?.username ||
-      (user?.email ? user.email.split('@')[0] : 'SUPERADMIN');
+      'SUPERADMIN';
 
     if (!isOnline) {
       if (!canOffline || !sessionId) {
@@ -1037,8 +1056,6 @@ export const Sales: React.FC = () => {
           sessionStorage.setItem(`sales_sanitized_${dateStr}_v3`, JSON.stringify(updated));
           return updated;
         });
-
-        toast.info('Sale secured in encrypted offline vault (pending sync).');
         return;
       } catch (vaultErr: any) {
         toast.error(`Offline vault storage failed: ${vaultErr.message}`);
@@ -1132,7 +1149,7 @@ export const Sales: React.FC = () => {
             type: 'sale',
             cashSessionId: sessionId,
             userId: auth.user?.id || 'offline_cashier',
-            userName: auth.profile?.username || auth.user?.email || 'Cashier',
+            userName: auth.user?.email || auth.profile?.username || 'Cashier',
             payload: offlineSalePayload,
           });
 
@@ -1198,6 +1215,71 @@ export const Sales: React.FC = () => {
       );
       if (!stagedTx) return;
 
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine;
+
+      if (!isOnline) {
+        try {
+          const auth = useAuthStore.getState();
+          const sessionState = useCashSessionStore.getState();
+          const sessionId = sessionState.activeSession?.id || sessionState.getLastKnownSessionId() || '';
+          const deletedIso = new Date().toISOString();
+
+          await stagePendingTransaction({
+            type: 'sale_delete',
+            cashSessionId: sessionId,
+            userId: auth.user?.id || 'offline_cashier',
+            userName: auth.profile?.username || auth.user?.email || 'Cashier',
+            payload: {
+              saleId: stagedTx.id,
+              deletedAt: deletedIso,
+              items: stagedTx.items || [],
+            },
+          });
+
+          // Return inventory stock locally so product availability updates immediately
+          if (stagedTx.items && Array.isArray(stagedTx.items)) {
+            setProducts((prev) => {
+              const updated = prev.map((p) => {
+                const item = stagedTx.items.find(
+                  (i: any) => (i.productId || i.product_id || i.id) === p.id
+                );
+                if (item && p.has_stock_limit) {
+                  return { ...p, stock_quantity: (p.stock_quantity ?? 0) + Number(item.quantity || 1) };
+                }
+                return p;
+              });
+              try {
+                localStorage.setItem('products_sanitized_list', JSON.stringify(updated));
+                sessionStorage.setItem('products_sanitized_list', JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
+          }
+
+          // Cache deleted sale for offline Recycle Bin display
+          try {
+            const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
+            const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+            const updatedRecycle = [
+              { ...stagedTx, deleted_at: deletedIso },
+              ...cachedRecycle.filter((t: any) => String(t.id) !== String(id)),
+            ];
+            localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(updatedRecycle));
+          } catch {}
+
+          toast.info('Sale moved to Recycle Bin offline (queued for sync).');
+        } catch (vaultErr: any) {
+          console.error('Failed to stage offline delete:', vaultErr);
+          toast.error(`Offline delete failed: ${vaultErr.message}`);
+        } finally {
+          setStagedDeletions((prev) =>
+            prev.filter((t) => String(t.id) !== String(id))
+          );
+          useCashSessionStore.getState().recalculateMetrics();
+        }
+        return;
+      }
+
       try {
         const { error } = await supabase
           .from('sales')
@@ -1205,6 +1287,17 @@ export const Sales: React.FC = () => {
           .eq('id', stagedTx.id);
 
         if (error) throw error;
+
+        // Cache soft-deleted record for instant Recycle Bin viewing
+        try {
+          const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
+          const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+          const updatedRecycle = [
+            { ...stagedTx, deleted_at: new Date().toISOString() },
+            ...cachedRecycle.filter((t: any) => String(t.id) !== String(id)),
+          ];
+          localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(updatedRecycle));
+        } catch {}
 
         useCashSessionStore.getState().recalculateMetrics();
 
@@ -2138,6 +2231,9 @@ export const Sales: React.FC = () => {
           products={products}
           onRestoreSuccess={() => {
             sessionStorage.removeItem(`sales_sanitized_${dateStr}_v3`);
+            try {
+              localStorage.removeItem(`sales_sanitized_${dateStr}_v3`);
+            } catch {}
             fetchTransactions(true);
             fetchProducts();
           }}

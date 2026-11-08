@@ -460,7 +460,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
     isRecalculatingInProgress = true;
 
     const openingFloat = Number(session.opening_float || 0);
-    const effectiveStart = session.opened_at;
+    const cleanStartIso = new Date(session.opened_at).toISOString();
 
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
@@ -485,8 +485,9 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             !String(pl.payment_method || '').toLowerCase().includes('gcash');
 
           if (tx.type === 'attendance') {
+            const isUnpaid = String(pl.payment_status || '').toLowerCase() === 'unpaid';
             const fee = Number(pl.entry_fee || 0);
-            if (fee > 0) {
+            if (fee > 0 && !isUnpaid) {
               if (isCash) pendingCashLogbook += fee;
               else pendingDigitalLogbook += fee;
 
@@ -544,6 +545,13 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
               if (isCash) pendingCashSales += amt;
               else pendingDigitalSales += amt;
 
+              const handlerName =
+                tx.userName ||
+                pl.processed_by ||
+                pl.processedByName ||
+                pl.cashier ||
+                'Staff';
+
               pendingActivity.push({
                 id: tx.id,
                 source: 'pos',
@@ -551,11 +559,35 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
                 displayType: isCash ? 'POS SALE [OFFLINE]' : 'POS DIGITAL [OFFLINE]',
                 reason: pl.product_name || 'Product Sale',
                 reference_number: pl.receipt_no || null,
-                performed_by_name: tx.userName || 'Cashier',
+                performed_by_name: handlerName,
                 amount: amt,
                 created_at: tx.createdAt,
               });
             }
+          } else if (tx.type === 'cash_transaction') {
+            const amt = Number(pl.amount || 0);
+            const txType = String(pl.type || '').trim().toLowerCase();
+
+            if (txType === 'cash_in') pendingCashIn += amt;
+            else if (txType === 'cash_out') pendingCashOut += amt;
+            else if (txType === 'digital_in') pendingDigitalIn += amt;
+
+            pendingActivity.push({
+              id: tx.id,
+              source: 'manual',
+              type: (txType === 'cash_out' ? 'cash_out' : txType === 'digital_in' ? 'digital_in' : 'cash_in') as 'cash_in' | 'cash_out' | 'digital_in',
+              displayType:
+                txType === 'cash_in'
+                  ? 'CASH IN [OFFLINE]'
+                  : txType === 'cash_out'
+                  ? 'CASH OUT [OFFLINE]'
+                  : 'DIGITAL IN [OFFLINE]',
+              reason: pl.reason || 'Drawer Movement',
+              reference_number: pl.reference_number || null,
+              performed_by_name: tx.userName || pl.performed_by_name || 'Staff',
+              amount: amt,
+              created_at: pl.created_at || tx.createdAt,
+            });
           }
         }
       } catch {}
@@ -590,15 +622,25 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       // 1. Fetch Manual Drawer Movements (Cash In / Cash Out / Digital In)
       let rawManualTxs: any[] = [];
       try {
-        const { data: manualData, error: manualErr } = await supabase
-          .from('cash_transactions')
-          .select('*')
-          .or(`session_id.eq.${session.id},created_at.gte.${effectiveStart}`)
-          .order('created_at', { ascending: false });
+        const [manualSessionRes, manualDateRes] = await Promise.all([
+          supabase
+            .from('cash_transactions')
+            .select('*')
+            .eq('session_id', session.id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('cash_transactions')
+            .select('*')
+            .gte('created_at', cleanStartIso)
+            .order('created_at', { ascending: false }),
+        ]);
 
-        if (!manualErr && manualData) {
-          rawManualTxs = manualData;
-        } else {
+        const manualMap = new Map<string, any>();
+        (manualSessionRes.data || []).forEach((m: any) => manualMap.set(String(m.id), m));
+        (manualDateRes.data || []).forEach((m: any) => manualMap.set(String(m.id), m));
+        rawManualTxs = Array.from(manualMap.values());
+
+        if (rawManualTxs.length === 0) {
           rawManualTxs = await fetchSessionTransactions(session.id);
         }
       } catch (manualQueryErr) {
@@ -645,20 +687,28 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       });
 
       // 2. Fetch POS Sales within Active Session Window
-      const { data: salesData, error: salesErr } = await supabase
-        .from('sales')
-        .select('id, total_amount, payment_method, product_name, items, receipt_no, reference_number, created_at, deleted_at, cash_session_id')
-        .is('deleted_at', null)
-        .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
+      const [salesSessionRes, salesDateRes] = await Promise.all([
+        supabase
+          .from('sales')
+          .select('*')
+          .is('deleted_at', null)
+          .eq('cash_session_id', session.id),
+        supabase
+          .from('sales')
+          .select('*')
+          .is('deleted_at', null)
+          .gte('created_at', cleanStartIso),
+      ]);
 
-      if (salesErr && !isConnectionError(salesErr)) {
-        console.warn('Error fetching POS sales for cash session:', salesErr);
-      }
+      const salesMap = new Map<string, any>();
+      (salesSessionRes.data || []).forEach((s: any) => salesMap.set(String(s.id), s));
+      (salesDateRes.data || []).forEach((s: any) => salesMap.set(String(s.id), s));
+      const salesData = Array.from(salesMap.values());
 
       let cashSales = 0;
       let digitalSales = 0;
 
-      const mappedSalesTxs: UnifiedActivityItem[] = (salesData || []).map((s: any) => {
+      const mappedSalesTxs: UnifiedActivityItem[] = salesData.map((s: any) => {
         const amt = Number(s.total_amount || 0);
         const method = String(s.payment_method || '').toLowerCase();
         const isCash = method.includes('cash') && !method.includes('gcash');
@@ -674,6 +724,15 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             ? s.items.map((i: any) => `${i.productName || i.product_name} (${i.quantity || 1}x)`).join(', ')
             : s.product_name || 'Product Sale';
 
+        const handlerName =
+          s.processed_by ||
+          s.processedBy ||
+          s.cashier ||
+          s.sold_by ||
+          s.created_by ||
+          session.opened_by_name ||
+          'Staff';
+
         return {
           id: String(s.id),
           source: 'pos',
@@ -681,30 +740,41 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType: isCash ? 'POS SALE' : 'POS DIGITAL',
           reason: itemsDesc,
           reference_number: s.reference_number || (s.receipt_no ? `Receipt: ${s.receipt_no}` : null),
-          performed_by_name: 'Cashier / POS',
+          performed_by_name: handlerName,
           amount: amt,
           created_at: s.created_at,
         };
       });
 
       // 3. Receipts
-      const { data: receiptsData, error: rcptErr } = await supabase
-        .from('receipts')
-        .select('id, customer_name, item_description, amount, payment_method, gcash_ref_no, created_at, cash_session_id')
-        .or(`cash_session_id.eq.${session.id},created_at.gte.${effectiveStart}`);
+      const [rcptSessionRes, rcptDateRes] = await Promise.all([
+        supabase
+          .from('receipts')
+          .select('*')
+          .eq('cash_session_id', session.id),
+        supabase
+          .from('receipts')
+          .select('*')
+          .gte('created_at', cleanStartIso),
+      ]);
 
-      if (rcptErr && !isConnectionError(rcptErr)) {
-        console.warn('Error fetching receipts for cash session:', rcptErr);
-      }
+      const rcptMap = new Map<string, any>();
+      (rcptSessionRes.data || []).forEach((r: any) => rcptMap.set(String(r.id), r));
+      (rcptDateRes.data || []).forEach((r: any) => rcptMap.set(String(r.id), r));
+      const receiptsData = Array.from(rcptMap.values()).filter((r: any) => {
+        if (r.deleted_at) return false;
+        const status = String(r.payment_status || 'Paid').toLowerCase();
+        return status !== 'cancelled' && status !== 'voided' && status !== 'unpaid';
+      });
 
       const receiptIdsSet = new Set(
-        (receiptsData || []).map((r: any) => String(r.id || '').trim().toLowerCase())
+        receiptsData.map((r: any) => String(r.id || '').trim().toLowerCase())
       );
 
       let cashReceipts = 0;
       let digitalReceipts = 0;
 
-      const mappedReceiptsTxs: UnifiedActivityItem[] = (receiptsData || []).map((r: any) => {
+      const mappedReceiptsTxs: UnifiedActivityItem[] = receiptsData.map((r: any) => {
         const amt = Number(r.amount || 0);
         const method = String(r.payment_method || '').trim().toLowerCase();
         const isCash = method.includes('cash') && !method.includes('gcash');
@@ -726,6 +796,14 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType = isCash ? 'RENEWAL (CASH)' : 'RENEWAL (DIGITAL)';
         }
 
+        const handlerName =
+          r.processed_by ||
+          r.processedBy ||
+          r.staff_name ||
+          r.created_by ||
+          session.opened_by_name ||
+          'Staff';
+
         return {
           id: `rcpt-${r.id}`,
           source: 'receipt',
@@ -733,22 +811,30 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType,
           reason: `${r.customer_name || 'Member'} - ${r.item_description || 'Subscription Plan'}`,
           reference_number: r.gcash_ref_no || null,
-          performed_by_name: 'Reception',
+          performed_by_name: handlerName,
           amount: amt,
           created_at: r.created_at,
         };
       });
 
       // 4. Attendance Check-Ins
-      const { data: attendanceData, error: attErr } = await supabase
-        .from('attendance')
-        .select('id, customer_name, customer_type, plan_name, entry_fee, payment_method, gcash_ref_no, receipt_number, staff_name, check_in_time, created_at, deleted_at, cash_session_id')
-        .is('deleted_at', null)
-        .or(`cash_session_id.eq.${session.id},check_in_time.gte.${effectiveStart},created_at.gte.${effectiveStart}`);
+      const [attSessionRes, attDateRes] = await Promise.all([
+        supabase
+          .from('attendance')
+          .select('*')
+          .is('deleted_at', null)
+          .eq('cash_session_id', session.id),
+        supabase
+          .from('attendance')
+          .select('*')
+          .is('deleted_at', null)
+          .gte('check_in_time', cleanStartIso),
+      ]);
 
-      if (attErr && !isConnectionError(attErr)) {
-        console.error('Error fetching attendance for cash session:', attErr);
-      }
+      const attMap = new Map<string, any>();
+      (attSessionRes.data || []).forEach((a: any) => attMap.set(String(a.id), a));
+      (attDateRes.data || []).forEach((a: any) => attMap.set(String(a.id), a));
+      const attendanceData = Array.from(attMap.values());
 
       let cashAttendance = 0;
       let digitalAttendance = 0;
@@ -756,6 +842,11 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       const mappedAttendanceTxs: UnifiedActivityItem[] = [];
 
       (attendanceData || []).forEach((a: any) => {
+        const paymentStatus = String(a.payment_status || 'Paid').trim().toLowerCase();
+        if (paymentStatus === 'unpaid' || paymentStatus === 'cancelled' || paymentStatus === 'voided') {
+          return;
+        }
+
         const amt = Number(a.entry_fee || 0);
 
         if (amt > 0) {
@@ -780,6 +871,32 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             digitalAttendance += amt;
           }
 
+          const rawHandler =
+            a.processed_by ||
+            a.staff_name ||
+            session.opened_by_name ||
+            'Staff';
+
+          let handlerName = rawHandler;
+          if (rawHandler.includes('@')) {
+            const emailLower = rawHandler.toLowerCase();
+            const auth = useAuthStore.getState();
+            if (
+              auth.user?.email &&
+              auth.user.email.toLowerCase() === emailLower &&
+              auth.profile?.username
+            ) {
+              handlerName = auth.profile.username;
+            } else if (
+              emailLower === 'wolf.palomar@gmail.com' ||
+              emailLower === 'wolfpalomargym@gmail.com'
+            ) {
+              handlerName = 'SUPERADMIN';
+            } else {
+              handlerName = rawHandler.split('@')[0];
+            }
+          }
+
           mappedAttendanceTxs.push({
             id: String(a.id),
             source: 'logbook',
@@ -787,7 +904,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             displayType: isCash ? 'CHECK-IN (CASH)' : 'CHECK-IN (GCASH)',
             reason: `${a.customer_name || 'Guest'} (${a.customer_type || 'Walk-In'} - ${a.plan_name || 'Pass'})`,
             reference_number: a.gcash_ref_no || a.receipt_number || null,
-            performed_by_name: a.staff_name || 'Reception',
+            performed_by_name: handlerName,
             amount: amt,
             created_at: a.check_in_time || a.created_at,
           });
@@ -805,8 +922,9 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             !String(pl.payment_method || '').toLowerCase().includes('gcash');
 
           if (tx.type === 'attendance') {
+            const isUnpaid = String(pl.payment_status || '').toLowerCase() === 'unpaid';
             const fee = Number(pl.entry_fee || 0);
-            if (fee > 0) {
+            if (fee > 0 && !isUnpaid) {
               if (isCash) cashAttendance += fee;
               else digitalAttendance += fee;
 
@@ -840,6 +958,30 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
                 created_at: tx.createdAt,
               });
             }
+          } else if (tx.type === 'cash_transaction') {
+            const amt = Number(pl.amount || 0);
+            const txType = String(pl.type || '').trim().toLowerCase();
+
+            if (txType === 'cash_in') cashInTotal += amt;
+            else if (txType === 'cash_out') cashOutTotal += amt;
+            else if (txType === 'digital_in') digitalInTotal += amt;
+
+            mappedManualTxs.push({
+              id: tx.id,
+              source: 'manual',
+              type: (txType === 'cash_out' ? 'cash_out' : txType === 'digital_in' ? 'digital_in' : 'cash_in') as 'cash_in' | 'cash_out' | 'digital_in',
+              displayType:
+                txType === 'cash_in'
+                  ? 'CASH IN [OFFLINE]'
+                  : txType === 'cash_out'
+                  ? 'CASH OUT [OFFLINE]'
+                  : 'DIGITAL IN [OFFLINE]',
+              reason: pl.reason || 'Drawer Movement',
+              reference_number: pl.reference_number || null,
+              performed_by_name: tx.userName || pl.performed_by_name || 'Staff',
+              amount: amt,
+              created_at: pl.created_at || tx.createdAt,
+            });
           }
         }
       } catch {}
@@ -916,7 +1058,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       if (debounceRecalculateTimer) clearTimeout(debounceRecalculateTimer);
       debounceRecalculateTimer = setTimeout(() => {
         get().recalculateMetrics();
-      }, 1500);
+      }, 300);
     };
 
     const triggerSessionSync = () => {
@@ -927,7 +1069,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
         lastHistoryFetchTime = 0;
         get().loadActiveSession();
         get().loadHistory();
-      }, 1500);
+      }, 300);
     };
 
     if (!globalRealtimeChannel) {

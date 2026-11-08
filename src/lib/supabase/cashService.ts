@@ -2,6 +2,7 @@
 import { supabase } from './client';
 import { logAudit } from './audit';
 import { getServerNow, getServerISOString } from '../serverTime';
+import { stagePendingTransaction } from '../offlineVault';
 import type {
   CashSession,
   CashTransaction,
@@ -166,7 +167,8 @@ export async function openCashSession(params: {
 }
 
 /**
- * Records a Cash In, Cash Out, or Digital In transaction. Fails if offline.
+ * Records a Cash In, Cash Out, or Digital In transaction.
+ * Queues in encrypted local vault if offline during an active session.
  */
 export async function recordCashTransaction(params: {
   sessionId: string;
@@ -177,7 +179,7 @@ export async function recordCashTransaction(params: {
   performedBy?: string | null;
   performedByName?: string;
 }): Promise<CashTransaction> {
-  assertOnline();
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
   const amountVal = Math.max(0.01, Number(params.amount) || 0);
 
@@ -198,6 +200,35 @@ export async function recordCashTransaction(params: {
     performed_by: userId,
     performed_by_name: params.performedByName || 'Staff',
   };
+
+  if (isOffline) {
+    const offlineId = `offline_tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const nowIso = new Date().toISOString();
+    const offlineTx: CashTransaction = {
+      id: offlineId,
+      session_id: params.sessionId,
+      type: params.type,
+      amount: amountVal,
+      reason: params.reason.trim(),
+      reference_number: params.referenceNumber?.trim() || null,
+      performed_by: userId || null,
+      performed_by_name: params.performedByName || 'Staff',
+      created_at: nowIso,
+    };
+
+    await stagePendingTransaction({
+      type: 'cash_transaction',
+      cashSessionId: params.sessionId,
+      userId: userId || 'offline_user',
+      userName: params.performedByName || 'Staff',
+      payload: {
+        ...payload,
+        created_at: nowIso,
+      },
+    });
+
+    return offlineTx;
+  }
 
   const { data, error } = await supabase
     .from('cash_transactions')

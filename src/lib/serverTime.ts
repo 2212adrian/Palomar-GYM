@@ -35,6 +35,9 @@ if (typeof localStorage !== 'undefined') {
 }
 
 export async function syncServerTime(): Promise<number> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return serverTimeOffsetMs;
+  }
   if (isSyncing) return serverTimeOffsetMs;
   if (isInitialized && Date.now() - lastSyncTimestamp < 30000) {
     return serverTimeOffsetMs;
@@ -129,11 +132,14 @@ export function initServerTimeSync() {
 
   // Periodic resync every 5 minutes
   const interval = setInterval(() => {
-    syncServerTime();
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      syncServerTime();
+    }
   }, 5 * 60 * 1000);
 
   // Resync on window focus or network reconnect
   const onFocusOrOnline = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     if (Date.now() - lastSyncTimestamp > 60 * 1000) {
       syncServerTime();
     }

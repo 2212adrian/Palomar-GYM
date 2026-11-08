@@ -45,7 +45,6 @@ import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { SyncStatusButton } from '../common/SyncStatusButton';
-import { useActionQueueStore } from '../../stores/useActionQueueStore';
 import { ActionQueueDrawer } from './ActionQueueDrawer';
 import type { CashTransactionType } from '../../types/cash';
 
@@ -319,7 +318,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   );
   const cashContainerRef = useRef<HTMLDivElement>(null);
   const syncContainerRef = useRef<HTMLDivElement>(null);
-  const { queueCount, toggleDrawer: toggleActionQueueDrawer } = useActionQueueStore();
 
   // Logbook Telemetry (Active Session Only)
   const [logbookKpiData, setLogbookKpiData] = useState<LogbookKpiData>({
@@ -1287,26 +1285,6 @@ export const Topbar: React.FC<TopbarProps> = ({
         <div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
           {currentTimeFull}
         </div>
-
-        {/* OFFLINE ACTION QUEUE TRIGGER BUTTON (RENDER ONLY WHEN QUEUE IS NOT EMPTY) */}
-        {queueCount > 0 && (
-          <button
-            type="button"
-            id="btn-topbar-action-queue"
-            onClick={toggleActionQueueDrawer}
-            aria-label="Toggle Action Queue"
-            title={`Action Queue: ${queueCount} pending offline action(s)`}
-            className="relative h-9 px-2.5 sm:px-3 rounded-xl border transition-all duration-200 flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border-amber-500/40"
-          >
-            <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline text-xs font-bold font-heading">
-              Queue
-            </span>
-            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-900 text-[9px] font-bold font-mono flex items-center justify-center shadow-xs">
-              {queueCount}
-            </span>
-          </button>
-        )}
 
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (

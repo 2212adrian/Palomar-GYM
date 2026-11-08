@@ -24,6 +24,45 @@ export interface SyncResult {
   droppedCount: number;
 }
 
+function areSalesIdentical(cloudSale: any, offlinePayload: any): boolean {
+  if (!cloudSale || !offlinePayload) return false;
+
+  const cloudAmount = Number(cloudSale.total_amount || 0);
+  const offlineAmount = Number(offlinePayload.total_amount || offlinePayload.totalAmount || 0);
+  if (Math.abs(cloudAmount - offlineAmount) > 0.01) return false;
+
+  const cloudItems = Array.isArray(cloudSale.items) ? cloudSale.items : [];
+  const offlineItems = Array.isArray(offlinePayload.items) ? offlinePayload.items : [];
+
+  if (cloudItems.length > 0 && offlineItems.length > 0) {
+    if (cloudItems.length !== offlineItems.length) return false;
+
+    const normalizeItem = (item: any) => ({
+      id: String(item.productId || item.product_id || item.id || ''),
+      quantity: Number(item.quantity || 1),
+    });
+
+    const sortedCloud = [...cloudItems].map(normalizeItem).sort((a, b) => a.id.localeCompare(b.id));
+    const sortedOffline = [...offlineItems].map(normalizeItem).sort((a, b) => a.id.localeCompare(b.id));
+
+    for (let i = 0; i < sortedCloud.length; i++) {
+      if (sortedCloud[i].id !== sortedOffline[i].id) return false;
+      if (sortedCloud[i].quantity !== sortedOffline[i].quantity) return false;
+    }
+    return true;
+  }
+
+  const cloudProdId = cloudSale.product_id || cloudSale.productId;
+  const offlineProdId = offlinePayload.product_id || offlinePayload.productId;
+  if (cloudProdId && offlineProdId && String(cloudProdId) === String(offlineProdId)) {
+    const cloudQty = Number(cloudSale.quantity || 1);
+    const offlineQty = Number(offlinePayload.quantity || 1);
+    return cloudQty === offlineQty;
+  }
+
+  return false;
+}
+
 /**
  * Executes full reconciliation and sync of local encrypted vault against Supabase.
  */
@@ -49,12 +88,115 @@ export async function executeOfflineSync(): Promise<SyncResult> {
   }
 
   // 2. Fetch and decrypt all pending records (automatically verifies SHA-256 integrity)
-  const pendingList = await getDecryptedPendingTransactions();
+  const allVaultItems = await getDecryptedPendingTransactions();
+
+  // Purge any local vault items that were already resolved in the cloud by an Admin on another device
+  // Automatically drop conflicts belonging to closed or passed cash sessions
+  // Also auto-resolve any pending conflicts in the cloud if the transactions are identical
+  try {
+    const conflictVaultIds = allVaultItems
+      .filter((i) => i.status === 'conflict')
+      .map((i) => i.id);
+
+    if (conflictVaultIds.length > 0) {
+      const { data: resolvedList } = await supabase
+        .from('sync_conflicts')
+        .select('second_transaction, resolution, resolved_by_name')
+        .eq('status', 'resolved');
+
+      if (resolvedList && resolvedList.length > 0) {
+        const purgedIds: string[] = [];
+        for (const res of resolvedList) {
+          const vId = res.second_transaction?.vault_id;
+          if (vId && conflictVaultIds.includes(vId)) {
+            purgedIds.push(vId);
+          }
+        }
+        if (purgedIds.length > 0) {
+          await purgeTransactionsByIds(purgedIds);
+        }
+      }
+    }
+
+    const { data: pendingConflicts } = await supabase
+      .from('sync_conflicts')
+      .select('*')
+      .eq('status', 'pending');
+
+    if (pendingConflicts && pendingConflicts.length > 0) {
+      for (const sc of pendingConflicts) {
+        const first = sc.first_transaction || {};
+        const second = sc.second_transaction || {};
+        const firstSid = first.cash_session_id || first.cashSessionId;
+        const secondSid = second.cash_session_id || second.cashSessionId || second.payload?.cash_session_id;
+
+        // Auto-drop rule: If no session is open or the conflict belongs to a closed/passed session, drop both
+        const isFromClosedSession =
+          !activeSessionId ||
+          (firstSid && firstSid !== activeSessionId) ||
+          (secondSid && secondSid !== activeSessionId);
+
+        if (isFromClosedSession) {
+          await resolveConflictAction(sc.id, 'drop_both');
+          continue;
+        }
+
+        let isIdentical = false;
+        if (sc.conflict_type === 'duplicate_attendance') {
+          const firstName = (first.customer_name || '').trim().toLowerCase();
+          const secondName = (second.customer_name || '').trim().toLowerCase();
+          const firstFee = Number(first.entry_fee || 0);
+          const secondFee = Number(second.entry_fee || 0);
+          const firstPlan = (first.plan_name || '').trim().toLowerCase();
+          const secondPlan = (second.plan_name || '').trim().toLowerCase();
+          if (firstName && secondName && firstName === secondName && firstFee === secondFee && firstPlan === secondPlan) {
+            isIdentical = true;
+          }
+        } else if (sc.conflict_type === 'sale_stock_collision') {
+          const firstPayload = {
+            total_amount: first.total_amount,
+            items: first.items,
+            product_id: sc.product_id,
+            quantity: first.quantity,
+          };
+          const secondPayload = second.payload || {
+            total_amount: second.total_amount,
+            items: second.items,
+            product_id: sc.product_id,
+            quantity: second.quantity,
+          };
+          if (areSalesIdentical(firstPayload, secondPayload)) {
+            isIdentical = true;
+          }
+        }
+
+        if (isIdentical) {
+          await resolveConflictAction(sc.id, 'keep_first');
+        }
+      }
+    }
+  } catch (cleanErr) {
+    console.warn('Error checking resolved conflicts:', cleanErr);
+  }
+
+  // Re-fetch remaining items and only process active pending transactions
+  const refreshedVaultItems = await getDecryptedPendingTransactions();
+  const pendingList = refreshedVaultItems.filter((item) => item.status === 'pending');
   if (pendingList.length === 0) {
     return result;
   }
 
-  const CASH_TYPES = ['sale', 'attendance', 'subscription', 'card_purchase'];
+  const CASH_TYPES = [
+    'sale',
+    'sale_restore',
+    'sale_delete',
+    'attendance',
+    'attendance_restore',
+    'attendance_delete',
+    'subscription',
+    'card_purchase',
+    'cash_transaction',
+  ];
 
   // Rule: Cash management only works if opened. If closed, drop pending cash transactions.
   if (!activeSessionId) {
@@ -73,60 +215,455 @@ export async function executeOfflineSync(): Promise<SyncResult> {
   }
 
   const successfullySyncedIds: string[] = [];
+  const syncedAttendanceInThisRun = new Set<string>();
+  const syncedSalesInThisRun = new Set<string>();
 
   for (const item of pendingList) {
     try {
       if (CASH_TYPES.includes(item.type) && !activeSessionId) {
         continue;
       }
-      // ─── A. SALE TRANSACTIONS ───
+
+      // ─── A2. SALE RESTORE TRANSACTIONS (DUAL-OFFLINE CONFLICT RESOLVED) ───
+      if (item.type === 'sale_restore') {
+        const payload = item.payload;
+        const targetSaleId = payload.saleId || payload.id;
+
+        if (!targetSaleId) {
+          successfullySyncedIds.push(item.id);
+          continue;
+        }
+
+        const { data: cloudSale, error: fetchSaleErr } = await supabase
+          .from('sales')
+          .select('*')
+          .eq('id', targetSaleId)
+          .maybeSingle();
+
+        if (fetchSaleErr || !cloudSale) {
+          console.warn(`[Sync] Sale ${targetSaleId} not found in cloud database for restore:`, fetchSaleErr);
+          successfullySyncedIds.push(item.id);
+          continue;
+        }
+
+        if (cloudSale.deleted_at === null) {
+          console.info(
+            `[Sync] Sale ${targetSaleId} was already restored by another device/session. Deduplicating restore without double-deduction.`
+          );
+
+          try {
+            await supabase.from('audit_logs').insert([
+              {
+                action: 'SALE_RESTORE_DEDUPLICATED',
+                details: `Sale #${cloudSale.receipt_no || cloudSale.id} restore by cashier "${item.userName}" merged: record was already restored by "${cloudSale.processed_by || 'another user'}".`,
+                target_id: targetSaleId,
+                performed_by: item.userId || null,
+              },
+            ]);
+          } catch {
+            // ignore audit insert fail
+          }
+
+          successfullySyncedIds.push(item.id);
+          result.syncedCount++;
+          continue;
+        }
+
+        let hasRestoreStockConflict = false;
+        let conflictRestoreStock: any = null;
+
+        const saleItems =
+          cloudSale.items && Array.isArray(cloudSale.items)
+            ? cloudSale.items
+            : payload.items && Array.isArray(payload.items)
+              ? payload.items
+              : [];
+
+        for (const lineItem of saleItems) {
+          const pId = lineItem.productId || lineItem.product_id || lineItem.id;
+          if (pId) {
+            const { data: cloudProd } = await supabase
+              .from('products')
+              .select('id, product_name, has_stock_limit, stock_quantity')
+              .eq('id', pId)
+              .maybeSingle();
+
+            if (cloudProd && cloudProd.has_stock_limit) {
+              const reqQty = Number(lineItem.quantity || 1);
+              const currentStock = Number(cloudProd.stock_quantity ?? 0);
+
+              if (currentStock < reqQty) {
+                hasRestoreStockConflict = true;
+                conflictRestoreStock = {
+                  productId: pId,
+                  product_name: cloudProd.product_name,
+                  current_stock: currentStock,
+                  requested: reqQty,
+                  conflicting_sale_id: targetSaleId,
+                  conflicting_sale_name: cloudSale.product_name || cloudProd.product_name,
+                  conflicting_sale_amount: cloudSale.total_amount || 0,
+                  conflicting_sale_cashier: item.userName || 'Offline Register',
+                  conflicting_sale_time: cloudSale.created_at || null,
+                };
+
+                try {
+                  await supabase.from('sync_conflicts').insert([
+                    {
+                      conflict_type: 'sale_stock_collision',
+                      product_id: pId,
+                      product_name: cloudProd.product_name,
+                      status: 'pending',
+                      first_transaction: {
+                        id: targetSaleId,
+                        cashier: cloudSale.processed_by || 'SUPERADMIN',
+                        product_name: cloudSale.product_name || cloudProd.product_name,
+                        quantity: reqQty,
+                        total_amount: cloudSale.total_amount || 0,
+                        created_at: cloudSale.created_at || new Date().toISOString(),
+                        action: 'restore_insufficient_stock',
+                      },
+                      second_transaction: {
+                        vault_id: item.id,
+                        cashier: item.userName || 'Offline Register',
+                        product_name: cloudSale.product_name || cloudProd.product_name,
+                        quantity: reqQty,
+                        total_amount: cloudSale.total_amount || 0,
+                        created_at: item.createdAt,
+                        payload,
+                      },
+                    },
+                  ]);
+                } catch (bcastErr) {
+                  console.warn('Failed to broadcast restore stock collision:', bcastErr);
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        if (hasRestoreStockConflict) {
+          await markPendingConflict(item.id, 'insufficient_stock', conflictRestoreStock);
+          result.conflictCount++;
+          continue;
+        }
+
+        const { error: restoreErr } = await supabase
+          .from('sales')
+          .update({
+            deleted_at: null,
+            deleted_by: null,
+          })
+          .eq('id', targetSaleId);
+
+        if (restoreErr) throw restoreErr;
+
+        try {
+          await supabase.from('audit_logs').insert([
+            {
+              action: 'SALE_RESTORED',
+              details: `Restored sale transaction (₱${Number(cloudSale.total_amount || 0).toFixed(2)}) from Recycle Bin via background sync by ${item.userName}.`,
+              target_id: targetSaleId,
+              performed_by: item.userId || null,
+            },
+          ]);
+        } catch {}
+
+        successfullySyncedIds.push(item.id);
+        result.syncedCount++;
+        continue;
+      }
+
+      // ─── A3. SALE DELETE TRANSACTIONS ───
+      if (item.type === 'sale_delete') {
+        const payload = item.payload;
+        const targetSaleId = payload.saleId || payload.id;
+
+        if (targetSaleId) {
+          const { error: delErr } = await supabase
+            .from('sales')
+            .update({
+              deleted_at: payload.deletedAt || new Date().toISOString(),
+            })
+            .eq('id', targetSaleId);
+
+          if (delErr) {
+            console.warn(`[Sync] Could not apply soft delete to sale ${targetSaleId}:`, delErr);
+          }
+        }
+
+        successfullySyncedIds.push(item.id);
+        result.syncedCount++;
+        continue;
+      }
+
+      // ─── B2. ATTENDANCE RESTORE TRANSACTIONS ───
+      if (item.type === 'attendance_restore') {
+        const payload = item.payload;
+        const targetAttendanceId = payload.attendanceId || payload.id;
+
+        if (targetAttendanceId) {
+          const { error: restoreErr } = await supabase
+            .from('attendance')
+            .update({
+              deleted_at: null,
+              deleted_by: null,
+            })
+            .eq('id', targetAttendanceId);
+
+          if (restoreErr) {
+            console.warn(`[Sync] Could not restore attendance ${targetAttendanceId}:`, restoreErr);
+          }
+
+          if (payload.receiptNumber) {
+            await supabase
+              .from('receipts')
+              .update({
+                payment_status: 'Paid',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', payload.receiptNumber);
+
+            await supabase
+              .from('cards')
+              .update({
+                status: 'Active',
+                payment_status: 'PAID',
+                claim_status: 'UNCLAIMED',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('receipt_number', payload.receiptNumber);
+          }
+        }
+
+        successfullySyncedIds.push(item.id);
+        result.syncedCount++;
+        continue;
+      }
+
+      // ─── B3. ATTENDANCE DELETE TRANSACTIONS ───
+      if (item.type === 'attendance_delete') {
+        const payload = item.payload;
+        const targetAttendanceId = payload.attendanceId || payload.id;
+
+        if (targetAttendanceId) {
+          const { error: delErr } = await supabase
+            .from('attendance')
+            .update({
+              deleted_at: payload.deletedAt || new Date().toISOString(),
+            })
+            .eq('id', targetAttendanceId);
+
+          if (delErr) {
+            console.warn(`[Sync] Could not soft delete attendance ${targetAttendanceId}:`, delErr);
+          }
+
+          if (payload.receiptNumber) {
+            await supabase
+              .from('cards')
+              .update({
+                payment_status: 'NONE',
+                claim_status: 'NOT_APPLICABLE',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('receipt_number', payload.receiptNumber);
+          }
+        }
+
+        successfullySyncedIds.push(item.id);
+        result.syncedCount++;
+        continue;
+      }
+
+// ─── A. SALE TRANSACTIONS ───
       if (item.type === 'sale') {
         const payload = item.payload;
         let hasStockConflict = false;
         let conflictCloudStock: any = null;
 
-        // Check stock availability in Supabase if products have tracked stock
+        const saleDedupKey = `${Number(payload.total_amount || payload.totalAmount || 0).toFixed(2)}::${(payload.items || []).map((i: any) => `${i.productId || i.product_id || i.id}_${i.quantity || 1}`).sort().join('|')}`;
+        if (syncedSalesInThisRun.has(saleDedupKey)) {
+          successfullySyncedIds.push(item.id);
+          result.syncedCount++;
+          continue;
+        }
+
+        // Verify stock against cloud database with exact column names (has_stock_limit, stock_quantity)
         if (payload.items && Array.isArray(payload.items)) {
           for (const lineItem of payload.items) {
-            const pId = lineItem.productId || lineItem.product_id;
+            const pId = lineItem.productId || lineItem.product_id || lineItem.id;
             if (pId) {
               const { data: cloudProd } = await supabase
                 .from('products')
-                .select('id, name, stock')
+                .select('id, product_name, has_stock_limit, stock_quantity')
                 .eq('id', pId)
                 .maybeSingle();
 
-              if (cloudProd && typeof cloudProd.stock === 'number') {
-                if (cloudProd.stock < lineItem.quantity) {
+              if (cloudProd && cloudProd.has_stock_limit) {
+                const reqQty = Number(lineItem.quantity || 1);
+                const currentStock = Number(cloudProd.stock_quantity ?? 0);
+
+                if (currentStock < reqQty) {
+                  // Find recent cloud sales in this session that consumed this product's stock
+                  let matchedCloudSale: any = null;
+                  try {
+                    const { data: cloudSales } = await supabase
+                      .from('sales')
+                      .select('*')
+                      .is('deleted_at', null)
+                      .neq('is_quarantined', true)
+                      .order('created_at', { ascending: false })
+                      .limit(10);
+
+                    if (cloudSales) {
+                      matchedCloudSale = cloudSales.find((cs: any) => {
+                        if (cs.items && Array.isArray(cs.items)) {
+                          return cs.items.some(
+                            (ci: any) =>
+                              (ci.productId || ci.product_id || ci.id) === pId
+                          );
+                        }
+                        return false;
+                      });
+                    }
+
+                    // Auto-resolve identical sale collision: deduplicate and keep existing cloud sale
+                    if (matchedCloudSale && areSalesIdentical(matchedCloudSale, payload)) {
+                      successfullySyncedIds.push(item.id);
+                      result.syncedCount++;
+                      hasStockConflict = false;
+                      break;
+                    }
+
+                    // Quarantine conflicting cloud sale so NEITHER sale proceeds until admin reviews
+                    if (matchedCloudSale) {
+                      await supabase
+                        .from('sales')
+                        .update({
+                          is_quarantined: true,
+                          quarantine_reason: `Stock collision with offline sale (${item.id})`,
+                        })
+                        .eq('id', matchedCloudSale.id);
+                    }
+                  } catch (quarantineErr) {
+                    console.warn('Failed to quarantine cloud sale:', quarantineErr);
+                  }
+
                   hasStockConflict = true;
                   conflictCloudStock = {
                     productId: pId,
-                    product_name: cloudProd.name,
-                    current_stock: cloudProd.stock,
-                    requested: lineItem.quantity,
+                    product_name: cloudProd.product_name,
+                    current_stock: currentStock,
+                    requested: reqQty,
+                    conflicting_sale_id: matchedCloudSale?.id || null,
+                    conflicting_sale_name: matchedCloudSale?.product_name || cloudProd.product_name,
+                    conflicting_sale_amount: matchedCloudSale?.total_amount || 0,
+                    conflicting_sale_cashier: matchedCloudSale?.processed_by || 'Other Register',
+                    conflicting_sale_time: matchedCloudSale?.created_at || null,
                   };
+
+                  // Publish conflict to cloud database so all admins can inspect & resolve it
+                  try {
+                    await supabase.from('sync_conflicts').insert([
+                      {
+                        conflict_type: 'sale_stock_collision',
+                        product_id: pId,
+                        product_name: cloudProd.product_name,
+                        status: 'pending',
+                        first_transaction: {
+                          id: matchedCloudSale?.id || null,
+                          cashier: matchedCloudSale?.processed_by || 'SUPERADMIN',
+                          product_name: matchedCloudSale?.product_name || cloudProd.product_name,
+                          quantity: matchedCloudSale?.items?.[0]?.quantity || 1,
+                          total_amount: matchedCloudSale?.total_amount || 0,
+                          created_at: matchedCloudSale?.created_at || new Date().toISOString(),
+                          items: matchedCloudSale?.items || [],
+                        },
+                        second_transaction: {
+                          vault_id: item.id,
+                          cashier: item.userName || 'Offline Register',
+                          product_name: payload.product_name || cloudProd.product_name,
+                          quantity: reqQty,
+                          total_amount: payload.total_amount || 0,
+                          created_at: item.createdAt,
+                          payload,
+                        },
+                      },
+                    ]);
+                  } catch (broadcastErr) {
+                    console.warn('Failed to broadcast sync conflict to cloud:', broadcastErr);
+                  }
                   break;
                 }
               }
             }
           }
-        } else if (payload.product_id) {
+        } else if (payload.product_id || payload.productId) {
+          const pId = payload.product_id || payload.productId;
           const { data: cloudProd } = await supabase
             .from('products')
-            .select('id, name, stock')
-            .eq('id', payload.product_id)
+            .select('id, product_name, has_stock_limit, stock_quantity')
+            .eq('id', pId)
             .maybeSingle();
 
-          if (cloudProd && typeof cloudProd.stock === 'number') {
+          if (cloudProd && cloudProd.has_stock_limit) {
             const reqQty = Number(payload.quantity || 1);
-            if (cloudProd.stock < reqQty) {
-              hasStockConflict = true;
-              conflictCloudStock = {
-                productId: payload.product_id,
-                product_name: cloudProd.name,
-                current_stock: cloudProd.stock,
-                requested: reqQty,
-              };
+            const currentStock = Number(cloudProd.stock_quantity ?? 0);
+
+            if (currentStock < reqQty) {
+              let matchedCloudSale: any = null;
+              try {
+                const { data: cloudSales } = await supabase
+                  .from('sales')
+                  .select('*')
+                  .is('deleted_at', null)
+                  .neq('is_quarantined', true)
+                  .order('created_at', { ascending: false })
+                  .limit(10);
+
+                if (cloudSales) {
+                  matchedCloudSale = cloudSales.find((cs: any) => {
+                    if (cs.items && Array.isArray(cs.items)) {
+                      return cs.items.some(
+                        (ci: any) =>
+                          (ci.productId || ci.product_id || ci.id) === pId
+                      );
+                    }
+                    return false;
+                  });
+                }
+
+                // Auto-resolve identical sale collision: deduplicate and keep existing cloud sale
+                if (matchedCloudSale && areSalesIdentical(matchedCloudSale, payload)) {
+                  successfullySyncedIds.push(item.id);
+                  result.syncedCount++;
+                  hasStockConflict = false;
+                } else {
+                  hasStockConflict = true;
+                  if (matchedCloudSale) {
+                    await supabase
+                      .from('sales')
+                      .update({
+                        is_quarantined: true,
+                        quarantine_reason: `Stock collision with offline sale (${item.id})`,
+                      })
+                      .eq('id', matchedCloudSale.id);
+                  }
+                  conflictCloudStock = {
+                    productId: pId,
+                    product_name: cloudProd.product_name,
+                    current_stock: currentStock,
+                    requested: reqQty,
+                    conflicting_sale_id: matchedCloudSale?.id || null,
+                    conflicting_sale_name: matchedCloudSale?.product_name || cloudProd.product_name,
+                    conflicting_sale_amount: matchedCloudSale?.total_amount || 0,
+                    conflicting_sale_cashier: matchedCloudSale?.processed_by || 'Other Register',
+                    conflicting_sale_time: matchedCloudSale?.created_at || null,
+                  };
+                }
+              } catch (quarantineErr) {
+                console.warn('Failed to quarantine cloud sale:', quarantineErr);
+              }
             }
           }
         }
@@ -142,13 +679,14 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           ...payload,
           cash_session_id: activeSessionId,
           created_at: payload.created_at || item.createdAt,
+          is_quarantined: false,
         };
-        // Remove client-only fields
         delete (saleRecord as any).sync_status;
 
         const { error: insertErr } = await supabase.from('sales').insert([saleRecord]);
         if (insertErr) throw insertErr;
 
+        syncedSalesInThisRun.add(saleDedupKey);
         successfullySyncedIds.push(item.id);
         result.syncedCount++;
         continue;
@@ -158,27 +696,95 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       if (item.type === 'attendance') {
         const payload = item.payload;
 
-        // Check for duplicate attendance on the same calendar day
+        const attDedupKey = `${(payload.customer_name || '').trim().toLowerCase()}::${(payload.member_id || '').trim().toLowerCase()}::${(payload.plan_name || '').trim().toLowerCase()}::${Number(payload.entry_fee || 0).toFixed(2)}`;
+
+        // Deduplicate multiple identical records in the same sync batch
+        if (syncedAttendanceInThisRun.has(attDedupKey)) {
+          successfullySyncedIds.push(item.id);
+          result.syncedCount++;
+          continue;
+        }
+
         const txDate = (payload.check_in_time || item.createdAt).substring(0, 10);
         let duplicateCheck = null;
 
         if (payload.customer_name) {
-          const { data: existing } = await supabase
+          const { data: existingRows } = await supabase
             .from('attendance')
-            .select('id, customer_name, check_in_time, plan_name')
-            .eq('customer_name', payload.customer_name.trim())
+            .select('id, customer_name, check_in_time, plan_name, entry_fee, staff_name, member_id, cash_session_id')
+            .ilike('customer_name', payload.customer_name.trim())
             .gte('check_in_time', `${txDate}T00:00:00.000Z`)
             .lte('check_in_time', `${txDate}T23:59:59.999Z`)
             .is('deleted_at', null)
-            .limit(1)
-            .maybeSingle();
+            .limit(5);
 
-          duplicateCheck = existing;
+          if (existingRows && existingRows.length > 0) {
+            const identicalMatch = existingRows.find((row: any) => {
+              const sameName = (row.customer_name || '').trim().toLowerCase() === (payload.customer_name || '').trim().toLowerCase();
+              const sameFee = Math.abs(Number(row.entry_fee || 0) - Number(payload.entry_fee || 0)) < 0.01;
+              const samePlan = (row.plan_name || '').trim().toLowerCase() === (payload.plan_name || '').trim().toLowerCase();
+              const sameMember = (!row.member_id && !payload.member_id) || (row.member_id === payload.member_id);
+              return sameName && sameFee && samePlan && sameMember;
+            });
+
+            if (identicalMatch) {
+              syncedAttendanceInThisRun.add(attDedupKey);
+              successfullySyncedIds.push(item.id);
+              result.syncedCount++;
+              continue;
+            }
+
+            duplicateCheck = existingRows[0];
+          }
         }
 
         if (duplicateCheck) {
-          await markPendingConflict(item.id, 'duplicate_attendance', duplicateCheck);
+          const conflictData = {
+            id: duplicateCheck.id,
+            customer_name: duplicateCheck.customer_name,
+            member_id: duplicateCheck.member_id,
+            plan_name: duplicateCheck.plan_name,
+            entry_fee: duplicateCheck.entry_fee ?? 0,
+            staff_name: duplicateCheck.staff_name || 'Counter Staff',
+            check_in_time: duplicateCheck.check_in_time,
+            cash_session_id: duplicateCheck.cash_session_id || activeSessionId,
+          };
+
+          await markPendingConflict(item.id, 'duplicate_attendance', conflictData);
           result.conflictCount++;
+
+          try {
+            await supabase.from('sync_conflicts').insert([
+              {
+                conflict_type: 'duplicate_attendance',
+                product_name: payload.customer_name || 'Member Attendance',
+                status: 'pending',
+                first_transaction: {
+                  id: duplicateCheck.id,
+                  cashier: duplicateCheck.staff_name || 'SUPERADMIN',
+                  customer_name: duplicateCheck.customer_name,
+                  member_id: duplicateCheck.member_id,
+                  plan_name: duplicateCheck.plan_name || 'Daily Check-in',
+                  entry_fee: Number(duplicateCheck.entry_fee || 0),
+                  created_at: duplicateCheck.check_in_time,
+                  cash_session_id: duplicateCheck.cash_session_id || activeSessionId,
+                },
+                second_transaction: {
+                  vault_id: item.id,
+                  cashier: item.userName || 'Offline Register',
+                  customer_name: payload.customer_name,
+                  member_id: payload.member_id,
+                  plan_name: payload.plan_name || 'Daily Check-in',
+                  entry_fee: Number(payload.entry_fee || 0),
+                  created_at: payload.check_in_time || item.createdAt,
+                  cash_session_id: activeSessionId,
+                  payload,
+                },
+              },
+            ]);
+          } catch (broadcastErr) {
+            console.warn('Failed to broadcast attendance conflict to cloud:', broadcastErr);
+          }
           continue;
         }
 
@@ -195,6 +801,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           .insert([attendanceRecord]);
         if (attInsertErr) throw attInsertErr;
 
+        syncedAttendanceInThisRun.add(attDedupKey);
         successfullySyncedIds.push(item.id);
         result.syncedCount++;
         continue;
@@ -318,6 +925,55 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         continue;
       }
 
+      // ─── D2. MANUAL CASH DRAWER TRANSACTIONS (CASH IN / CASH OUT / DIGITAL IN) ───
+      if (item.type === 'cash_transaction') {
+        const payload = item.payload;
+        const txRecord = {
+          session_id: activeSessionId || payload.session_id,
+          type: payload.type,
+          amount: Number(payload.amount || 0),
+          reason: payload.reason || 'Manual Movement',
+          reference_number: payload.reference_number || null,
+          performed_by: payload.performed_by || item.userId || null,
+          performed_by_name: payload.performed_by_name || item.userName || 'Staff',
+          created_at: payload.created_at || item.createdAt,
+        };
+
+        const { data: insertedTx, error: txInsertErr } = await supabase
+          .from('cash_transactions')
+          .insert([txRecord])
+          .select()
+          .maybeSingle();
+
+        if (txInsertErr) throw txInsertErr;
+
+        try {
+          const actionLabel =
+            payload.type === 'cash_in'
+              ? 'CASH_IN'
+              : payload.type === 'cash_out'
+              ? 'CASH_OUT'
+              : 'DIGITAL_CASH_IN';
+
+          await supabase.from('audit_logs').insert([
+            {
+              action: actionLabel,
+              details: `Synced offline ${String(payload.type).toUpperCase()}: ₱${Number(payload.amount || 0).toFixed(2)} Reason: ${payload.reason}${
+                payload.reference_number ? ` (Ref: ${payload.reference_number})` : ''
+              } by ${item.userName}.`,
+              target_id: insertedTx?.id || null,
+              performed_by: item.userId || null,
+            },
+          ]);
+        } catch (auditErr) {
+          console.warn('Audit log for synced cash transaction failed:', auditErr);
+        }
+
+        successfullySyncedIds.push(item.id);
+        result.syncedCount++;
+        continue;
+      }
+
       // ─── E. PRODUCT CREATION ───
       if (item.type === 'product_create') {
         const payload = { ...item.payload };
@@ -423,51 +1079,164 @@ export async function executeOfflineSync(): Promise<SyncResult> {
  */
 export async function resolveConflictAction(
   id: string,
-  action: 'keep_offline' | 'keep_cloud' | 'drop_both'
+  action: 'keep_first' | 'keep_second' | 'drop_both' | 'keep_cloud' | 'keep_offline'
 ): Promise<void> {
+  const normalizedAction =
+    action === 'keep_cloud' ? 'keep_first' : action === 'keep_offline' ? 'keep_second' : action;
+
+  const auth = useAuthStore.getState();
+  const currentUserName = auth.profile?.username || auth.user?.email || 'Admin';
+
+  // 1. Check if resolving via cloud sync_conflicts record
+  let cloudConflict: any = null;
+  try {
+    const { data } = await supabase
+      .from('sync_conflicts')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    cloudConflict = data;
+  } catch (err) {
+    console.warn('Could not read cloud conflict:', err);
+  }
+
   const pending = await getDecryptedPendingTransactions();
-  const target = pending.find((p) => p.id === id);
+  const target = pending.find(
+    (p) => p.id === id || p.id === cloudConflict?.second_transaction?.vault_id
+  );
 
-  if (!target) {
-    await purgeTransactionsByIds([id]);
-    return;
-  }
+  const isAttendanceConflict =
+    cloudConflict?.conflict_type === 'duplicate_attendance' ||
+    target?.type === 'attendance' ||
+    target?.conflictReason === 'duplicate_attendance';
 
-  if (action === 'drop_both' || action === 'keep_cloud') {
-    // Drop offline transaction from vault
-    await purgeTransactionsByIds([id]);
-    toast.info('Offline transaction discarded.');
-    window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
-    return;
-  }
+  const firstRecordId =
+    cloudConflict?.first_transaction?.id ||
+    target?.conflictCloudData?.conflicting_sale_id ||
+    target?.conflictCloudData?.id;
+  const secondPayload =
+    cloudConflict?.second_transaction?.payload || target?.payload;
+  const targetVaultId = target?.id || cloudConflict?.second_transaction?.vault_id;
 
-  if (action === 'keep_offline') {
-    // Force insert into Supabase
+  if (normalizedAction === 'drop_both') {
     try {
-      const activeSession = useCashSessionStore.getState().activeSession;
-      const sessionId = activeSession?.id || target.cashSessionId;
-
-      if (target.type === 'sale') {
-        const saleRecord = {
-          ...target.payload,
-          cash_session_id: sessionId,
-        };
-        delete (saleRecord as any).sync_status;
-        await supabase.from('sales').insert([saleRecord]);
-      } else if (target.type === 'attendance') {
-        const attRecord = {
-          ...target.payload,
-          cash_session_id: sessionId,
-        };
-        delete (attRecord as any).sync_status;
-        await supabase.from('attendance').insert([attRecord]);
+      if (firstRecordId) {
+        const targetTable = isAttendanceConflict ? 'attendance' : 'sales';
+        await supabase
+          .from(targetTable)
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', firstRecordId);
       }
-
-      await purgeTransactionsByIds([id]);
-      toast.success('Offline record synchronized to database.');
+      if (cloudConflict) {
+        await supabase
+          .from('sync_conflicts')
+          .update({
+            status: 'resolved',
+            resolution: 'drop_both',
+            resolved_by_name: currentUserName,
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', cloudConflict.id);
+      }
+      if (targetVaultId) {
+        await purgeTransactionsByIds([targetVaultId]);
+      }
+      toast.info('Both conflicting transactions dropped.');
       window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
     } catch (err: any) {
-      toast.error(`Failed to force sync: ${err.message}`);
+      toast.error(`Failed to drop transactions: ${err.message}`);
+    }
+    return;
+  }
+
+  if (normalizedAction === 'keep_first') {
+    try {
+      if (firstRecordId && !isAttendanceConflict) {
+        const { error: unquarantineErr } = await supabase
+          .from('sales')
+          .update({
+            is_quarantined: false,
+            quarantine_reason: null,
+          })
+          .eq('id', firstRecordId);
+
+        if (unquarantineErr) throw unquarantineErr;
+      }
+      if (cloudConflict) {
+        await supabase
+          .from('sync_conflicts')
+          .update({
+            status: 'resolved',
+            resolution: 'keep_first',
+            resolved_by_name: currentUserName,
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', cloudConflict.id);
+      }
+      if (targetVaultId) {
+        await purgeTransactionsByIds([targetVaultId]);
+      }
+      toast.success('Approved 1st transaction. 2nd transaction dropped.');
+      window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+    } catch (err: any) {
+      toast.error(`Failed to approve 1st transaction: ${err.message}`);
+    }
+    return;
+  }
+
+  if (normalizedAction === 'keep_second') {
+    try {
+      const activeSession = useCashSessionStore.getState().activeSession;
+      const sessionId = activeSession?.id || target?.cashSessionId;
+
+      if (firstRecordId) {
+        const targetTable = isAttendanceConflict ? 'attendance' : 'sales';
+        await supabase
+          .from(targetTable)
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', firstRecordId);
+      }
+
+      if (secondPayload) {
+        if (isAttendanceConflict) {
+          const attRecord = {
+            ...secondPayload,
+            cash_session_id: sessionId,
+          };
+          delete (attRecord as any).sync_status;
+          const { error: attErr } = await supabase.from('attendance').insert([attRecord]);
+          if (attErr) throw attErr;
+        } else {
+          const saleRecord = {
+            ...secondPayload,
+            cash_session_id: sessionId,
+            is_quarantined: false,
+          };
+          delete (saleRecord as any).sync_status;
+          const { error: insertErr } = await supabase.from('sales').insert([saleRecord]);
+          if (insertErr) throw insertErr;
+        }
+      }
+
+      if (cloudConflict) {
+        await supabase
+          .from('sync_conflicts')
+          .update({
+            status: 'resolved',
+            resolution: 'keep_second',
+            resolved_by_name: currentUserName,
+            resolved_at: new Date().toISOString(),
+          })
+          .eq('id', cloudConflict.id);
+      }
+
+      if (targetVaultId) {
+        await purgeTransactionsByIds([targetVaultId]);
+      }
+      toast.success('Approved 2nd transaction. 1st transaction dropped.');
+      window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+    } catch (err: any) {
+      toast.error(`Failed to approve 2nd transaction: ${err.message}`);
     }
   }
 }
