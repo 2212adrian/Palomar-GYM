@@ -17,6 +17,21 @@ export interface ChangelogEntry {
  * v1.0.0 official production milestone release.
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
+   {
+    version: '1.0.4',
+    date: '2026-11-08',
+    summary:
+      'Database backup error resolution, cash session restoration safeguards, and enhanced restore confirmation workflow.',
+    sections: [
+      {
+        type: 'Database backup Error of null value',
+        items: [
+          'A problem appeared during backup phase indicating null value in column of "in_quarantined" of relation "sales" voilates not-null constraint. This was caused by a recent schema migration that added the "in_quarantined" column to the "sales" table, but did not provide a default value for existing records. The backup process attempted to insert a null value into this column, resulting in the error.',
+          'Added cash session state check before allowing database restoration. If a cash session is currently open, the restore button will be disabled and a warning message will be displayed to the user.'
+        ],
+      }
+    ],
+  },
   {
     version: '1.0.3',
     date: '2026-11-07',

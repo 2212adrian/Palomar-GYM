@@ -136,6 +136,24 @@ export const useBackupSafetyStore = create<BackupSafetyState>((set, get) => ({
         safetyJson = JSON.parse(await fileBlob.text());
       }
 
+      if (safetyJson && typeof safetyJson === 'object') {
+        Object.keys(safetyJson).forEach((tableKey) => {
+          const rows = safetyJson[tableKey];
+          if (Array.isArray(rows)) {
+            safetyJson[tableKey] = rows.map((row: any) => {
+              if (row && typeof row === 'object') {
+                const cleanRow = { ...row };
+                if (cleanRow.is_quarantined === undefined || cleanRow.is_quarantined === null) {
+                  cleanRow.is_quarantined = false;
+                }
+                return cleanRow;
+              }
+              return row;
+            });
+          }
+        });
+      }
+
       const { error: restoreError } = await supabase.rpc(
         'restore_database_from_payload',
         { backup_payload: safetyJson }

@@ -655,6 +655,12 @@ export const DatabaseBackup: React.FC = () => {
   }, [isRestoreModalOpen]);
 
   const handleCreateBackup = async () => {
+    if (activeSession) {
+      toast.error(
+        'Cannot create a database backup while a cash session is active. Please close the cash drawer first.'
+      );
+      return;
+    }
     try {
       setIsCreating(true);
       const customNoteText = backupNotes.trim() || 'Manual recovery point';
@@ -833,12 +839,25 @@ export const DatabaseBackup: React.FC = () => {
   };
 
   const handleRestoreClick = (backup: BackupItem) => {
+    if (activeSession) {
+      toast.error(
+        'Cannot proceed with system restoration while a cash session is open. Please close the active cash session first.'
+      );
+      return;
+    }
     setRestoreTarget(backup);
     setIsRestoreModalOpen(true);
   };
 
   const handleConfirmRestore = async () => {
     if (!restoreTarget) return;
+
+    if (activeSession) {
+      toast.error(
+        'Cannot proceed with system restoration while a cash session is open. Please close the active cash session first.'
+      );
+      return;
+    }
 
     if (hasPassword && !verifyPassword.trim()) {
       toast.error('Please enter your password to authorize this action.');
@@ -881,7 +900,25 @@ export const DatabaseBackup: React.FC = () => {
       );
       if (dumpErr) throw dumpErr;
 
-       const safetyFilename = `safety_${Date.now()}.json`;
+      if (currentDump && typeof currentDump === 'object') {
+        Object.keys(currentDump).forEach((tableKey) => {
+          const rows = currentDump[tableKey];
+          if (Array.isArray(rows)) {
+            currentDump[tableKey] = rows.map((row: any) => {
+              if (row && typeof row === 'object') {
+                const cleanRow = { ...row };
+                if (cleanRow.is_quarantined === undefined || cleanRow.is_quarantined === null) {
+                  cleanRow.is_quarantined = false;
+                }
+                return cleanRow;
+              }
+              return row;
+            });
+          }
+        });
+      }
+
+      const safetyFilename = `safety_${Date.now()}.json`;
       const safetyBlob = new Blob([JSON.stringify(currentDump, null, 2)], {
         type: 'application/json',
       });
@@ -941,6 +978,24 @@ export const DatabaseBackup: React.FC = () => {
           );
         }
         backupJson = JSON.parse(await fileBlob.text());
+      }
+
+      if (backupJson && typeof backupJson === 'object') {
+        Object.keys(backupJson).forEach((tableKey) => {
+          const rows = backupJson[tableKey];
+          if (Array.isArray(rows)) {
+            backupJson[tableKey] = rows.map((row: any) => {
+              if (row && typeof row === 'object') {
+                const cleanRow = { ...row };
+                if (cleanRow.is_quarantined === undefined || cleanRow.is_quarantined === null) {
+                  cleanRow.is_quarantined = false;
+                }
+                return cleanRow;
+              }
+              return row;
+            });
+          }
+        });
       }
 
       toast.info('Restoring database snapshot...');
@@ -1399,8 +1454,13 @@ export const DatabaseBackup: React.FC = () => {
 
           {/* Exposed Restore Button */}
           <button
-            disabled={!!safetyBackupPoint}
+            disabled={!!safetyBackupPoint || !!activeSession}
             onClick={() => handleRestoreClick(b)}
+            title={
+              activeSession
+                ? 'Cannot restore while a cash session is open'
+                : undefined
+            }
             className="px-3 py-1.5 bg-(--color-primary)/10 hover:bg-(--color-primary) text-(--color-primary) dark:text-(--color-primary-light) hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-(--color-primary)/20 disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
           >
             RESTORE
@@ -1423,6 +1483,23 @@ export const DatabaseBackup: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8 font-body text-(--color-text) rounded-3xl pb-28 sm:pb-16">
+      {/* ACTIVE CASH SESSION NOTICE BANNER */}
+      {activeSession && (
+        <div className="p-4 sm:p-5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-2xl flex items-start gap-3.5 shadow-sm text-left">
+          <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-600 dark:text-amber-500 border border-amber-500/20 shrink-0">
+            <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-heading tracking-wide text-amber-700 dark:text-amber-400 font-bold uppercase">
+              Active Cash Session Detected
+            </h4>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+              A cash session is currently open. You must close the active cash drawer session before performing database backups or system restorations.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* POST-RESTORE SYSTEM VERIFICATION CARD */}
       {safetyBackupPoint && (
         <div className="p-4 sm:p-5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-slide-up shadow-lg">
@@ -1516,8 +1593,22 @@ export const DatabaseBackup: React.FC = () => {
 
           <div className="hidden sm:flex items-center gap-3">
             <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10"
+              disabled={!!activeSession}
+              onClick={() => {
+                if (activeSession) {
+                  toast.error(
+                    'Please close the active cash session before saving a backup.'
+                  );
+                  return;
+                }
+                setIsCreateModalOpen(true);
+              }}
+              title={
+                activeSession
+                  ? 'Close the active cash session before saving a backup'
+                  : undefined
+              }
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               SAVE TODAY'S BACKUP
@@ -1858,8 +1949,13 @@ export const DatabaseBackup: React.FC = () => {
 
                     <button
                       type="button"
-                      disabled={!!safetyBackupPoint}
+                      disabled={!!safetyBackupPoint || !!activeSession}
                       onClick={() => handleRestoreClick(b)}
+                      title={
+                        activeSession
+                          ? 'Cannot restore while a cash session is open'
+                          : undefined
+                      }
                       className="flex-1 py-1.5 px-3 bg-(--color-primary) hover:opacity-90 text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold disabled:opacity-30 disabled:cursor-not-allowed shadow-xs text-center"
                     >
                       RESTORE
@@ -2400,8 +2496,17 @@ export const DatabaseBackup: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(true)}
-                className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer"
+                disabled={!!activeSession}
+                onClick={() => {
+                  if (activeSession) {
+                    toast.error(
+                      'Please close the active cash session before saving a backup.'
+                    );
+                    return;
+                  }
+                  setIsCreateModalOpen(true);
+                }}
+                className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <PlusCircle className="w-4 h-4 shrink-0" />
                 <span>SAVE BACKUP</span>
@@ -2493,6 +2598,15 @@ export const DatabaseBackup: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {activeSession && (
+              <div className="p-3.5 bg-amber-500/10 dark:bg-amber-500/5 border border-amber-500/30 rounded-xl flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <span className="font-semibold leading-relaxed">
+                  An active cash session is currently open. You must close the active cash session in Cash Management before restoring any database backup.
+                </span>
+              </div>
+            )}
 
             <div className="space-y-2">
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-normal font-semibold">
@@ -2593,6 +2707,7 @@ export const DatabaseBackup: React.FC = () => {
                 disabled={
                   countdown > 0 ||
                   isRestoring ||
+                  !!activeSession ||
                   (hasPassword
                     ? !verifyPassword.trim()
                     : restoreConfirmText.trim().toUpperCase() !== 'CONFIRM RESTORE')
@@ -2600,6 +2715,8 @@ export const DatabaseBackup: React.FC = () => {
                 loadingLabel="RESTORING SYSTEM..."
                 className={`w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors ${
                   countdown > 0 ||
+                  isRestoring ||
+                  !!activeSession ||
                   (hasPassword
                     ? !verifyPassword.trim()
                     : restoreConfirmText.trim().toUpperCase() !== 'CONFIRM RESTORE')
