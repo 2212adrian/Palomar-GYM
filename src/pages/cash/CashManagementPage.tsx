@@ -17,12 +17,18 @@ import {
   ChevronLeft,
   ChevronRight,
   WifiOff,
+  Check,
+  X,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
-import { openCashSession } from '../../lib/supabase/cashService';
+import {
+  openCashSession,
+  approveCashTransaction,
+  rejectCashTransaction,
+} from '../../lib/supabase/cashService';
 import { CashMetricsCards } from './components/CashMetricsCards';
 import { CashTransactionsTable } from './components/CashTransactionsTable';
 import { CashTransactionModal } from './components/CashTransactionModal';
@@ -30,6 +36,7 @@ import {
   CloseSessionModal,
   SessionDetailsModal,
 } from './components/CashSessionModals';
+import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Table, type Column } from '../../components/ui/Table';
 import type { CashSession, CashTransactionType } from '../../types/cash';
@@ -89,8 +96,74 @@ export const CashManagementPage: React.FC = () => {
   // View Tab state: Admin toggles between ledger and history; Staff only sees ledger
   const [activeCashTab, setActiveCashTab] = useState<'ledger' | 'history'>('ledger');
 
-  // Mobile history card pagination state
+   // Mobile history card pagination state
   const [mobileHistoryPage, setMobileHistoryPage] = useState(1);
+
+  // Pending Cash Out Approvals state
+  const [rejectingTxId, setRejectingTxId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isProcessingApproval, setIsProcessingApproval] = useState(false);
+
+  // Derived pending transactions awaiting admin action
+  const pendingApprovals = useMemo(() => {
+    return transactions.filter(
+      (t) => t.source === 'manual' && t.status === 'pending' && !t.is_voided
+    );
+  }, [transactions]);
+
+  const handleApproveCashOut = async (txId: string) => {
+    try {
+      setIsProcessingApproval(true);
+      const adminName =
+        profile?.username ||
+        user?.user_metadata?.full_name ||
+        user?.email ||
+        'Admin';
+
+      await approveCashTransaction({
+        transactionId: txId,
+        adminId: user?.id || null,
+        adminName,
+      });
+
+      toast.success('Cash request approved. Drawer balance updated.');
+      await refreshTransactions();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to approve cash transaction.');
+    } finally {
+      setIsProcessingApproval(false);
+    }
+  };
+
+  const handleRejectCashOut = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingTxId) return;
+
+    try {
+      setIsProcessingApproval(true);
+      const adminName =
+        profile?.username ||
+        user?.user_metadata?.full_name ||
+        user?.email ||
+        'Admin';
+
+      await rejectCashTransaction({
+        transactionId: rejectingTxId,
+        reason: rejectReason.trim() || 'Declined by Administrator',
+        adminId: user?.id || null,
+        adminName,
+      });
+
+      toast.info('Cash request rejected.');
+      setRejectingTxId(null);
+      setRejectReason('');
+      await refreshTransactions();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to reject cash transaction.');
+    } finally {
+      setIsProcessingApproval(false);
+    }
+  };
 
   useEffect(() => {
     loadActiveSession();
@@ -429,26 +502,184 @@ export const CashManagementPage: React.FC = () => {
                     toast.error('Session closure forbidden while offline. Internet connection required.');
                     return;
                   }
+                  if (pendingApprovals.length > 0) {
+                    toast.error(
+                      `Cannot close cash session: There ${
+                        pendingApprovals.length === 1 ? 'is' : 'are'
+                      } ${pendingApprovals.length} pending cash request${
+                        pendingApprovals.length === 1 ? '' : 's'
+                      } that must be approved or rejected first.`
+                    );
+                    return;
+                  }
                   setShowCloseModal(true);
                 }}
                 disabled={isOffline}
-                title={isOffline ? 'Internet connection required to close cash session' : 'Close Session'}
+                title={
+                  isOffline
+                    ? 'Internet connection required to close cash session'
+                    : pendingApprovals.length > 0
+                    ? `Resolve ${pendingApprovals.length} pending cash out request(s) before closing`
+                    : 'Close Session'
+                }
                 className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all duration-150 ${
                   isOffline
                     ? 'bg-slate-300 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60'
+                    : pendingApprovals.length > 0
+                    ? 'bg-amber-600 hover:bg-amber-700 active:scale-95 text-white cursor-pointer'
                     : 'bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] active:scale-95 text-white cursor-pointer'
                 }`}
               >
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 Close Session
+                {pendingApprovals.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white text-amber-700 text-[10px] font-black leading-none">
+                    {pendingApprovals.length}
+                  </span>
+                )}
               </button>
             )}
           </div>
         )}
       </div>
 
+      {/* PENDING CASH APPROVALS BANNER (Admin Only - Supports Cash In & Cash Out) */}
+      {isAdmin && pendingApprovals.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 space-y-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+              <h3 className="text-xs sm:text-sm font-heading font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                PENDING CASH APPROVALS ({pendingApprovals.length})
+              </h3>
+            </div>
+            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/15 px-2.5 py-0.5 rounded-full">
+              Action Required
+            </span>
+          </div>
+
+          <div className="space-y-2.5">
+            {pendingApprovals.map((tx) => {
+              const isCashIn = tx.type === 'cash_in';
+              return (
+                <div
+                  key={tx.id}
+                  className="p-3.5 rounded-xl bg-white dark:bg-[#12151c] border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          isCashIn
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                        }`}
+                      >
+                        {isCashIn ? 'CASH IN REQUEST' : 'CASH OUT REQUEST'}
+                      </span>
+                      <span
+                        className={`font-mono font-black text-sm sm:text-base ${
+                          isCashIn
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {isCashIn ? '+' : '-'}₱
+                        {Number(tx.amount).toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        Requested by <strong className="text-slate-900 dark:text-white">{tx.performed_by_name}</strong>
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        at {format(new Date(tx.created_at), 'h:mm a')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Purpose: <span className="font-semibold text-slate-800 dark:text-slate-200">{tx.reason}</span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isProcessingApproval}
+                      onClick={() => {
+                        setRejectingTxId(tx.id);
+                        setRejectReason('');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isProcessingApproval}
+                      onClick={() => handleApproveCashOut(tx.id)}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Approve {isCashIn ? 'Cash In' : 'Cash Out'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* REJECT CASH REQUEST REASON MODAL */}
+      {rejectingTxId && (
+        <Modal
+          isOpen={Boolean(rejectingTxId)}
+          onClose={() => setRejectingTxId(null)}
+          title="REJECT CASH REQUEST"
+          className="w-full max-w-sm mx-auto my-auto p-5 text-left"
+        >
+          <form onSubmit={handleRejectCashOut} className="space-y-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Please state why this cash request is being rejected. This note will be recorded in the system audit logs.
+            </p>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                Rejection Note
+              </label>
+              <textarea
+                rows={2}
+                placeholder="e.g. Unverified receipt, wrong amount, customer payment should be in Logbook..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500 resize-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRejectingTxId(null)}
+                className="flex-1 py-2 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={isProcessingApproval}
+                className="flex-1 py-2 text-xs !bg-rose-600 hover:!bg-rose-700 !text-white"
+              >
+                Reject Request
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {/* View Switcher Tabs: Admin toggles between Ledger and History; Staff only sees Ledger */}
       {isAdmin && (
+
         <div className="flex items-center gap-1.5 p-1 bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 rounded-2xl w-fit shadow-xs">
           <button
             type="button"
@@ -507,8 +738,8 @@ export const CashManagementPage: React.FC = () => {
                 <CashTransactionsTable
                   transactions={transactions}
                   isLoading={isLoading}
-                />
-              </div>
+                  onRefresh={refreshTransactions}
+                />              </div>
             </div>
           ) : (
             /* Closed State */
@@ -863,6 +1094,7 @@ export const CashManagementPage: React.FC = () => {
           onClose={() => setShowCloseModal(false)}
           session={activeSession}
           metrics={metrics}
+          pendingApprovalsCount={pendingApprovals.length}
           onSuccess={async () => {
             useCashSessionStore.getState().setSessionClosed();
             await loadActiveSession();

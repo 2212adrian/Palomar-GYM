@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- MIGRATION: 20260915120000_create_cash_management_system.sql
--- DESCRIPTION: Live Cash Drawer Management & Reconciliation System.
+-- DESCRIPTION: Live Cash Drawer Management, Reconciliation, Approvals & Void System.
 -- NOTE: Sessions NEVER auto-close based on time. A session stays active 
 --       indefinitely until manually reconciled and closed by an administrator.
 -- ==============================================================================
@@ -84,20 +84,55 @@ CREATE TABLE IF NOT EXISTS public.cash_transactions (
   reference_number TEXT DEFAULT NULL,
   performed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   performed_by_name TEXT NOT NULL DEFAULT 'Staff',
+  status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'approved', 'rejected', 'completed')),
+  approved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  approved_by_name TEXT DEFAULT NULL,
+  approved_at TIMESTAMPTZ DEFAULT NULL,
+  rejection_reason TEXT DEFAULT NULL,
+  is_voided BOOLEAN NOT NULL DEFAULT false,
+  voided_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  voided_by_name TEXT DEFAULT NULL,
+  voided_at TIMESTAMPTZ DEFAULT NULL,
+  void_reason TEXT DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 
--- Ensure category column allows NULL or defaults to 'General' if table previously existed
+-- Ensure backwards-compatibility columns exist if table already exists
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_schema = 'public' 
-      AND table_name = 'cash_transactions' 
-      AND column_name = 'category'
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_name = 'cash_transactions'
   ) THEN
-    ALTER TABLE public.cash_transactions ALTER COLUMN category DROP NOT NULL;
-    ALTER TABLE public.cash_transactions ALTER COLUMN category SET DEFAULT 'General';
+    ALTER TABLE public.cash_transactions
+      ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed',
+      ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS approved_by_name TEXT DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS rejection_reason TEXT DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS is_voided BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS voided_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS voided_by_name TEXT DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS void_reason TEXT DEFAULT NULL;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conname = 'cash_transactions_status_check'
+    ) THEN
+      ALTER TABLE public.cash_transactions
+        ADD CONSTRAINT cash_transactions_status_check
+        CHECK (status IN ('pending', 'approved', 'rejected', 'completed'));
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+        AND table_name = 'cash_transactions' 
+        AND column_name = 'category'
+    ) THEN
+      ALTER TABLE public.cash_transactions ALTER COLUMN category DROP NOT NULL;
+      ALTER TABLE public.cash_transactions ALTER COLUMN category SET DEFAULT 'General';
+    END IF;
   END IF;
 END $$;
 
@@ -107,6 +142,9 @@ CREATE INDEX IF NOT EXISTS idx_cash_sessions_opened_at ON public.cash_sessions(o
 CREATE INDEX IF NOT EXISTS idx_cash_sessions_closed_at ON public.cash_sessions(closed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cash_transactions_session_id ON public.cash_transactions(session_id);
 CREATE INDEX IF NOT EXISTS idx_cash_transactions_created_at ON public.cash_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_status ON public.cash_transactions(status) WHERE is_voided = false;
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_session_status ON public.cash_transactions(session_id, status);
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_voided ON public.cash_transactions(is_voided);
 
 -- 7. Enable Row Level Security (RLS)
 ALTER TABLE public.cash_sessions ENABLE ROW LEVEL SECURITY;
@@ -132,7 +170,7 @@ AS $$
   );
 $$;
 
--- 9. Atomic Safe RPC Functions (Bypasses silent RLS deadlocks while enforcing strict authorization)
+-- 9. Atomic Safe RPC Functions
 CREATE OR REPLACE FUNCTION public.open_cash_session_safe(
   p_opening_float NUMERIC,
   p_notes TEXT DEFAULT NULL,
@@ -239,7 +277,159 @@ BEGIN
 END;
 $$;
 
--- 10. Drop ALL existing policies for idempotent execution
+-- 10. Approval & Void RPC Functions
+CREATE OR REPLACE FUNCTION public.approve_cash_transaction(
+  p_transaction_id UUID,
+  p_admin_id UUID DEFAULT NULL,
+  p_admin_name TEXT DEFAULT 'Admin'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_tx RECORD;
+  v_admin_id UUID;
+BEGIN
+  v_admin_id := COALESCE(p_admin_id, auth.uid());
+
+  SELECT * INTO v_tx
+  FROM public.cash_transactions
+  WHERE id = p_transaction_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Transaction with ID % not found.', p_transaction_id;
+  END IF;
+
+  IF v_tx.is_voided THEN
+    RAISE EXCEPTION 'Cannot approve a transaction that has been voided.';
+  END IF;
+
+  IF v_tx.status <> 'pending' THEN
+    RAISE EXCEPTION 'Transaction is not in pending status (current status: %).', v_tx.status;
+  END IF;
+
+  UPDATE public.cash_transactions
+  SET
+    status = 'approved',
+    approved_by = v_admin_id,
+    approved_by_name = COALESCE(p_admin_name, 'Admin'),
+    approved_at = timezone('utc', now())
+  WHERE id = p_transaction_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'id', p_transaction_id,
+    'status', 'approved',
+    'approved_by_name', COALESCE(p_admin_name, 'Admin')
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reject_cash_transaction(
+  p_transaction_id UUID,
+  p_admin_id UUID DEFAULT NULL,
+  p_admin_name TEXT DEFAULT 'Admin',
+  p_reason TEXT DEFAULT 'Declined by Administrator'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_tx RECORD;
+  v_admin_id UUID;
+BEGIN
+  v_admin_id := COALESCE(p_admin_id, auth.uid());
+
+  SELECT * INTO v_tx
+  FROM public.cash_transactions
+  WHERE id = p_transaction_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Transaction with ID % not found.', p_transaction_id;
+  END IF;
+
+  IF v_tx.status <> 'pending' THEN
+    RAISE EXCEPTION 'Transaction is not in pending status (current status: %).', v_tx.status;
+  END IF;
+
+  UPDATE public.cash_transactions
+  SET
+    status = 'rejected',
+    approved_by = v_admin_id,
+    approved_by_name = COALESCE(p_admin_name, 'Admin'),
+    approved_at = timezone('utc', now()),
+    rejection_reason = TRIM(COALESCE(p_reason, 'Declined by Administrator'))
+  WHERE id = p_transaction_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'id', p_transaction_id,
+    'status', 'rejected',
+    'reason', TRIM(COALESCE(p_reason, 'Declined by Administrator'))
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.void_cash_transaction(
+  p_transaction_id UUID,
+  p_admin_id UUID DEFAULT NULL,
+  p_admin_name TEXT DEFAULT 'Admin',
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_tx RECORD;
+  v_admin_id UUID;
+BEGIN
+  IF p_reason IS NULL OR LENGTH(TRIM(p_reason)) < 5 THEN
+    RAISE EXCEPTION 'A specific reason of at least 5 characters is required to void a cash transaction.';
+  END IF;
+
+  v_admin_id := COALESCE(p_admin_id, auth.uid());
+
+  SELECT * INTO v_tx
+  FROM public.cash_transactions
+  WHERE id = p_transaction_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Transaction with ID % not found.', p_transaction_id;
+  END IF;
+
+  IF v_tx.is_voided THEN
+    RAISE EXCEPTION 'This transaction has already been voided.';
+  END IF;
+
+  UPDATE public.cash_transactions
+  SET
+    is_voided = true,
+    voided_by = v_admin_id,
+    voided_by_name = COALESCE(p_admin_name, 'Admin'),
+    voided_at = timezone('utc', now()),
+    void_reason = TRIM(p_reason)
+  WHERE id = p_transaction_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'id', p_transaction_id,
+    'is_voided', true,
+    'void_reason', TRIM(p_reason),
+    'voided_by_name', COALESCE(p_admin_name, 'Admin')
+  );
+END;
+$$;
+
+-- 11. Drop ALL existing policies for idempotent execution
 DROP POLICY IF EXISTS "Anyone authenticated can view cash sessions" ON public.cash_sessions;
 DROP POLICY IF EXISTS "Admins can open cash sessions" ON public.cash_sessions;
 DROP POLICY IF EXISTS "Admins can update and close cash sessions" ON public.cash_sessions;
@@ -250,7 +440,7 @@ DROP POLICY IF EXISTS "Authenticated users can insert cash transactions into ope
 DROP POLICY IF EXISTS "Anyone authenticated can insert cash transactions" ON public.cash_transactions;
 DROP POLICY IF EXISTS "Admins can manage cash transactions" ON public.cash_transactions;
 
--- 11. RLS Policies for cash_sessions
+-- 12. RLS Policies for cash_sessions
 CREATE POLICY "Anyone authenticated can view cash sessions"
   ON public.cash_sessions
   FOR SELECT
@@ -276,7 +466,7 @@ CREATE POLICY "Admins can delete cash sessions"
   TO authenticated
   USING (public.is_cash_admin());
 
--- 12. RLS Policies for cash_transactions
+-- 13. RLS Policies for cash_transactions
 CREATE POLICY "Anyone authenticated can view cash transactions"
   ON public.cash_transactions
   FOR SELECT
@@ -296,7 +486,7 @@ CREATE POLICY "Admins can manage cash transactions"
   USING (public.is_cash_admin())
   WITH CHECK (public.is_cash_admin());
 
--- 13. Role Grants & RPC Function Permissions
+-- 14. Role Grants & RPC Function Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_sessions TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_transactions TO authenticated;
 
@@ -304,8 +494,11 @@ GRANT EXECUTE ON FUNCTION public.is_cash_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.generate_cash_session_number() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.open_cash_session_safe(NUMERIC, TEXT, UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.close_cash_session_safe(UUID, NUMERIC, NUMERIC, NUMERIC, TEXT, JSONB, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_cash_transaction(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reject_cash_transaction(UUID, UUID, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.void_cash_transaction(UUID, UUID, TEXT, TEXT) TO authenticated;
 
--- 14. Register all relevant revenue tables in Supabase Realtime Publication
+-- 15. Register all relevant revenue tables in Supabase Realtime Publication
 DO $$
 BEGIN
   IF NOT EXISTS (

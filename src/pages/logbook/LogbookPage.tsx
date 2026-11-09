@@ -25,6 +25,9 @@ import {
   Trash2,
   Lock,
   RefreshCw,
+  Clock,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 import {
   motion,
@@ -489,20 +492,27 @@ export const LogbookPage: React.FC = () => {
 
       const planStr = (log.categoryOrPlan || '').toLowerCase();
       const typeStr = (log.customerType || '').toLowerCase();
+
+      const isEntryOrCheckIn =
+        planStr.includes('entry') ||
+        planStr.includes('check-in') ||
+        planStr.includes('checkin') ||
+        planStr.includes('daily') ||
+        planStr.includes('walk-in') ||
+        planStr.includes('guest');
+
       const isSub =
         Boolean(log.isSubscription) ||
-        log.customerType === 'New Membership' ||
-        log.customerType === 'Membership Renewal' ||
-        typeStr.includes('renewal') ||
-        typeStr.includes('subscription') ||
-        planStr.includes('renewal') ||
-        planStr.includes('monthly') ||
-        planStr.includes('yearly') ||
-        planStr.includes('annual') ||
-        (planStr.includes('membership') &&
-          !planStr.includes('daily') &&
-          !planStr.includes('walk-in') &&
-          !planStr.includes('guest'));
+        (!isEntryOrCheckIn &&
+          (log.customerType === 'New Membership' ||
+            log.customerType === 'Membership Renewal' ||
+            typeStr.includes('renewal') ||
+            typeStr.includes('subscription') ||
+            planStr.includes('renewal') ||
+            planStr.includes('monthly') ||
+            planStr.includes('yearly') ||
+            planStr.includes('annual') ||
+            planStr.includes('membership')));
 
       // Subscriptions and renewals cannot be deleted as log records; they can only be voided via Member Subscriptions
       if (isSub) {
@@ -539,20 +549,27 @@ export const LogbookPage: React.FC = () => {
     (log: LogRecord) => {
       const planStr = (log.categoryOrPlan || '').toLowerCase();
       const typeStr = (log.customerType || '').toLowerCase();
+
+      const isEntryOrCheckIn =
+        planStr.includes('entry') ||
+        planStr.includes('check-in') ||
+        planStr.includes('checkin') ||
+        planStr.includes('daily') ||
+        planStr.includes('walk-in') ||
+        planStr.includes('guest');
+
       const isSub =
         Boolean(log.isSubscription) ||
-        log.customerType === 'New Membership' ||
-        log.customerType === 'Membership Renewal' ||
-        typeStr.includes('renewal') ||
-        typeStr.includes('subscription') ||
-        planStr.includes('renewal') ||
-        planStr.includes('monthly') ||
-        planStr.includes('yearly') ||
-        planStr.includes('annual') ||
-        (planStr.includes('membership') &&
-          !planStr.includes('daily') &&
-          !planStr.includes('walk-in') &&
-          !planStr.includes('guest'));
+        (!isEntryOrCheckIn &&
+          (log.customerType === 'New Membership' ||
+            log.customerType === 'Membership Renewal' ||
+            typeStr.includes('renewal') ||
+            typeStr.includes('subscription') ||
+            planStr.includes('renewal') ||
+            planStr.includes('monthly') ||
+            planStr.includes('yearly') ||
+            planStr.includes('annual') ||
+            planStr.includes('membership')));
 
       if (isSub) {
         return 'Monthly and yearly subscriptions and renewals cannot be deleted from the logbook. They can only be voided within 24 hours in Member Subscriptions.';
@@ -615,6 +632,26 @@ export const LogbookPage: React.FC = () => {
   const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
     useState<boolean>(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState<boolean>(false);
+
+  const [viewMode, setViewMode] = useState<'timeline' | 'compact' | 'grid'>(
+    () => {
+      try {
+        return (
+          (localStorage.getItem('palomar_logbook_view_mode') as any) ||
+          'timeline'
+        );
+      } catch {
+        return 'timeline';
+      }
+    }
+  );
+
+  const handleViewModeChange = (mode: 'timeline' | 'compact' | 'grid') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('palomar_logbook_view_mode', mode);
+    } catch {}
+  };
 
   useEffect(() => {
     setHasAttemptedEmptyRefresh(false);
@@ -2916,7 +2953,7 @@ export const LogbookPage: React.FC = () => {
                   }
                 });
 
-               const renderTimelineCard = (
+                const renderTimelineCard = (
                   log: LogRecord,
                   isClosedSession: boolean = false
                 ) => {
@@ -2984,11 +3021,12 @@ export const LogbookPage: React.FC = () => {
                               opacity: { duration: isDeleting ? 0.38 : 0.2 },
                             }
                       }
-                      className="rounded-2xl transition-all overflow-hidden"
+                      className="rounded-2xl transition-all overflow-hidden h-full"
                     >
                       <TimelineCard
                         mode="attendance"
                         data={log}
+                        viewMode={viewMode}
                         canDelete={isLogDeletable(log) && !isDeleting}
                         canPrint={!isStaffReadOnlyClosed}
                         printDisabledReason={
@@ -3037,44 +3075,187 @@ export const LogbookPage: React.FC = () => {
                 return (
                   <div className="space-y-6">
                     {/* 1. ONGOING / UNGROUPED CARDS (ACTIVE SESSION) */}
-                    {ongoingHourlyGroups.map((group) => (
-                      <div
-                        key={group.label}
-                        className="space-y-4 font-body animate-fade-in"
-                      >
+                    {viewMode === 'timeline' ? (
+                      ongoingHourlyGroups.map((group, groupIdx) => (
+                        <div
+                          key={group.label}
+                          className="space-y-4 font-body animate-fade-in"
+                        >
+                          <div className="flex items-center gap-3 select-none pt-2">
+                            <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
+                              {group.label}
+                            </div>
+                            <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                            {groupIdx === 0 && (
+                              <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleViewModeChange('timeline')
+                                  }
+                                  title="Timeline View"
+                                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                    viewMode === 'timeline'
+                                      ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                  }`}
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleViewModeChange('compact')
+                                  }
+                                  title="Compact List View"
+                                  className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                                >
+                                  <List className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewModeChange('grid')}
+                                  title="Grid View"
+                                  className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                                >
+                                  <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2.5">
+                            <VirtualWindowList
+                              items={group.records}
+                              estimateItemHeight={85}
+                              overscan={3}
+                              mobileOnly={true}
+                              getItemKey={(record) => String(record.id)}
+                              renderItem={(record) =>
+                                renderTimelineCard(record, false)
+                              }
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : ongoingLogs.length > 0 ? (
+                      <div className="space-y-4 font-body animate-fade-in">
                         <div className="flex items-center gap-3 select-none pt-2">
                           <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
-                            {group.label}
+                            ACTIVE CHECK-INS ({ongoingLogs.length})
                           </div>
                           <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                          <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('timeline')}
+                              title="Timeline View"
+                              className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('compact')}
+                              title="Compact List View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'compact'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <List className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('grid')}
+                              title="Grid View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'grid'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="space-y-2.5">
-                          <VirtualWindowList
-                            items={group.records}
-                            estimateItemHeight={85}
-                            overscan={3}
-                            mobileOnly={true}
-                            getItemKey={(record) => String(record.id)}
-                            renderItem={(record) => renderTimelineCard(record, false)}
-                          />
-                        </div>
+                        {viewMode === 'grid' ? (
+                          <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+                            {ongoingLogs.map((record) =>
+                              renderTimelineCard(record, false)
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <VirtualWindowList
+                              items={ongoingLogs}
+                              estimateItemHeight={60}
+                              overscan={3}
+                              mobileOnly={true}
+                              getItemKey={(record) => String(record.id)}
+                              renderItem={(record) =>
+                                renderTimelineCard(record, false)
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    ) : null}
 
                     {/* ─── SEPARATOR: ACTIVE VS ENDED SESSIONS ─── */}
-                    {ongoingHourlyGroups.length > 0 &&
-                      closedSessionGroups.length > 0 && (
-                        <div className="flex items-center gap-3 pt-3 select-none">
-                          <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
-                            <Lock className="w-3 h-3 text-blue-500" />
-                            <span>
-                              CLOSED SESSIONS ({closedSessionGroups.length})
-                            </span>
-                          </div>
-                          <div className="h-px flex-1 bg-gradient-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                    {closedSessionGroups.length > 0 && (
+                      <div className="flex items-center gap-3 pt-3 select-none">
+                        <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
+                          <Lock className="w-3 h-3 text-blue-500" />
+                          <span>
+                            CLOSED SESSIONS ({closedSessionGroups.length})
+                          </span>
                         </div>
-                      )}
+                        <div className="h-px flex-1 bg-gradient-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                        {ongoingHourlyGroups.length === 0 && (
+                          <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('timeline')}
+                              title="Timeline View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'timeline'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('compact')}
+                              title="Compact List View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'compact'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <List className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('grid')}
+                              title="Grid View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'grid'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* 2. CONTAINED CLOSED SESSION ACCORDIONS (DEFAULT COLLAPSED, BLUE) */}
                     {closedSessionGroups.map((group) => {
@@ -3093,14 +3274,34 @@ export const LogbookPage: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.records.length}
                         >
-                          <VirtualWindowList
-                            items={group.records}
-                            estimateItemHeight={85}
-                            overscan={3}
-                            mobileOnly={true}
-                            getItemKey={(record) => String(record.id)}
-                            renderItem={(record) => renderTimelineCard(record, true)}
-                          />
+                          <div
+                            className={
+                              viewMode === 'grid'
+                                ? 'grid grid-cols-2 gap-2 sm:gap-2.5'
+                                : viewMode === 'compact'
+                                  ? 'space-y-1.5'
+                                  : 'space-y-2.5'
+                            }
+                          >
+                            {viewMode === 'grid' ? (
+                              group.records.map((record) =>
+                                renderTimelineCard(record, true)
+                              )
+                            ) : (
+                              <VirtualWindowList
+                                items={group.records}
+                                estimateItemHeight={
+                                  viewMode === 'compact' ? 60 : 85
+                                }
+                                overscan={3}
+                                mobileOnly={true}
+                                getItemKey={(record) => String(record.id)}
+                                renderItem={(record) =>
+                                  renderTimelineCard(record, true)
+                                }
+                              />
+                            )}
+                          </div>
                         </ClosedSessionGroup>
                       );
                     })}

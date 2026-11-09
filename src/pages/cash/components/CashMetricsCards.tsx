@@ -21,7 +21,7 @@ export const CashMetricsCards: React.FC<CashMetricsCardsProps> = ({
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3.5 font-body">
-      {/* 1. Hero Card: Live Drawer Cash (Spans 2 columns on mobile, 1 on desktop) */}
+      {/* 1. Hero Card: Live Drawer Cash */}
       <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[105px] sm:min-h-[115px] transition-all hover:shadow-lg">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-black uppercase tracking-wider text-white/80">
@@ -111,11 +111,11 @@ export const CashMetricsCards: React.FC<CashMetricsCardsProps> = ({
         <div className="mt-2">
           <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 truncate">
             <span className="text-emerald-600 dark:text-emerald-400">
-              +₱{Math.round(metrics.cashInTotal)}
+              +₱{Number(metrics.cashInTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
             <span className="text-slate-300 dark:text-slate-600">/</span>
             <span className="text-rose-600 dark:text-rose-400">
-              -₱{Math.round(metrics.cashOutTotal)}
+              -₱{Number(metrics.cashOutTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
           </div>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">

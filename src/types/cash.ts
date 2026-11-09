@@ -1,8 +1,8 @@
-// src/types/cash.ts
-
 export type CashSessionStatus = 'open' | 'closed';
 
 export type CashTransactionType = 'cash_in' | 'cash_out' | 'digital_in';
+
+export type CashTransactionStatus = 'pending' | 'approved' | 'rejected' | 'completed';
 
 export interface DenominationCounts {
   bill_1000: number;
@@ -73,6 +73,16 @@ export interface CashTransaction {
   reference_number?: string | null;
   performed_by: string | null;
   performed_by_name: string;
+  status: CashTransactionStatus;
+  approved_by?: string | null;
+  approved_by_name?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+  is_voided: boolean;
+  voided_by?: string | null;
+  voided_by_name?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
   created_at: string;
 }
 

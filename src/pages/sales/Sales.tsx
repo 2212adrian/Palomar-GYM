@@ -27,6 +27,9 @@ import {
   Lock,
   RefreshCw,
   Boxes,
+  Clock,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -393,6 +396,26 @@ export const Sales: React.FC = () => {
   const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
     useState(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
+
+  const [viewMode, setViewMode] = useState<'timeline' | 'compact' | 'grid'>(
+    () => {
+      try {
+        return (
+          (localStorage.getItem('palomar_sales_view_mode') as any) ||
+          'timeline'
+        );
+      } catch {
+        return 'timeline';
+      }
+    }
+  );
+
+  const handleViewModeChange = (mode: 'timeline' | 'compact' | 'grid') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('palomar_sales_view_mode', mode);
+    } catch {}
+  };
 
   useEffect(() => {
     setHasAttemptedEmptyRefresh(false);
@@ -1989,9 +2012,10 @@ export const Sales: React.FC = () => {
                       }
                       className="rounded-2xl transition-all overflow-hidden"
                     >
-                      <TimelineCard
+                       <TimelineCard
                         mode="sale"
                         data={tx}
+                        viewMode={viewMode}
                         canDelete={isTransactionDeletable(tx) && !isDeleting}
                         canPrint={!isStaffReadOnlyClosed}
                         printDisabledReason={
@@ -2021,43 +2045,182 @@ export const Sales: React.FC = () => {
                 return (
                   <div className="space-y-6">
                     {/* 1. ONGOING / LIVE TRANSACTIONS */}
-                    {ongoingHourlyGroups.map((group) => (
-                      <div key={group.label} className="space-y-4">
+                    {viewMode === 'timeline' ? (
+                      ongoingHourlyGroups.map((group, groupIdx) => (
+                        <div key={group.label} className="space-y-4">
+                          <div className="flex items-center gap-3 select-none pt-2">
+                            <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
+                              {group.label}
+                            </div>
+                            <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                            {groupIdx === 0 && (
+                              <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleViewModeChange('timeline')
+                                  }
+                                  title="Timeline View"
+                                  className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                    viewMode === 'timeline'
+                                      ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                  }`}
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleViewModeChange('compact')
+                                  }
+                                  title="Compact List View"
+                                  className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                                >
+                                  <List className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewModeChange('grid')}
+                                  title="Grid View"
+                                  className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                                >
+                                  <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-2.5">
+                            <VirtualWindowList
+                              items={group.txs}
+                              estimateItemHeight={85}
+                              overscan={3}
+                              mobileOnly={true}
+                              getItemKey={(tx) => tx.id}
+                              renderItem={(tx) => renderTimelineCard(tx, false)}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : ongoingTransactions.length > 0 ? (
+                      <div className="space-y-4">
                         <div className="flex items-center gap-3 select-none pt-2">
                           <div className="text-[9px] font-heading font-black tracking-widest text-slate-700 bg-slate-200 border border-slate-300 dark:text-white dark:bg-slate-800/90 dark:border-slate-600 px-3 py-1 rounded-full uppercase shrink-0">
-                            {group.label}
+                            ACTIVE SALES ({ongoingTransactions.length})
                           </div>
                           <div className="h-px flex-1 bg-linear-to-r from-(--border-color) to-transparent" />
+                          <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('timeline')}
+                              title="Timeline View"
+                              className="p-1.5 rounded-lg transition-all cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('compact')}
+                              title="Compact List View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'compact'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <List className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('grid')}
+                              title="Grid View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'grid'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="space-y-2.5">
-                          <VirtualWindowList
-                            items={group.txs}
-                            estimateItemHeight={85}
-                            overscan={3}
-                            mobileOnly={true}
-                            getItemKey={(tx) => tx.id}
-                            renderItem={(tx) => renderTimelineCard(tx, false)}
-                          />
-                        </div>
+                        {viewMode === 'grid' ? (
+                          <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+                            {ongoingTransactions.map((tx) =>
+                              renderTimelineCard(tx, false)
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <VirtualWindowList
+                              items={ongoingTransactions}
+                              estimateItemHeight={60}
+                              overscan={3}
+                              mobileOnly={true}
+                              getItemKey={(tx) => tx.id}
+                              renderItem={(tx) => renderTimelineCard(tx, false)}
+                            />
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    ) : null}
 
                     {/* SEPARATOR: ACTIVE VS ENDED SESSIONS */}
-                    {ongoingHourlyGroups.length > 0 &&
-                      closedSessionGroups.length > 0 && (
-                        <div className="flex items-center gap-3 pt-3 select-none">
-                          <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
-                            <Lock className="w-3 h-3 text-blue-500" />
-                            <span>
-                              CLOSED SESSIONS ({closedSessionGroups.length})
-                            </span>
-                          </div>
-                          <div className="h-px flex-1 bg-linear-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                    {closedSessionGroups.length > 0 && (
+                      <div className="flex items-center gap-3 pt-3 select-none">
+                        <div className="text-[9px] font-heading font-black tracking-widest text-blue-700 bg-blue-100 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/80 dark:border-blue-800/60 px-3 py-1 rounded-full uppercase shrink-0 flex items-center gap-1.5 shadow-xs">
+                          <Lock className="w-3 h-3 text-blue-500" />
+                          <span>
+                            CLOSED SESSIONS ({closedSessionGroups.length})
+                          </span>
                         </div>
-                      )}
+                        <div className="h-px flex-1 bg-linear-to-r from-blue-300/80 dark:from-blue-800/60 to-transparent" />
+                        {ongoingHourlyGroups.length === 0 && (
+                          <div className="flex items-center p-0.5 rounded-xl bg-slate-100/90 dark:bg-zinc-800/90 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 select-none">
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('timeline')}
+                              title="Timeline View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'timeline'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('compact')}
+                              title="Compact List View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'compact'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <List className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewModeChange('grid')}
+                              title="Grid View"
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                viewMode === 'grid'
+                                  ? 'bg-white dark:bg-zinc-700 text-[#123c73] dark:text-white shadow-xs'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <LayoutGrid className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-                    {/* 2. ENDED SESSION GROUPS */}
+{/* 2. ENDED SESSION GROUPS */}
                     {closedSessionGroups.map((group) => {
                       const totalRev = group.txs.reduce(
                         (sum, t) => sum + (Number(t.total_amount) || 0),
@@ -2072,14 +2235,32 @@ export const Sales: React.FC = () => {
                           totalRevenue={totalRev}
                           itemCount={group.txs.length}
                         >
-                          <VirtualWindowList
-                            items={group.txs}
-                            estimateItemHeight={85}
-                            overscan={3}
-                            mobileOnly={true}
-                            getItemKey={(tx) => tx.id}
-                            renderItem={(tx) => renderTimelineCard(tx, true)}
-                          />
+                          <div
+                            className={
+                              viewMode === 'grid'
+                                ? 'grid grid-cols-2 gap-2 sm:gap-2.5'
+                                : viewMode === 'compact'
+                                  ? 'space-y-1.5'
+                                  : 'space-y-2.5'
+                            }
+                          >
+                            {viewMode === 'grid' ? (
+                              group.txs.map((tx) =>
+                                renderTimelineCard(tx, true)
+                              )
+                            ) : (
+                              <VirtualWindowList
+                                items={group.txs}
+                                estimateItemHeight={
+                                  viewMode === 'compact' ? 60 : 85
+                                }
+                                overscan={3}
+                                mobileOnly={true}
+                                getItemKey={(tx) => tx.id}
+                                renderItem={(tx) => renderTimelineCard(tx, true)}
+                              />
+                            )}
+                          </div>
                         </ClosedSessionGroup>
                       );
                     })}

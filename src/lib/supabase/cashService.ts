@@ -1,4 +1,3 @@
-// src/lib/supabase/cashService.ts
 import { supabase } from './client';
 import { logAudit } from './audit';
 import { getServerNow, getServerISOString } from '../serverTime';
@@ -7,6 +6,7 @@ import type {
   CashSession,
   CashTransaction,
   CashTransactionType,
+  CashTransactionStatus,
   DenominationCounts,
 } from '../../types/cash';
 
@@ -178,6 +178,9 @@ export async function recordCashTransaction(params: {
   referenceNumber?: string;
   performedBy?: string | null;
   performedByName?: string;
+  status?: CashTransactionStatus;
+  approvedBy?: string | null;
+  approvedByName?: string | null;
 }): Promise<CashTransaction> {
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
@@ -191,6 +194,8 @@ export async function recordCashTransaction(params: {
     } catch (_) {}
   }
 
+  const txStatus: CashTransactionStatus = params.status || 'completed';
+
   const payload: any = {
     session_id: params.sessionId,
     type: params.type,
@@ -199,6 +204,11 @@ export async function recordCashTransaction(params: {
     reference_number: params.referenceNumber?.trim() || null,
     performed_by: userId,
     performed_by_name: params.performedByName || 'Staff',
+    status: txStatus,
+    approved_by: params.approvedBy || null,
+    approved_by_name: params.approvedByName || null,
+    approved_at: params.approvedBy ? new Date().toISOString() : null,
+    is_voided: false,
   };
 
   if (isOffline) {
@@ -213,6 +223,11 @@ export async function recordCashTransaction(params: {
       reference_number: params.referenceNumber?.trim() || null,
       performed_by: userId || null,
       performed_by_name: params.performedByName || 'Staff',
+      status: txStatus,
+      approved_by: params.approvedBy || null,
+      approved_by_name: params.approvedByName || null,
+      approved_at: params.approvedBy ? nowIso : null,
+      is_voided: false,
       created_at: nowIso,
     };
 
@@ -242,7 +257,9 @@ export async function recordCashTransaction(params: {
 
   const tx = (data || payload) as CashTransaction;
   const actionLabel =
-    params.type === 'cash_in'
+    txStatus === 'pending'
+      ? 'CASH_OUT_REQUEST'
+      : params.type === 'cash_in'
       ? 'CASH_IN'
       : params.type === 'cash_out'
       ? 'CASH_OUT'
@@ -251,9 +268,9 @@ export async function recordCashTransaction(params: {
   try {
     await logAudit(
       actionLabel,
-      `Recorded ${params.type.toUpperCase()}: ₱${amountVal.toFixed(2)} Reason: ${params.reason}${
+      `${txStatus === 'pending' ? 'Requested' : 'Recorded'} ${params.type.toUpperCase()}: ₱${amountVal.toFixed(2)} Reason: ${params.reason}${
         params.referenceNumber ? ` (Ref: ${params.referenceNumber})` : ''
-      }.`,
+      }${txStatus === 'pending' ? ' [Awaiting Admin Approval]' : ''}.`,
       tx.id
     );
   } catch (auditErr) {
@@ -261,6 +278,185 @@ export async function recordCashTransaction(params: {
   }
 
   return tx;
+}
+
+/**
+ * Approves a pending cash transaction (Admin Only).
+ */
+export async function approveCashTransaction(params: {
+  transactionId: string;
+  adminId?: string | null;
+  adminName?: string;
+}): Promise<void> {
+  assertOnline();
+
+  // Try RPC first
+  try {
+    const { error: rpcError } = await supabase.rpc('approve_cash_transaction', {
+      p_transaction_id: params.transactionId,
+      p_admin_id: params.adminId || null,
+      p_admin_name: params.adminName || 'Admin',
+    });
+
+    if (!rpcError) {
+      await logAudit(
+        'CASH_OUT_APPROVED',
+        `Approved Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}.`,
+        params.transactionId
+      );
+      return;
+    }
+  } catch (rpcErr) {
+    console.warn('approve_cash_transaction RPC fallback:', rpcErr);
+  }
+
+  // Fallback direct update
+  const { error } = await supabase
+    .from('cash_transactions')
+    .update({
+      status: 'approved',
+      approved_by: params.adminId || null,
+      approved_by_name: params.adminName || 'Admin',
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', params.transactionId);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to approve cash transaction.');
+  }
+
+  await logAudit(
+    'CASH_OUT_APPROVED',
+    `Approved Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}.`,
+    params.transactionId
+  );
+}
+
+/**
+ * Rejects a pending cash transaction (Admin Only).
+ */
+export async function rejectCashTransaction(params: {
+  transactionId: string;
+  reason: string;
+  adminId?: string | null;
+  adminName?: string;
+}): Promise<void> {
+  assertOnline();
+
+  // Try RPC first
+  try {
+    const { error: rpcError } = await supabase.rpc('reject_cash_transaction', {
+      p_transaction_id: params.transactionId,
+      p_admin_id: params.adminId || null,
+      p_admin_name: params.adminName || 'Admin',
+      p_reason: params.reason.trim(),
+    });
+
+    if (!rpcError) {
+      await logAudit(
+        'CASH_OUT_REJECTED',
+        `Rejected Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
+        params.transactionId
+      );
+      return;
+    }
+  } catch (rpcErr) {
+    console.warn('reject_cash_transaction RPC fallback:', rpcErr);
+  }
+
+  // Fallback direct update
+  const { error } = await supabase
+    .from('cash_transactions')
+    .update({
+      status: 'rejected',
+      approved_by: params.adminId || null,
+      approved_by_name: params.adminName || 'Admin',
+      approved_at: new Date().toISOString(),
+      rejection_reason: params.reason.trim(),
+    })
+    .eq('id', params.transactionId);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to reject cash transaction.');
+  }
+
+  await logAudit(
+    'CASH_OUT_REJECTED',
+    `Rejected Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
+    params.transactionId
+  );
+}
+
+/**
+ * Voids an active transaction and reverts its impact on drawer calculations (Admin Only).
+ */
+export async function voidCashTransaction(params: {
+  transactionId: string;
+  reason: string;
+  adminId?: string | null;
+  adminName?: string;
+}): Promise<void> {
+  assertOnline();
+
+  if (!params.reason || params.reason.trim().length < 5) {
+    throw new Error('Please provide a specific reason of at least 5 characters for voiding.');
+  }
+
+  // Try RPC first
+  try {
+    const { error: rpcError } = await supabase.rpc('void_cash_transaction', {
+      p_transaction_id: params.transactionId,
+      p_admin_id: params.adminId || null,
+      p_admin_name: params.adminName || 'Admin',
+      p_reason: params.reason.trim(),
+    });
+
+    if (!rpcError) {
+      await logAudit(
+        'CASH_TRANSACTION_VOIDED',
+        `Voided cash transaction #${params.transactionId} by ${params.adminName || 'Admin'}. Reason: ${params.reason.trim()}`,
+        params.transactionId
+      );
+      return;
+    }
+  } catch (rpcErr) {
+    console.warn('void_cash_transaction RPC fallback:', rpcErr);
+  }
+
+  // Fallback direct update
+  const { error } = await supabase
+    .from('cash_transactions')
+    .update({
+      is_voided: true,
+      voided_by: params.adminId || null,
+      voided_by_name: params.adminName || 'Admin',
+      voided_at: new Date().toISOString(),
+      void_reason: params.reason.trim(),
+    })
+    .eq('id', params.transactionId);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to void cash transaction.');
+  }
+
+  await logAudit(
+    'CASH_TRANSACTION_VOIDED',
+    `Voided cash transaction #${params.transactionId} by ${params.adminName || 'Admin'}. Reason: ${params.reason.trim()}`,
+    params.transactionId
+  );
+}
+
+/**
+ * Verifies supervisor / admin credentials for on-duty overrides.
+ */
+export async function verifyAdminPassword(email: string, password: string): Promise<boolean> {
+  assertOnline();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  return !error && Boolean(data.user);
 }
 
 /**

@@ -1,5 +1,3 @@
-// src/constants/navigation.ts
-
 export interface NavChildItem {
   name: string;
   path: string;
@@ -16,7 +14,7 @@ export interface NavMenuItem {
   iconType: 'wallet' | 'shoppingBag' | 'usersLogbook' | 'dashboard' | 'reports';
   roles?: ('admin' | 'staff')[];
   path?: string;
-  notificationKey?: 'stockAlerts' | 'expiringSubs' | 'incidentUnread';
+  notificationKey?: 'stockAlerts' | 'expiringSubs' | 'incidentUnread' | 'pendingCashApprovals';
   children?: NavChildItem[];
 }
 
@@ -28,6 +26,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavMenuItem[] = [
     iconType: 'wallet',
     roles: ['admin', 'staff'],
     path: '/cash-management',
+    notificationKey: 'pendingCashApprovals',
   },
 
   // 2. SOURCES OF INCOME

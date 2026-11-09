@@ -1160,8 +1160,8 @@ export const subscriptionService = {
     const isRenewal = Boolean(activeSub);
     const customerType = isRenewal ? 'Existing Member' : 'New Membership';
     const itemDescription = isRenewal
-      ? `Renewal under ${planName} (Starts ${start.toLocaleDateString()})`
-      : `Subscribed under ${planName}`;
+      ? `Renewal ${planName} (Starts ${start.toLocaleDateString()})`
+      : `Subscribed ${planName}`;
 
     const subPayload = {
       member_id: m.member_id,

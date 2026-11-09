@@ -38,6 +38,92 @@ import type {
 } from '../types';
 import { formatPHP } from '../dashboardService';
 
+// Helper to format payment method and GCash reference
+const formatPaymentWithRef = (
+  paymentMethod: string | null | undefined,
+  refNo: string | null | undefined
+): string => {
+  const method = paymentMethod || 'Cash';
+  const isGcash = method.toLowerCase().includes('gcash');
+  if (isGcash && refNo && String(refNo).trim()) {
+    return `GCash (Ref: ${String(refNo).trim()})`;
+  }
+  return method;
+};
+
+// Helper to format denomination counts into a clean readable string
+const formatDenominations = (breakdown: any): string => {
+  if (!breakdown) return '-';
+  let data = breakdown;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return String(data).trim() || '-';
+    }
+  }
+  if (!data || typeof data !== 'object') return '-';
+
+  if (Array.isArray(data)) {
+    const parts = data
+      .map((item: any) => {
+        const denom = item.denomination ?? item.denom ?? item.value ?? item.bill;
+        const count = item.count ?? item.qty ?? item.quantity;
+        if (denom !== undefined && count !== undefined && Number(count) > 0) {
+          return `₱${denom}x${count}`;
+        }
+        return null;
+      })
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : '-';
+  }
+
+  const entries = Object.entries(data)
+    .map(([key, val]) => {
+      const numericKey = parseFloat(key.replace(/[^0-9.]/g, ''));
+      const count = Number(val);
+      return {
+        key,
+        denom: isNaN(numericKey) ? key : numericKey,
+        count: isNaN(count) ? 0 : count,
+      };
+    })
+    .filter((e) => e.count > 0)
+    .sort((a, b) =>
+      typeof b.denom === 'number' && typeof a.denom === 'number'
+        ? b.denom - a.denom
+        : 0
+    );
+
+  if (entries.length === 0) return '-';
+
+  return entries.map((e) => `₱${e.denom}x${e.count}`).join(', ');
+};
+
+// Extract closing or opening denomination breakdown from session record
+const getSessionDenominations = (s: any): string => {
+  const closing =
+    s.closing_breakdown ??
+    s.closing_denominations ??
+    s.counted_breakdown ??
+    s.denominations_breakdown ??
+    s.denominations ??
+    s.cash_breakdown;
+  if (closing) {
+    const formatted = formatDenominations(closing);
+    if (formatted !== '-') return formatted;
+  }
+  const opening =
+    s.opening_breakdown ??
+    s.opening_denominations ??
+    s.float_breakdown;
+  if (opening) {
+    const formatted = formatDenominations(opening);
+    if (formatted !== '-') return `Float: ${formatted}`;
+  }
+  return '-';
+};
+
 export type ReportCategoryType =
   | 'bir'
   | 'sales'
@@ -166,7 +252,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           `VAT (${vatPercentage}%) (₱)`,
           'Net Sales (₱)',
           'Payment Method',
-          'Status',
         ],
         filePrefix: 'BIR_Official_Tax_Register',
         icon: ShieldCheck,
@@ -192,9 +277,10 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Opened By',
           'Closed By',
           'Opening Float (₱)',
+          'Expected Cash (₱)',
           'Counted Cash (₱)',
           'Discrepancy (₱)',
-          'Status',
+          'Denomination Breakdown',
         ],
         filePrefix: 'Cash_Drawer_Reconciliations',
         icon: Wallet,
@@ -358,7 +444,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             net_sales: net,
             payment_method: s.payment_method || 'Cash',
             payment_ref: s.reference_number || s.payment_ref || undefined,
-            status: 'Valid',
           });
         });
 
@@ -379,7 +464,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               net_sales: net,
               payment_method: a.payment_method || 'Cash',
               payment_ref: a.gcash_ref_no || a.payment_ref || undefined,
-              status: 'Valid',
             });
           });
 
@@ -398,8 +482,12 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             vat_amount: vatAmt,
             net_sales: net,
             payment_method: sub.payment_method || 'Cash',
-            payment_ref: undefined,
-            status: 'Valid',
+            payment_ref:
+              sub.reference_number ||
+              sub.gcash_ref_no ||
+              sub.payment_ref ||
+              sub.payment_reference ||
+              undefined,
           });
         });
 
@@ -624,12 +712,19 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             total_fees: number;
             latest_checkin: string;
             payment_method: string;
+            gcash_ref_no: string;
           }
         >();
 
         rawList.forEach((a: any) => {
           const rawName = (a.customer_name || 'Walk-In Guest').trim();
           const key = rawName.toLowerCase();
+          const ref =
+            a.gcash_ref_no ||
+            a.payment_ref ||
+            a.reference_number ||
+            a.reference_no ||
+            '';
 
           if (!aggregatedMap.has(key)) {
             aggregatedMap.set(key, {
@@ -639,6 +734,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               total_fees: 0,
               latest_checkin: a.check_in_time,
               payment_method: a.payment_method || 'Cash',
+              gcash_ref_no: ref,
             });
           }
 
@@ -652,6 +748,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           ) {
             entry.latest_checkin = a.check_in_time;
             entry.payment_method = a.payment_method || entry.payment_method;
+            if (ref) {
+              entry.gcash_ref_no = ref;
+            }
           }
           if (
             a.customer_type === 'Existing Member' ||
@@ -933,21 +1032,39 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       csvContent += `Compliance Standard: ${selectedCategoryMeta.badge}\n\n`;
 
       if (reportType === 'bir') {
-        csvContent += `"Receipt / Ref #","Date / Time","Customer Name","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales (PHP)","VAT (${vatPercentage}%) (PHP)","Net Sales (PHP)","Payment Method","Status"\n`;
+        csvContent += `"Receipt / Ref #","Date / Time","Customer Name","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales (PHP)","VAT (${vatPercentage}%) (PHP)","Net Sales (PHP)","Payment Method"\n`;
         liveBirData.forEach((item) => {
-          csvContent += `"${item.receipt_no}","${item.date}","${item.customer_name}","${item.transaction_type}","${item.gross_sales.toFixed(2)}","${item.vat_exempt_sales.toFixed(2)}","${item.vat_amount.toFixed(2)}","${item.net_sales.toFixed(2)}","${item.payment_method}","${item.status}"\n`;
+          const payment = formatPaymentWithRef(
+            item.payment_method,
+            item.payment_ref
+          );
+          csvContent += `"${item.receipt_no}","${item.date}","${item.customer_name}","${item.transaction_type}","${item.gross_sales.toFixed(2)}","${item.vat_exempt_sales.toFixed(2)}","${item.vat_amount.toFixed(2)}","${item.net_sales.toFixed(2)}","${payment}"\n`;
         });
       } else if (reportType === 'cash') {
-        csvContent += `"Session #","Opened At","Closed At","Opened By","Closed By","Opening Float (PHP)","Counted Cash (PHP)","Discrepancy (PHP)","Status"\n`;
+        csvContent += `"Session #","Opened At","Closed At","Opened By","Closed By","Opening Float (PHP)","Expected Cash (PHP)","Counted Cash (PHP)","Discrepancy (PHP)","Denomination Breakdown"\n`;
         liveCashData.forEach((s) => {
-          const disc = Number(s.discrepancy || 0);
-          const discStr =
-            disc === 0
+          const isClosed = s.status === 'closed' || Boolean(s.closed_at);
+          const disc = s.discrepancy !== null && s.discrepancy !== undefined ? Number(s.discrepancy) : null;
+          const discStr = !isClosed
+            ? 'In Progress'
+            : disc === 0
               ? 'Balanced'
-              : disc > 0
+              : disc !== null && disc > 0
                 ? `+${disc.toFixed(2)}`
-                : `${disc.toFixed(2)}`;
-          csvContent += `"${s.session_number}","${s.opened_at || ''}","${s.closed_at || 'In Progress'}","${s.opened_by_name || '-'}","${s.closed_by_name || '-'}","${Number(s.opening_float || 0).toFixed(2)}","${Number(s.closing_actual_cash || 0).toFixed(2)}","${discStr}","${String(s.status || '').toUpperCase()}"\n`;
+                : disc !== null
+                  ? `${disc.toFixed(2)}`
+                  : '-';
+          const expectedStr =
+            s.closing_expected_cash !== null && s.closing_expected_cash !== undefined
+              ? Number(s.closing_expected_cash).toFixed(2)
+              : Number(s.opening_float || 0).toFixed(2);
+          const countedStr = !isClosed
+            ? 'In Progress'
+            : s.closing_actual_cash !== null && s.closing_actual_cash !== undefined
+              ? Number(s.closing_actual_cash).toFixed(2)
+              : '-';
+          const denoms = getSessionDenominations(s);
+          csvContent += `"${s.session_number}","${s.opened_at || ''}","${s.closed_at || 'In Progress'}","${s.opened_by_name || '-'}","${s.closed_by_name || '-'}","${Number(s.opening_float || 0).toFixed(2)}","${expectedStr}","${countedStr}","${discStr}","${denoms}"\n`;
         });
       } else if (reportType === 'sales') {
         csvContent += `"Barcode ID","Product Name","Unit Selling Price (PHP)","Units Sold","Gross Sales (PHP)","Current Stock"\n`;
@@ -957,7 +1074,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       } else if (reportType === 'attendance') {
         csvContent += `"Customer Name","Access Category","Total Visits (Qty)","Total Fees Paid (PHP)","Latest Check-In","Payment Method"\n`;
         liveAttendanceData.forEach((a: any) => {
-          csvContent += `"${a.customer_name}","${a.customer_type}","${a.visits_count}","${Number(a.total_fees || 0).toFixed(2)}","${a.latest_checkin}","${a.payment_method}"\n`;
+          const payment = formatPaymentWithRef(
+            a.payment_method,
+            a.gcash_ref_no
+          );
+          csvContent += `"${a.customer_name}","${a.customer_type}","${a.visits_count}","${Number(a.total_fees || 0).toFixed(2)}","${a.latest_checkin}","${payment}"\n`;
         });
       } else if (reportType === 'subscriptions') {
         csvContent += `"Contract ID","Member Name","Plan Name","Contract Price (PHP)","Start Date","End Date","Payment Method"\n`;
@@ -965,7 +1086,15 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           const cid =
             s.receipt_number ||
             (s.id ? `SUB-${String(s.id).slice(0, 6)}` : 'N/A');
-          csvContent += `"${cid}","${s.members?.full_name || 'Member'}","${s.plan_type ? s.plan_type.toUpperCase() : 'Standard Plan'}","${Number(s.price || 0).toFixed(2)}","${s.start_date || s.created_at}","${s.end_date || 'Ongoing'}","${s.payment_method || 'Cash'}"\n`;
+          const subRef =
+            s.reference_number ||
+            s.gcash_ref_no ||
+            s.payment_ref ||
+            s.payment_reference ||
+            s.reference_no ||
+            '';
+          const payment = formatPaymentWithRef(s.payment_method, subRef);
+          csvContent += `"${cid}","${s.members?.full_name || 'Member'}","${s.plan_type ? s.plan_type.toUpperCase() : 'Standard Plan'}","${Number(s.price || 0).toFixed(2)}","${s.start_date || s.created_at}","${s.end_date || 'Ongoing'}","${payment}"\n`;
         });
       } else {
         csvContent += `"Date","Sales (PHP)","Logbook (PHP)","Subscription (PHP)","Total Revenue (PHP)","Transaction Count"\n`;
@@ -1128,19 +1257,18 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         return false;
       };
 
-      // BIR PDF
+// BIR PDF
       if (reportType === 'bir') {
         const headers = [
           { label: 'OR / REF #', x: 30 },
-          { label: 'DATE & TIME', x: 130 },
-          { label: 'CUSTOMER NAME', x: 235 },
-          { label: 'TYPE', x: 375 },
-          { label: 'GROSS (PHP)', x: 460 },
-          { label: 'VAT-EXEMPT', x: 540 },
-          { label: `VAT (${vatPercentage}%)`, x: 615 },
-          { label: 'NET SALES', x: 685 },
-          { label: 'PAYMENT', x: 745 },
-          { label: 'STATUS', x: 790 },
+          { label: 'DATE & TIME', x: 115 },
+          { label: 'CUSTOMER NAME', x: 205 },
+          { label: 'TYPE', x: 335 },
+          { label: 'GROSS (PHP)', x: 420 },
+          { label: 'VAT-EXEMPT', x: 485 },
+          { label: `VAT (${vatPercentage}%)`, x: 550 },
+          { label: 'NET SALES', x: 605 },
+          { label: 'PAYMENT', x: 665 },
         ];
         drawTableHeaders(headers);
 
@@ -1155,6 +1283,10 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.97, 0.98, 0.99),
             });
           }
+          const payment = formatPaymentWithRef(
+            row.payment_method,
+            row.payment_ref
+          );
           page.drawText(String(row.receipt_no).slice(0, 15), {
             x: 30,
             y,
@@ -1163,67 +1295,60 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(String(row.date).slice(0, 16), {
-            x: 130,
+            x: 115,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(String(row.customer_name).slice(0, 22), {
-            x: 235,
+          page.drawText(String(row.customer_name).slice(0, 20), {
+            x: 205,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
           page.drawText(String(row.transaction_type).slice(0, 14), {
-            x: 375,
+            x: 335,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
           page.drawText(row.gross_sales.toFixed(2), {
-            x: 460,
+            x: 420,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(row.vat_exempt_sales.toFixed(2), {
-            x: 540,
+            x: 485,
             y,
             size: 6.5,
             font,
             color: rgb(0.4, 0.4, 0.4),
           });
           page.drawText(row.vat_amount.toFixed(2), {
-            x: 615,
+            x: 550,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
           page.drawText(row.net_sales.toFixed(2), {
-            x: 685,
+            x: 605,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(String(row.payment_method), {
-            x: 745,
+          page.drawText(safePdfText(payment), {
+            x: 665,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
-          });
-          page.drawText(String(row.status), {
-            x: 790,
-            y,
-            size: 6.5,
-            font: fontBold,
-            color: rgb(0.06, 0.6, 0.35),
           });
           y -= 13;
         });
@@ -1232,14 +1357,15 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       } else if (reportType === 'cash') {
         const headers = [
           { label: 'SESSION #', x: 30 },
-          { label: 'OPENED AT', x: 130 },
-          { label: 'CLOSED AT', x: 235 },
-          { label: 'OPENED BY', x: 340 },
-          { label: 'CLOSED BY', x: 440 },
-          { label: 'FLOAT (PHP)', x: 540 },
-          { label: 'COUNTED (PHP)', x: 630 },
-          { label: 'DISCREPANCY', x: 720 },
-          { label: 'STATUS', x: 790 },
+          { label: 'OPENED AT', x: 115 },
+          { label: 'CLOSED AT', x: 195 },
+          { label: 'OPENED BY', x: 275 },
+          { label: 'CLOSED BY', x: 345 },
+          { label: 'FLOAT (PHP)', x: 415 },
+          { label: 'EXPECTED (PHP)', x: 480 },
+          { label: 'COUNTED (PHP)', x: 555 },
+          { label: 'DISCREPANCY', x: 630 },
+          { label: 'DENOMINATIONS', x: 705 },
         ];
         drawTableHeaders(headers);
 
@@ -1254,23 +1380,43 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.97, 0.98, 0.99),
             });
           }
-          const disc = Number(row.discrepancy || 0);
-          const discText =
-            disc === 0
+          const isClosed = row.status === 'closed' || Boolean(row.closed_at);
+          const disc =
+            row.discrepancy !== null && row.discrepancy !== undefined
+              ? Number(row.discrepancy)
+              : null;
+          const discText = !isClosed
+            ? 'In Progress'
+            : disc === 0
               ? 'Balanced'
-              : disc > 0
+              : disc !== null && disc > 0
                 ? `+PHP ${disc.toFixed(2)}`
-                : `-PHP ${Math.abs(disc).toFixed(2)}`;
+                : disc !== null
+                  ? `-PHP ${Math.abs(disc).toFixed(2)}`
+                  : '-';
+
+          const expectedText =
+            row.closing_expected_cash !== null &&
+            row.closing_expected_cash !== undefined
+              ? Number(row.closing_expected_cash).toFixed(2)
+              : Number(row.opening_float || 0).toFixed(2);
+
+          const countedText = !isClosed
+            ? 'In Progress'
+            : row.closing_actual_cash !== null &&
+                row.closing_actual_cash !== undefined
+              ? Number(row.closing_actual_cash).toFixed(2)
+              : '-';
 
           page.drawText(String(row.session_number || '').slice(0, 15), {
             x: 30,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(String(row.opened_at || '').slice(0, 16), {
-            x: 130,
+            x: 115,
             y,
             size: 6.5,
             font,
@@ -1279,55 +1425,66 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           page.drawText(
             row.closed_at ? String(row.closed_at).slice(0, 16) : 'In Progress',
             {
-              x: 235,
+              x: 195,
               y,
               size: 6.5,
               font,
               color: rgb(0.3, 0.3, 0.3),
             }
           );
-          page.drawText(String(row.opened_by_name || '-').slice(0, 14), {
-            x: 340,
+          page.drawText(String(row.opened_by_name || '-').slice(0, 11), {
+            x: 275,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(String(row.closed_by_name || '-').slice(0, 14), {
-            x: 440,
+          page.drawText(String(row.closed_by_name || '-').slice(0, 11), {
+            x: 345,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
           page.drawText(Number(row.opening_float || 0).toFixed(2), {
-            x: 540,
+            x: 415,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
-          page.drawText(Number(row.closing_actual_cash || 0).toFixed(2), {
-            x: 630,
+          page.drawText(expectedText, {
+            x: 480,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
+            color: rgb(0.2, 0.2, 0.2),
+          });
+          page.drawText(countedText, {
+            x: 555,
+            y,
+            size: 6.5,
+            font,
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(discText, {
-            x: 720,
+            x: 630,
             y,
             size: 6.5,
-            font: fontBold,
-            color: disc === 0 ? rgb(0.06, 0.6, 0.35) : rgb(0.85, 0.2, 0.2),
-          });
-          page.drawText(String(row.status || '').toUpperCase(), {
-            x: 790,
-            y,
-            size: 6.5,
-            font: fontBold,
+            font,
             color:
-              row.status === 'open' ? rgb(0.15, 0.4, 0.9) : rgb(0.3, 0.3, 0.3),
+              !isClosed
+                ? rgb(0.3, 0.3, 0.3)
+                : disc === 0
+                  ? rgb(0.06, 0.6, 0.35)
+                  : rgb(0.85, 0.2, 0.2),
+          });
+          page.drawText(safePdfText(getSessionDenominations(row)).slice(0, 30), {
+            x: 705,
+            y,
+            size: 6,
+            font,
+            color: rgb(0.2, 0.2, 0.2),
           });
           y -= 13;
         });
@@ -1400,15 +1557,15 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           y -= 13;
         });
 
-        // ATTENDANCE PASSES PDF
+  // ATTENDANCE PASSES PDF
       } else if (reportType === 'attendance') {
         const headers = [
           { label: 'CUSTOMER / MEMBER NAME', x: 30 },
-          { label: 'ACCESS CATEGORY', x: 250 },
-          { label: 'TOTAL VISITS (QTY)', x: 410 },
-          { label: 'TOTAL FEES PAID (PHP)', x: 540 },
-          { label: 'LATEST CHECK-IN', x: 680 },
-          { label: 'PAYMENT METHOD', x: 770 },
+          { label: 'ACCESS CATEGORY', x: 215 },
+          { label: 'TOTAL VISITS (QTY)', x: 345 },
+          { label: 'TOTAL FEES PAID (PHP)', x: 460 },
+          { label: 'LATEST CHECK-IN', x: 575 },
+          { label: 'PAYMENT METHOD', x: 660 },
         ];
         drawTableHeaders(headers);
 
@@ -1423,43 +1580,47 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.97, 0.98, 0.99),
             });
           }
-          page.drawText(String(row.customer_name).slice(0, 32), {
+          const payment = formatPaymentWithRef(
+            row.payment_method,
+            row.gcash_ref_no
+          );
+          page.drawText(String(row.customer_name).slice(0, 26), {
             x: 30,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.1, 0.1, 0.1),
           });
           page.drawText(String(row.customer_type || 'Walk-In'), {
-            x: 250,
+            x: 215,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
           page.drawText(`${row.visits_count} visits`, {
-            x: 410,
+            x: 345,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(Number(row.total_fees || 0).toFixed(2), {
-            x: 540,
+            x: 460,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.06, 0.6, 0.35),
           });
           page.drawText(String(row.latest_checkin).slice(0, 16), {
-            x: 680,
+            x: 575,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(String(row.payment_method || 'Cash'), {
-            x: 770,
+          page.drawText(safePdfText(payment), {
+            x: 660,
             y,
             size: 6.5,
             font,
@@ -1472,12 +1633,12 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       } else if (reportType === 'subscriptions') {
         const headers = [
           { label: 'CONTRACT ID', x: 30 },
-          { label: 'MEMBER NAME', x: 150 },
-          { label: 'PLAN NAME', x: 320 },
-          { label: 'PRICE (PHP)', x: 480 },
-          { label: 'START DATE', x: 590 },
-          { label: 'END DATE', x: 680 },
-          { label: 'PAYMENT', x: 770 },
+          { label: 'MEMBER NAME', x: 135 },
+          { label: 'PLAN NAME', x: 275 },
+          { label: 'PRICE (PHP)', x: 395 },
+          { label: 'START DATE', x: 480 },
+          { label: 'END DATE', x: 565 },
+          { label: 'PAYMENT METHOD', x: 650 },
         ];
         drawTableHeaders(headers);
 
@@ -1493,6 +1654,15 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             });
           }
           const cid = row.receipt_number || `SUB-${String(row.id).slice(0, 6)}`;
+          const subRef =
+            row.reference_number ||
+            row.gcash_ref_no ||
+            row.payment_ref ||
+            row.payment_reference ||
+            row.reference_no ||
+            '';
+          const payment = formatPaymentWithRef(row.payment_method, subRef);
+
           page.drawText(cid.slice(0, 16), {
             x: 30,
             y,
@@ -1501,38 +1671,38 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(
-            String(row.members?.full_name || 'Member').slice(0, 24),
-            { x: 150, y, size: 6.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) }
+            String(row.members?.full_name || 'Member').slice(0, 20),
+            { x: 135, y, size: 6.5, font, color: rgb(0.1, 0.1, 0.1) }
           );
           page.drawText(
             String(
               row.plan_type ? row.plan_type.toUpperCase() : 'Monthly Pass'
-            ).slice(0, 22),
-            { x: 320, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) }
+            ).slice(0, 18),
+            { x: 275, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) }
           );
           page.drawText(Number(row.price || 0).toFixed(2), {
-            x: 480,
+            x: 395,
             y,
             size: 6.5,
-            font: fontBold,
+            font,
             color: rgb(0.06, 0.6, 0.35),
           });
           page.drawText(String(row.start_date || row.created_at).slice(0, 10), {
-            x: 590,
+            x: 480,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
           page.drawText(String(row.end_date || 'Ongoing').slice(0, 10), {
-            x: 680,
+            x: 565,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(String(row.payment_method || 'Cash'), {
-            x: 770,
+          page.drawText(safePdfText(payment), {
+            x: 650,
             y,
             size: 6.5,
             font,
@@ -1780,7 +1950,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-zinc-900 text-slate-700 dark:text-slate-300 font-body">
-                    {/* BIR TABLE PREVIEW */}
+{/* BIR TABLE PREVIEW */}
                     {reportType === 'bir' &&
                       liveBirData.slice(0, 5).map((row, idx) => (
                         <tr
@@ -1813,9 +1983,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                           <td className="p-2.5 font-bold">
                             ₱{row.net_sales.toFixed(2)}
                           </td>
-                          <td className="p-2.5">{row.payment_method}</td>
-                          <td className="p-2.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                            {row.status}
+                          <td className="p-2.5 font-medium">
+                            {formatPaymentWithRef(
+                              row.payment_method,
+                              row.payment_ref
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1823,7 +1995,35 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                     {/* CASH REGISTER SESSIONS PREVIEW (NEW) */}
                     {reportType === 'cash' &&
                       liveCashData.slice(0, 5).map((row, idx) => {
-                        const disc = Number(row.discrepancy || 0);
+                        const isClosed = row.status === 'closed' || Boolean(row.closed_at);
+                        const disc =
+                          row.discrepancy !== null && row.discrepancy !== undefined
+                            ? Number(row.discrepancy)
+                            : null;
+                        const discLabel = !isClosed
+                          ? 'In Progress'
+                          : disc === 0
+                            ? 'Balanced'
+                            : disc !== null && disc > 0
+                              ? `+₱${disc.toFixed(2)}`
+                              : disc !== null
+                                ? `-₱${Math.abs(disc).toFixed(2)}`
+                                : '-';
+
+                        const expectedVal =
+                          row.closing_expected_cash !== null &&
+                          row.closing_expected_cash !== undefined
+                            ? Number(row.closing_expected_cash).toFixed(2)
+                            : Number(row.opening_float || 0).toFixed(2);
+
+                        const countedVal = !isClosed
+                          ? 'In Progress'
+                          : row.closing_actual_cash !== null &&
+                              row.closing_actual_cash !== undefined
+                            ? `₱${Number(row.closing_actual_cash).toFixed(2)}`
+                            : '-';
+
+                        const denoms = getSessionDenominations(row);
                         return (
                           <tr
                             key={idx}
@@ -1849,34 +2049,30 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                             <td className="p-2.5 font-mono">
                               ₱{Number(row.opening_float || 0).toFixed(2)}
                             </td>
+                            <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300">
+                              ₱{expectedVal}
+                            </td>
                             <td className="p-2.5 font-bold">
-                              ₱{Number(row.closing_actual_cash || 0).toFixed(2)}
+                              {countedVal}
                             </td>
                             <td
                               className={`p-2.5 font-bold ${
-                                disc === 0
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : disc > 0
-                                    ? 'text-amber-600 dark:text-amber-400'
-                                    : 'text-rose-600 dark:text-rose-400'
+                                !isClosed
+                                  ? 'text-slate-500 dark:text-slate-400'
+                                  : disc === 0
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : disc !== null && disc > 0
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-rose-600 dark:text-rose-400'
                               }`}
                             >
-                              {disc === 0
-                                ? 'Balanced'
-                                : disc > 0
-                                  ? `+₱${disc.toFixed(2)}`
-                                  : `-₱${Math.abs(disc).toFixed(2)}`}
+                              {discLabel}
                             </td>
-                            <td className="p-2.5">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                  row.status === 'open'
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                    : 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-slate-300'
-                                }`}
-                              >
-                                {row.status}
-                              </span>
+                            <td
+                              className="p-2.5 font-mono text-[10px] text-slate-600 dark:text-slate-400 max-w-[200px] truncate"
+                              title={denoms}
+                            >
+                              {denoms}
                             </td>
                           </tr>
                         );
@@ -1932,48 +2128,63 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                           <td className="p-2.5 text-slate-500 whitespace-nowrap">
                             {String(row.latest_checkin).slice(0, 16)}
                           </td>
-                          <td className="p-2.5">
-                            {row.payment_method || 'Cash'}
+                          <td className="p-2.5 font-medium">
+                            {formatPaymentWithRef(
+                              row.payment_method,
+                              row.gcash_ref_no
+                            )}
                           </td>
                         </tr>
                       ))}
 
                     {/* SUBSCRIPTIONS TABLE PREVIEW */}
                     {reportType === 'subscriptions' &&
-                      liveSubsData.slice(0, 5).map((row, idx) => (
-                        <tr
-                          key={idx}
-                          className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
-                        >
-                          <td className="p-2.5 font-mono text-xs font-bold text-purple-600 dark:text-purple-400">
-                            {row.receipt_number ||
-                              `SUB-${String(row.id).slice(0, 6)}`}
-                          </td>
-                          <td className="p-2.5 font-bold">
-                            {row.members?.full_name || 'Member'}
-                          </td>
-                          <td className="p-2.5 font-medium">
-                            {row.plan_type
-                              ? row.plan_type.toUpperCase()
-                              : 'Monthly Pass'}
-                          </td>
-                          <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">
-                            ₱{Number(row.price || 0).toFixed(2)}
-                          </td>
-                          <td className="p-2.5 text-slate-500">
-                            {String(row.start_date || row.created_at).slice(
-                              0,
-                              10
-                            )}
-                          </td>
-                          <td className="p-2.5 text-slate-500">
-                            {String(row.end_date || 'Ongoing').slice(0, 10)}
-                          </td>
-                          <td className="p-2.5">
-                            {row.payment_method || 'Cash'}
-                          </td>
-                        </tr>
-                      ))}
+                      liveSubsData.slice(0, 5).map((row, idx) => {
+                        const subRef =
+                          row.reference_number ||
+                          row.gcash_ref_no ||
+                          row.payment_ref ||
+                          row.payment_reference ||
+                          row.reference_no ||
+                          '';
+                        return (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
+                          >
+                            <td className="p-2.5 font-mono text-xs font-bold text-purple-600 dark:text-purple-400">
+                              {row.receipt_number ||
+                                `SUB-${String(row.id).slice(0, 6)}`}
+                            </td>
+                            <td className="p-2.5 font-bold">
+                              {row.members?.full_name || 'Member'}
+                            </td>
+                            <td className="p-2.5 font-medium">
+                              {row.plan_type
+                                ? row.plan_type.toUpperCase()
+                                : 'Monthly Pass'}
+                            </td>
+                            <td className="p-2.5 font-bold text-emerald-600 dark:text-emerald-400">
+                              ₱{Number(row.price || 0).toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-slate-500">
+                              {String(row.start_date || row.created_at).slice(
+                                0,
+                                10
+                              )}
+                            </td>
+                            <td className="p-2.5 text-slate-500">
+                              {String(row.end_date || 'Ongoing').slice(0, 10)}
+                            </td>
+                            <td className="p-2.5 font-medium">
+                              {formatPaymentWithRef(
+                                row.payment_method,
+                                subRef
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                     {/* CONSOLIDATED FINANCIAL SUMMARY */}
                     {reportType === 'combined' &&

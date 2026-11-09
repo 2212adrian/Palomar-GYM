@@ -1,9 +1,9 @@
-// src/pages/cash/components/CashFloatModal.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Coins, Check, X, RotateCcw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import { openCashSession } from '../../../lib/supabase/cashService';
 import { Button } from '../../../components/ui/Button';
 
@@ -13,7 +13,7 @@ export const CashFloatModal: React.FC = () => {
   const { user, profile } = useAuthStore();
 
   // Exclusive for Admin and Superadmin only — Staff never see this
-  const isAdminOrSuperAdmin = profile?.role === 'admin';
+  const isAdminOrSuperAdmin = profile?.role === 'admin' || isSuperAdmin(user?.email);
 
   const {
     isInitializing,
@@ -34,8 +34,7 @@ export const CashFloatModal: React.FC = () => {
     ? `palomar_cash_float_seen_${user.id}`
     : 'palomar_cash_float_seen';
 
-  // Check if previously dismissed or interacted with during this login.
-  // Held in state (not a memo) so it can be refreshed the moment we record it.
+  // Check if previously dismissed or interacted with during this login
   const [hasAlreadySeen, setHasAlreadySeen] = useState(() => {
     if (typeof window === 'undefined') return true;
     return sessionStorage.getItem(sessionPromptKey) === 'true';
@@ -78,7 +77,7 @@ export const CashFloatModal: React.FC = () => {
     isAdminOrSuperAdmin,
   ]);
 
-  // Record the prompt as seen for the remainder of this login session.
+  // Record the prompt as seen for the remainder of this login session
   const markPromptSeen = () => {
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(sessionPromptKey, 'true');
@@ -86,12 +85,6 @@ export const CashFloatModal: React.FC = () => {
     setHasAlreadySeen(true);
   };
 
-  // A drawer that is already open -- however it was opened -- means the float has
-  // been entered for this shift. Crucially this also covers the Cash Management
-  // page, which opens sessions directly without touching the modal.
-  //
-  // Marking it here is what stops the prompt from re-appearing when the session
-  // is later ENDED: isSessionOpen flips back to false, but the marker persists.
   useEffect(() => {
     if (!isSessionOpen) return;
 
@@ -146,7 +139,7 @@ export const CashFloatModal: React.FC = () => {
 
       await openCashSession({
         openingFloat: amount,
-        notes: openingNotes.trim() || undefined,
+        notes: openingNotes.trim().slice(0, 300) || undefined,
         openedBy: user?.id || null,
         openedByName: staffName,
       });
@@ -228,7 +221,7 @@ export const CashFloatModal: React.FC = () => {
               <input
                 type="number"
                 min="0"
-                step="1"
+                step="0.01"
                 required
                 autoFocus
                 value={openingFloatInput}
@@ -275,14 +268,20 @@ export const CashFloatModal: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-              Short note (optional)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">
+                Short note (optional)
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {openingNotes.length}/300
+              </span>
+            </div>
             <input
               type="text"
+              maxLength={300}
               placeholder="e.g. Added extra small bills for change"
               value={openingNotes}
-              onChange={(e) => setOpeningNotes(e.target.value)}
+              onChange={(e) => setOpeningNotes(e.target.value.slice(0, 300))}
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800/80 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -305,7 +304,7 @@ export const CashFloatModal: React.FC = () => {
             <button
               type="button"
               onClick={handleJustCheckingIn}
-              className="w-full py-2.5 text-xs font-bold text-white-500 hover:text-slate-800 dark:text-white-400 dark:hover:text-white transition-colors cursor-pointer"
+              className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
             >
               Just checking in (Skip for now)
             </button>

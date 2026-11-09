@@ -1,5 +1,3 @@
-// src/lib/changelog.ts
-
 export interface ChangelogSection {
   type: string;
   items: string[];
@@ -17,7 +15,54 @@ export interface ChangelogEntry {
  * v1.0.0 official production milestone release.
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
-   {
+  {
+    version: '1.0.5',
+    date: '2026-11-10',
+    summary:
+      'Cash drawer integrity overhaul, admin authorization workflow for staff manual movements, transaction void reversal, 13-digit digital payment validation on exports, official reports auditing enhancements, and multi-view display modes for Logbook and Sales registers.',
+    sections: [
+      {
+        type: 'Cash Management & Approval Workflow',
+        items: [
+          'Anti-Structuring Admin Approval Guard: Required administrator authorization for all staff-initiated manual Cash In and Cash Out movements, eliminating loopholes where staff could split transactions to bypass oversight.',
+          'Real-Time Sidebar Approval Notification: Dynamic pulsing badge on the Cash Management navigation tab alerting on-duty administrators to pending cash requests.',
+          'Pending Cash Approvals Action Banner: Interactive administrative banner in Cash Management allowing instant inspection, approval, or rejection of pending cash movements with permanent audit logs.',
+          'Close Session Pending Guard: Added strict validation blocking cash session closure whenever unresolved pending cash requests remain in the active shift.',
+          'Mandatory Discrepancy Justification: Required detailed explanations (minimum 5 characters, 300 characters max) whenever a cash drawer shift closes with a variance (overage or shortage).',
+        ],
+      },
+      {
+        type: 'Drawer Integrity & Void Controls',
+        items: [
+          'Admin Transaction Void & Reversal: Enabled administrators to void accidental or mistyped manual drawer entries with mandatory reasons, updating drawer balances and marking entries with visual audit badges.',
+          'Negative Balance Prevention: Hard-capped Cash Out inputs against current physical drawer funds, preventing the register from reaching negative balances.',
+          'Structured Cash In Categorization: Enforced structured categories (Change Fund Replenishment, Petty Cash Return, Owner Injection) with anti-bypass reminders directing customer payments to Logbook and POS registers.',
+          'Thermal Print & Receipt Sanitization: Updated shift summary receipts and reports to explicitly identify voided and rejected transactions, preventing false reconciliation totals.',
+          'Centavo Precision Formatting: Standardized two-decimal currency precision across all live drawer KPI cards, eliminating rounding discrepancies.',
+          'Table Overflow & Character Caps: Enforced a 300-character ceiling on transaction notes and implemented ellipsis truncation with hover tooltips on the ledger table.',
+        ],
+      },
+      {
+        type: 'Official Reports & Export Compliance',
+        items: [
+          'Full 13-Digit Reference Code Printing: Widened payment method columns and removed character clipping across all PDF export reports (BIR Register, Attendance Log, and Membership Contracts) so complete 13-digit GCash transaction codes display without truncation.',
+          'Expected Cash Drawer Column: Added the missing Expected Cash (PHP) audit metric to the Cash Drawer Sessions report, displaying full mathematical reconciliation between opening floats and final counted amounts.',
+          'In-Progress Session Status Accuracy: Corrected active drawer shifts in PDF and CSV reports to explicitly show "In Progress" rather than a misleading 0.00 counted cash or false balanced discrepancy.',
+          'Expanded Denomination Breakdown: Increased character capacity for physical currency breakdowns on shift export tables, preventing bill and coin summaries from being cut off.',
+        ],
+      },
+      {
+        type: 'Features & UI Improvements',
+        items: [
+          'Added three switchable display modes: Timeline View, Compact List View, and Grid View for Logbook and Sales registers.',
+          'Redesigned Compact List View on mobile with a two-tier identity row to prevent name truncation and gesture-based swipe actions.',
+          'Enabled a space-efficient 2-column mobile Grid View with unified identity headers and enlarged touch hitboxes.',
+          'Distinguished subscription and renewal payments in the logbook with a dedicated "Paid" badge and removed redundant collection buttons.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.4',
     date: '2026-11-08',
     summary:
@@ -27,9 +72,9 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
         type: 'Database backup Error of null value',
         items: [
           'A problem appeared during backup phase indicating null value in column of "in_quarantined" of relation "sales" voilates not-null constraint. This was caused by a recent schema migration that added the "in_quarantined" column to the "sales" table, but did not provide a default value for existing records. The backup process attempted to insert a null value into this column, resulting in the error.',
-          'Added cash session state check before allowing database restoration. If a cash session is currently open, the restore button will be disabled and a warning message will be displayed to the user.'
+          'Added cash session state check before allowing database restoration. If a cash session is currently open, the restore button will be disabled and a warning message will be displayed to the user.',
         ],
-      }
+      },
     ],
   },
   {
@@ -212,7 +257,7 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
 ];
 
 /**
- * Returns ALL versions in the changelog.
+ * Returns ALL versions in the changelog.ts
  */
 export const getAllChangelogs = (): ChangelogEntry[] => {
   return CHANGELOG_ENTRIES;

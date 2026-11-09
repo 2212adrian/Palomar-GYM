@@ -187,12 +187,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
-  // Real-time Notification Store
+   // Real-time Notification Store
   const {
     unreadBadgeCount,
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
+    pendingCashApprovalsCount,
     toggleNotificationOpen,
     markBadgeSeen,
   } = useNotificationStore();
@@ -262,6 +263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (key === 'stockAlerts') return stockAlertsCount;
       if (key === 'expiringSubs') return expiringSubsCount;
       if (key === 'incidentUnread') return incidentUnreadCount;
+      if (key === 'pendingCashApprovals') return pendingCashApprovalsCount;
       return undefined;
     };
 
@@ -277,12 +279,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         notificationCount: getNotificationCount(child.notificationKey),
       })),
     }));
-  }, [
+   }, [
     location.pathname,
     isAdmin,
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
+    pendingCashApprovalsCount,
   ]);
 
   const allowedMenu = useMemo(() => {

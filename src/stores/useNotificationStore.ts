@@ -1,4 +1,3 @@
-// src/stores/useNotificationStore.ts
 import { create } from 'zustand';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { supabase } from '../lib/supabase/client';
@@ -117,6 +116,7 @@ interface NotificationState {
   noStockCount: number;
   lowStockCount: number;
   expiringSubsCount: number;
+  pendingCashApprovalsCount: number;
   unreadBadgeCount: number;
 
   unreadIncidents: UnreadIncident[];
@@ -157,6 +157,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   noStockCount: 0,
   lowStockCount: 0,
   expiringSubsCount: 0,
+  pendingCashApprovalsCount: 0,
   unreadBadgeCount: 0,
 
   unreadIncidents: [],
@@ -450,6 +451,32 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       console.warn('Failed to load expiring subscriptions:', err);
     }
 
+    // 4. PENDING CASH OUT APPROVALS (For Admins)
+    let pendingApprovals = 0;
+    try {
+      const { data: pendingTxs, error: pendingErr } = await supabase
+        .from('cash_transactions')
+        .select('id, amount, performed_by_name, reason')
+        .eq('status', 'pending')
+        .eq('is_voided', false);
+
+      if (!pendingErr && pendingTxs) {
+        pendingApprovals = pendingTxs.length;
+        pendingTxs.forEach((tx) => {
+          const key = `cash_approval_${tx.id}`;
+          if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+            triggerBrowserNotification(`💵 Cash Out Request: ₱${Number(tx.amount).toFixed(2)}`, {
+              body: `Requested by ${tx.performed_by_name || 'Staff'}: ${tx.reason || 'Cash outflow'}`,
+            });
+            dispatchedIdsSet.add(key);
+            hasNewDispatches = true;
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to load pending cash approvals:', err);
+    }
+
     if (hasNewDispatches) {
       saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedIdsSet));
     }
@@ -471,6 +498,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       noStockCount: noStock,
       lowStockCount: lowStock,
       expiringSubsCount: expiringCount,
+      pendingCashApprovalsCount: pendingApprovals,
       unreadIncidents: unreadList,
       stockAlertProducts: stockAlertList,
       expiringMembers: expiringList,
@@ -629,7 +657,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       realtimeDebounceTimer = setTimeout(() => {
         realtimeDebounceTimer = null;
         get().fetchNotifications(userEmail, userRole, true);
-      }, 2500);
+      }, 1500);
     };
 
     const channelId = `notifications-${Math.random().toString(36).substring(2, 9)}`;
@@ -654,6 +682,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'members' },
+        triggerDebouncedFetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_transactions' },
         triggerDebouncedFetch
       )
       .subscribe((status) => {

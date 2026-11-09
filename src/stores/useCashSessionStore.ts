@@ -46,6 +46,14 @@ export interface UnifiedActivityItem {
   performed_by_name: string;
   amount: number;
   created_at: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'completed';
+  approved_by_name?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+  is_voided?: boolean;
+  void_reason?: string | null;
+  voided_by_name?: string | null;
+  voided_at?: string | null;
 }
 
 interface CashSessionStoreState {
@@ -663,29 +671,51 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       const mappedManualTxs: UnifiedActivityItem[] = rawManualTxs.map((t: any) => {
         const amt = Number(t.amount || 0);
         const txType = String(t.type || '').trim().toLowerCase();
+        const txStatus = (t.status || 'completed').toLowerCase();
+        const isVoid = Boolean(t.is_voided);
 
-        if (txType === 'cash_in') cashInTotal += amt;
-        else if (txType === 'cash_out') cashOutTotal += amt;
-        else if (txType === 'digital_in') digitalInTotal += amt;
+        // Only completed or approved non-voided transactions count towards the drawer balance
+        const isEffective = !isVoid && (txStatus === 'completed' || txStatus === 'approved');
+
+        if (isEffective) {
+          if (txType === 'cash_in') cashInTotal += amt;
+          else if (txType === 'cash_out') cashOutTotal += amt;
+          else if (txType === 'digital_in') digitalInTotal += amt;
+        }
+
+        let displayType =
+          txType === 'cash_in'
+            ? 'CASH IN'
+            : txType === 'cash_out'
+            ? 'CASH OUT'
+            : 'DIGITAL IN';
+
+        if (txStatus === 'pending') {
+          displayType = `${displayType} [PENDING APPROVAL]`;
+        } else if (txStatus === 'rejected') {
+          displayType = `${displayType} [REJECTED]`;
+        }
 
         return {
           id: String(t.id),
           source: 'manual',
           type: (txType === 'cash_out' ? 'cash_out' : txType === 'digital_in' ? 'digital_in' : 'cash_in') as 'cash_in' | 'cash_out' | 'digital_in',
-          displayType:
-            txType === 'cash_in'
-              ? 'CASH IN'
-              : txType === 'cash_out'
-              ? 'CASH OUT'
-              : 'DIGITAL IN',
+          displayType,
           reason: t.reason || 'Drawer Movement',
           reference_number: t.reference_number || null,
           performed_by_name: t.performed_by_name || 'Staff',
           amount: amt,
           created_at: t.created_at,
+          status: txStatus as any,
+          approved_by_name: t.approved_by_name || null,
+          approved_at: t.approved_at || null,
+          rejection_reason: t.rejection_reason || null,
+          is_voided: isVoid,
+          void_reason: t.void_reason || null,
+          voided_by_name: t.voided_by_name || null,
+          voided_at: t.voided_at || null,
         };
       });
-
       // 2. Fetch POS Sales within Active Session Window
       const [salesSessionRes, salesDateRes] = await Promise.all([
         supabase

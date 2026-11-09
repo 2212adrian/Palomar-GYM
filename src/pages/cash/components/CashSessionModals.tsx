@@ -40,6 +40,7 @@ interface CloseSessionModalProps {
   onClose: () => void;
   session: CashSession;
   metrics: CashFlowMetrics;
+  pendingApprovalsCount?: number;
   onSuccess: () => Promise<void> | void;
 }
 
@@ -62,6 +63,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
   onClose,
   session,
   metrics,
+  pendingApprovalsCount = 0,
   onSuccess,
 }) => {
   const { user, profile } = useAuthStore();
@@ -140,8 +142,28 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       return;
     }
 
+    if (pendingApprovalsCount > 0) {
+      toast.error(
+        `Cannot close session: There ${
+          pendingApprovalsCount === 1 ? 'is' : 'are'
+        } ${pendingApprovalsCount} pending cash request${
+          pendingApprovalsCount === 1 ? '' : 's'
+        } awaiting approval or rejection.`
+      );
+      return;
+    }
+
     if (countMode === 'direct' && !directCashInput.trim()) {
       toast.error('Please enter the counted cash amount.');
+      return;
+    }
+
+    if (discrepancy !== 0 && (!notes.trim() || notes.trim().length < 5)) {
+      toast.error(
+        `Please provide a note (at least 5 characters) explaining the ${
+          discrepancy < 0 ? 'cash shortage' : 'cash overage'
+        }.`
+      );
       return;
     }
 
@@ -479,15 +501,39 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
 
             {/* Shift Notes */}
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-                Closing Shift Notes (Optional)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  className={`block text-[10px] font-bold uppercase tracking-wider ${
+                    discrepancy !== 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {discrepancy !== 0
+                    ? `Discrepancy Explanation (Required for ${
+                        discrepancy < 0 ? 'Shortage' : 'Overage'
+                      }) *`
+                    : 'Closing Shift Notes (Optional)'}
+                </label>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {notes.length}/300
+                </span>
+              </div>
               <textarea
                 rows={2}
-                placeholder="Handover notes, discrepancy explanation, comments..."
+                maxLength={300}
+                placeholder={
+                  discrepancy !== 0
+                    ? 'Explain the cause of shortage or overage...'
+                    : 'Handover notes, comments...'
+                }
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                onChange={(e) => setNotes(e.target.value.slice(0, 300))}
+                className={`w-full px-3 py-2 bg-white dark:bg-[#161920] border rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 resize-none ${
+                  discrepancy !== 0 && (!notes.trim() || notes.trim().length < 5)
+                    ? 'border-rose-400 dark:border-rose-500/50 focus:ring-rose-500'
+                    : 'border-slate-200/80 dark:border-slate-800/80 focus:ring-blue-500'
+                }`}
               />
             </div>
           </div>
@@ -590,6 +636,15 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
+              {pendingApprovalsCount > 0 && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>
+                    Resolve {pendingApprovalsCount} pending cash request(s) before closing.
+                  </span>
+                </div>
+              )}
+
               <Button
                 type="submit"
                 variant="primary"
@@ -598,14 +653,23 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                   isSubmitting ||
                   isOffline ||
                   closeCooldown > 0 ||
+                  pendingApprovalsCount > 0 ||
                   (countMode === 'direct' && !directCashInput.trim())
                 }
-                title={isOffline ? 'Active internet connection required to reconcile and close session' : undefined}
+                title={
+                  isOffline
+                    ? 'Active internet connection required to reconcile and close session'
+                    : pendingApprovalsCount > 0
+                    ? 'All pending requests must be approved or rejected before closing'
+                    : undefined
+                }
                 className="w-full py-3.5 text-xs font-heading font-black tracking-wide !bg-rose-600 hover:!bg-rose-700 active:!bg-rose-800 !text-white border-none shadow-md shadow-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
               >
                 <ShieldCheck className="w-4 h-4 mr-1.5" />
                 {isOffline
                   ? 'OFFLINE: INTERNET CONNECTION REQUIRED'
+                  : pendingApprovalsCount > 0
+                  ? `PENDING REQUESTS REMAINING (${pendingApprovalsCount})`
                   : closeCooldown > 0
                     ? `CONFIRM & CLOSE SESSION (${closeCooldown}s)`
                     : 'CONFIRM & CLOSE SESSION'}
@@ -773,12 +837,21 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
       })
       .join('');
 
+    const validTxs = transactions.filter((tx) => tx.status !== 'rejected');
     const txRows =
-      transactions.length === 0
+      validTxs.length === 0
         ? '<div class="center text-muted">No manual cash movements</div>'
-        : transactions
+        : validTxs
             .map((tx) => {
               const sign = tx.type === 'cash_out' ? '-' : '+';
+              if (tx.is_voided) {
+                return `
+            <div class="row text-muted" style="text-decoration: line-through;">
+              <span>${tx.type.toUpperCase()}: ${tx.reason || 'Movement'} [VOIDED]</span>
+              <span>₱0.00</span>
+            </div>
+          `;
+              }
               return `
             <div class="row">
               <span>${tx.type.toUpperCase()}: ${tx.reason || 'Movement'}</span>
@@ -1078,25 +1151,37 @@ export const SessionDetailsModal: React.FC<SessionDetailsModalProps> = ({
             </p>
           ) : (
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-              {transactions.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 text-xs"
-                >
-                  <div>
-                    <span className="font-bold mr-2 capitalize">
-                      {tx.type.replace('_', ' ')}
-                    </span>
-                    <span className="text-slate-500 text-[11px]">
-                      ({tx.reason})
+              {transactions
+                .filter((tx) => tx.status !== 'rejected')
+                .map((tx) => (
+                  <div
+                    key={tx.id}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
+                      tx.is_voided
+                        ? 'opacity-50 line-through bg-slate-100/50 dark:bg-white/[0.02] border-slate-200/50 dark:border-white/5'
+                        : 'bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                      <span className="font-bold shrink-0 capitalize">
+                        {tx.type.replace('_', ' ')}
+                      </span>
+                      {tx.is_voided && (
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-600 dark:text-rose-400 not-italic shrink-0">
+                          VOIDED
+                        </span>
+                      )}
+                      <span className="text-slate-500 text-[11px] truncate" title={tx.reason}>
+                        ({tx.reason})
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold shrink-0 ml-2">
+                      {tx.is_voided
+                        ? '₱0.00'
+                        : `${tx.type === 'cash_out' ? '-' : '+'}₱${Number(tx.amount).toFixed(2)}`}
                     </span>
                   </div>
-                  <span className="font-mono font-bold">
-                    {tx.type === 'cash_out' ? '-' : '+'}₱
-                    {Number(tx.amount).toFixed(2)}
-                  </span>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
