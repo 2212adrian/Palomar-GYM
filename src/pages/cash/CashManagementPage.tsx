@@ -315,8 +315,8 @@ export const CashManagementPage: React.FC = () => {
   return (
     <div className="space-y-5 sm:space-y-6 pb-1 font-body text-slate-900 dark:text-white max-w-7xl mx-auto px-1 sm:px-0">
       {/* Top Banner & Status Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 shadow-xs">
-       <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#12151c] border border-slate-200/90 dark:border-white/10 shadow-xs">
+        <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
           <div
             className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 transition-transform ${
               isSessionOpen
@@ -334,13 +334,13 @@ export const CashManagementPage: React.FC = () => {
               <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
             )}
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base sm:text-xl font-heading font-black tracking-tight text-slate-900 dark:text-white">
                 LIVE CASH MANAGEMENT
               </h2>
               <span
-                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shrink-0 ${
                   isSessionOpen
                     ? isOffline
                       ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
@@ -369,28 +369,28 @@ export const CashManagementPage: React.FC = () => {
               </span>
             </div>
             {isOffline && isSessionOpen && activeSession ? (
-              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-1 break-words leading-relaxed">
                 Session{' '}
                 <span className="font-mono font-bold">
                   {activeSession.session_number}
                 </span>{' '}
-                • Offline Mode. Cash In, Cash Out, and Digital In are active and will sync when reconnected.
+                • Offline Mode. Transactions will sync automatically when reconnected.
               </p>
             ) : isOffline ? (
-              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400 mt-1 leading-relaxed">
                 No internet connection. Opening a new session requires an active network connection.
               </p>
             ) : isSessionOpen && activeSession ? (
-              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 break-words leading-relaxed">
                 Session{' '}
                 <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                   {activeSession.session_number}
                 </span>{' '}
-                • Opened by {activeSession.opened_by_name} at{' '}
+                • Opened by <span className="font-semibold text-slate-700 dark:text-slate-300 break-all">{activeSession.opened_by_name}</span> at{' '}
                 {format(new Date(activeSession.opened_at), 'h:mm a')}
               </p>
             ) : (
-              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                 No cash session currently active. Money transactions require an
                 open session.
               </p>
@@ -575,12 +575,16 @@ export const CashManagementPage: React.FC = () => {
                           ₱
                         </span>
                         <input
-                          type="number"
-                          min="0"
-                          step="1"
+                          type="text"
+                          inputMode="decimal"
+                          pattern="[0-9]*\.?[0-9]*"
+                          placeholder="0.00"
                           required
                           value={openingFloatInput}
-                          onChange={(e) => setOpeningFloatInput(e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, '');
+                            setOpeningFloatInput(val);
+                          }}
                           className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202]"
                         />
                       </div>

@@ -246,23 +246,31 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
       log.categoryOrPlan.replace('Pass', '').replace('Membership', '').trim() ||
       log.categoryOrPlan;
 
-    const isExistingMember =
-      entryCategory === 'member' ||
-      log.customerType === 'Existing Member' ||
-      log.customerType === 'Member';
+    const planText = (log.categoryOrPlan || '').toLowerCase();
+    const customerTypeText = (log.customerType || '').toLowerCase();
 
+    // Monthly and yearly subscriptions, new memberships, and renewals are never deletable from the logbook
     const isSubscription =
-      !isExistingMember &&
-      (Boolean(log.isSubscription) ||
-        entryCategory === 'new_subscription' ||
-        log.customerType === 'New Membership');
+      Boolean(log.isSubscription) ||
+      entryCategory === 'new_subscription' ||
+      log.customerType === 'New Membership' ||
+      log.customerType === 'Membership Renewal' ||
+      customerTypeText.includes('renewal') ||
+      customerTypeText.includes('subscription') ||
+      planText.includes('monthly') ||
+      planText.includes('yearly') ||
+      planText.includes('annual') ||
+      planText.includes('renewal') ||
+      (planText.includes('membership') &&
+        !planText.includes('daily') &&
+        !planText.includes('walk-in') &&
+        !planText.includes('guest'));
 
-    const effectiveCanDelete = isExistingMember ? canDelete : isSubscription ? false : canDelete;
+    const effectiveCanDelete = isSubscription ? false : canDelete;
 
-    const effectiveDeleteDisabledReason =
-      !isExistingMember && isSubscription
-        ? 'New membership enrollments and subscriptions cannot be deleted from the logbook.'
-        : deleteDisabledReason;
+    const effectiveDeleteDisabledReason = isSubscription
+      ? 'Monthly and yearly subscriptions and renewals cannot be deleted from the logbook. They can only be voided within 24 hours in Member Subscriptions.'
+      : deleteDisabledReason;
 
     const syncStatus = log.sync_status || 'synced';
 

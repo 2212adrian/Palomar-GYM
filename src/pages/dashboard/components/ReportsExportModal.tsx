@@ -18,17 +18,14 @@ import {
   Loader2,
   CheckCircle,
   Calendar,
-  Layers,
   Award,
-  FileCheck2,
-  Table as TableIcon,
   ShieldCheck,
   TrendingUp,
   Wallet,
   X,
 } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { saveAs } from 'file-saver';
+import { downloadExportFile } from '../../../utils/fileDownloader';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
@@ -66,6 +63,11 @@ interface ReportCategoryMeta {
   badge: string;
   description: string;
   legalPurpose: string;
+  explanation: {
+    what: string;
+    when: string;
+    includes: string;
+  };
   columns: string[];
   filePrefix: string;
   icon: React.ElementType;
@@ -92,9 +94,6 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   );
   const [isExporting, setIsExporting] = useState(false);
   const [isLoadingLive, setIsLoadingLive] = useState(false);
-  const [previewTab, setPreviewTab] = useState<'showcase' | 'details'>(
-    'showcase'
-  );
 
   // VAT configuration from system rates
   const [vatPercentage, setVatPercentage] = useState<number>(12);
@@ -152,6 +151,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         description: `Compliant Philippine Bureau of Internal Revenue sales book and official receipt ledger with breakdown of gross revenue, VAT-exempt transactions, ${vatPercentage}% VAT computation, and net sales.`,
         legalPurpose:
           'Mandatory bookkeeping ledger for BIR quarterly percentage tax filing, audit inspection, and official receipt verification.',
+        explanation: {
+          what: 'Official daily sales book and tax register compliant with Philippine BIR requirements.',
+          when: 'Use for quarterly tax filing, monthly revenue verification, and official auditing.',
+          includes: 'Official Receipt numbers, customer names, Gross Sales, VAT-Exempt sales, 12% VAT amount, Net Sales, and payment channels.',
+        },
         columns: [
           'OR / Ref #',
           'Date & Time',
@@ -176,6 +180,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Official front-desk cashier reconciliation register capturing shift opening floats, actual counted drawer cash, expected closing totals, and variance discrepancy shortages or overages.',
         legalPurpose:
           'End-of-day register balancing, internal cash audit inspection, and shift handover compliance.',
+        explanation: {
+          what: 'Cash drawer shift ledger tracking opening floats, daily physical collections, payouts, and register balances.',
+          when: 'Use at the end of each shift or business day to verify cashier balancing and investigate cash variances.',
+          includes: 'Session numbers, cashier names, opening float, actual counted cash, overage/shortage discrepancies, and closure timestamps.',
+        },
         columns: [
           'Session #',
           'Opened At',
@@ -199,6 +208,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Itemized retail sales ledger capturing unit prices, barcode identities, quantity velocities, gross sales per item, and current shelf stock levels.',
         legalPurpose:
           'Point-of-sale inventory audit, shrinkage monitoring, merchandise margin analysis, and reorder planning.',
+        explanation: {
+          what: 'Itemized retail product sales and shelf inventory velocity log.',
+          when: 'Use for restocking orders, best-selling product analysis, and retail inventory audits.',
+          includes: 'Barcode IDs, product names, unit selling prices, total units sold, gross retail revenue, and remaining shelf stock.',
+        },
         columns: [
           'Barcode ID',
           'Product Name',
@@ -219,6 +233,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Comprehensive check-in logbook aggregating member and walk-in visits into a unified customer pass summary with visit counts and total fees.',
         legalPurpose:
           'Facility utilization verification, front-desk collection reconciliation, and physical safety occupancy tracking.',
+        explanation: {
+          what: 'Daily gym check-in logbook recording member visits, walk-in day passes, and entrance fees.',
+          when: 'Use to monitor gym foot traffic, popular workout hours, and entrance fee collections.',
+          includes: 'Customer names, pass types (Walk-in, Student, Member), total visits, entry fees collected, check-in timestamps, and payment channels.',
+        },
         columns: [
           'Customer Name',
           'Access Category',
@@ -239,6 +258,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Gym membership contracts, subscription intakes, recurring renewal revenue, plan packages, and active client terms.',
         legalPurpose:
           'Membership recurring revenue reporting, contract expiration audit, and customer account validation.',
+        explanation: {
+          what: 'Membership contract ledger capturing monthly/yearly plans, new signups, and renewals.',
+          when: 'Use to audit active gym memberships, forecast recurring monthly revenue, and verify subscription fees.',
+          includes: 'Contract/Receipt IDs, member names, plan types (Monthly, Yearly), contract fees, start and expiration dates, and payment modes.',
+        },
         columns: [
           'Contract ID',
           'Member Name',
@@ -260,6 +284,11 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           'Unified financial timeline combining retail point-of-sale proceeds, logbook day passes, and membership subscriptions into an executive financial statement.',
         legalPurpose:
           'Executive management review, daily cash-up reconciliation, and multi-stream revenue growth analytics.',
+        explanation: {
+          what: 'Consolidated all-in-one financial summary bringing together POS sales, walk-in logbook passes, and subscriptions.',
+          when: 'Use for end-of-month executive revenue summaries and comprehensive financial performance reviews.',
+          includes: 'Daily totals broken down by Retail Sales, Logbook Day Passes, Subscriptions, Grand Total Revenue, and transaction counts.',
+        },
         columns: [
           'Date',
           'Sales (₱)',
@@ -945,20 +974,29 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         });
       }
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const filename = `PalomarGym_${selectedCategoryMeta.filePrefix}_${startDate}_to_${endDate}.csv`;
-      saveAs(blob, filename);
+      await downloadExportFile(csvContent, filename, 'text/csv;charset=utf-8;');
       toast.success(`Exported ${filename} successfully!`);
 
       await logAudit(
         'REPORT_GENERATED',
-        `Exported ${selectedCategoryMeta.title} (CSV) from ${startDate} to ${endDate} (${categoryStats.count} records, Total: ₱${categoryStats.totalValue.toFixed(2)}).`
+        `Exported ${selectedCategoryMeta.title} (CSV) from ${startDate} to ${endDate} (${categoryStats.count} records, Total: PHP ${categoryStats.totalValue.toFixed(2)}).`
       );
     } catch (err: any) {
       toast.error(`Export failed: ${err.message}`);
     } finally {
       setIsExporting(false);
     }
+  };
+
+  // Safe string sanitizer for PDF StandardFonts (WinAnsi encoding)
+  // Replaces Philippine Peso symbol ₱ with PHP and strips non-WinAnsi characters
+  const safePdfText = (val: string | number | null | undefined): string => {
+    if (val === null || val === undefined) return '';
+    return String(val)
+      .replace(/₱/g, 'PHP ')
+      .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
+      .trim();
   };
 
   // ─── 2. EXPORT TO OFFICIAL PDF REPORT ───
@@ -990,7 +1028,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         color: rgb(1, 1, 1),
       });
 
-      page.drawText(selectedCategoryMeta.title.toUpperCase(), {
+      page.drawText(safePdfText(selectedCategoryMeta.title.toUpperCase()), {
         x: 40,
         y: y - 32,
         size: 9,
@@ -999,7 +1037,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       });
 
       page.drawText(
-        `Compliance Standard: ${selectedCategoryMeta.badge} • Date Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`,
+        safePdfText(
+          `Compliance Standard: ${selectedCategoryMeta.badge} • Date Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`
+        ),
         {
           x: 40,
           y: y - 42,
@@ -1022,14 +1062,14 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         borderWidth: 1,
       });
 
-      page.drawText(`Reporting Period: ${startDate} to ${endDate}`, {
+      page.drawText(safePdfText(`Reporting Period: ${startDate} to ${endDate}`), {
         x: 35,
         y: y - 13,
         size: 8,
         font: fontBold,
         color: rgb(0.1, 0.1, 0.1),
       });
-      page.drawText(`Total Records: ${categoryStats.count}`, {
+      page.drawText(safePdfText(`Total Records: ${categoryStats.count}`), {
         x: 35,
         y: y - 23,
         size: 7.5,
@@ -1038,7 +1078,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       });
 
       page.drawText(
-        `Total Value: PHP ${categoryStats.totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`,
+        safePdfText(
+          `Total Value: PHP ${categoryStats.totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+        ),
         {
           x: width - 260,
           y: y - 13,
@@ -1047,7 +1089,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           color: rgb(0.07, 0.23, 0.45),
         }
       );
-      page.drawText(`Scope: ${categoryStats.secondary}`, {
+      page.drawText(safePdfText(`Scope: ${categoryStats.secondary}`), {
         x: width - 260,
         y: y - 23,
         size: 7.5,
@@ -1066,7 +1108,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           color: rgb(0.07, 0.23, 0.45),
         });
         headers.forEach((h) => {
-          page.drawText(h.label, {
+          page.drawText(safePdfText(h.label), {
             x: h.x,
             y,
             size: 7,
@@ -1217,8 +1259,8 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             disc === 0
               ? 'Balanced'
               : disc > 0
-                ? `+₱${disc.toFixed(2)}`
-                : `-₱${Math.abs(disc).toFixed(2)}`;
+                ? `+PHP ${disc.toFixed(2)}`
+                : `-PHP ${Math.abs(disc).toFixed(2)}`;
 
           page.drawText(String(row.session_number || '').slice(0, 15), {
             x: 30,
@@ -1581,16 +1623,13 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       );
 
       const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes as unknown as BlobPart], {
-        type: 'application/pdf',
-      });
       const filename = `PalomarGym_${selectedCategoryMeta.filePrefix}_${startDate}.pdf`;
-      saveAs(blob, filename);
+      await downloadExportFile(pdfBytes, filename, 'application/pdf');
       toast.success(`Generated ${filename} successfully!`);
 
       await logAudit(
         'REPORT_GENERATED',
-        `Generated and downloaded ${selectedCategoryMeta.title} (PDF) for ${startDate} (${categoryStats.count} records, Total: ₱${categoryStats.totalValue.toFixed(2)}).`
+        `Generated and downloaded ${selectedCategoryMeta.title} (PDF) for ${startDate} (${categoryStats.count} records, Total: PHP ${categoryStats.totalValue.toFixed(2)}).`
       );
     } catch (err: any) {
       toast.error(`PDF generation failed: ${err.message}`);
@@ -1662,7 +1701,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         </div>
 
         {/* ─── 2. SHOWCASE & CATEGORY DETAILS SHOWCASE CARD ─── */}
-        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 p-4 space-y-4 animate-fade-in">
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 p-3.5 sm:p-4 space-y-3.5 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-zinc-800">
             <div className="flex items-start gap-2.5">
               <div className="p-2 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-xs shrink-0">
@@ -1682,36 +1721,35 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                 </p>
               </div>
             </div>
-
-            <div className="flex items-center bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-1 rounded-xl shrink-0 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setPreviewTab('showcase')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  previewTab === 'showcase'
-                    ? 'bg-[#123c73] dark:bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <TableIcon className="w-3.5 h-3.5" />
-                <span>Data Showcase</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewTab('details')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  previewTab === 'details'
-                    ? 'bg-[#123c73] dark:bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <FileCheck2 className="w-3.5 h-3.5" />
-                <span>File Specs</span>
-              </button>
-            </div>
           </div>
 
-          {previewTab === 'showcase' ? (
+          {/* Clean 3-Column Explanation Cards (What / When / Includes) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-zinc-800/90 border border-slate-200/90 dark:border-zinc-700/80 shadow-2xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block mb-0.5">
+                📌 What This Report Is
+              </span>
+              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                {selectedCategoryMeta.explanation.what}
+              </p>
+            </div>
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-zinc-800/90 border border-slate-200/90 dark:border-zinc-700/80 shadow-2xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-0.5">
+                ⏱️ When To Use It
+              </span>
+              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                {selectedCategoryMeta.explanation.when}
+              </p>
+            </div>
+            <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-zinc-800/90 border border-slate-200/90 dark:border-zinc-700/80 shadow-2xs">
+              <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block mb-0.5">
+                📋 Key Data Included
+              </span>
+              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                {selectedCategoryMeta.explanation.includes}
+              </p>
+            </div>
+          </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
@@ -1964,51 +2002,8 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                       ))}
                   </tbody>
                 </table>
-              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-2 p-3 bg-white dark:bg-zinc-950 rounded-xl border border-slate-200 dark:border-zinc-800">
-                <h4 className="font-heading font-black text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <FileCheck2 className="w-3.5 h-3.5 text-emerald-500" />
-                  Legal & Bookkeeping Purpose
-                </h4>
-                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {selectedCategoryMeta.legalPurpose}
-                </p>
-                <div className="pt-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                    Standard Exports:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 font-mono text-[10px] font-bold">
-                      .CSV (UTF-8 Excel)
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 font-mono text-[10px] font-bold">
-                      .PDF (Landscape A4)
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2 p-3 bg-white dark:bg-zinc-950 rounded-xl border border-slate-200 dark:border-zinc-800">
-                <h4 className="font-heading font-black text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-blue-500" />
-                  Exported Column Schema
-                </h4>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {selectedCategoryMeta.columns.map((col, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-1 rounded-md bg-slate-100 dark:bg-zinc-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-zinc-700"
-                    >
-                      {col}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {/* ─── 3. DATE FILTERS & PRESETS ─── */}

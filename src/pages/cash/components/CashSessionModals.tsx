@@ -13,6 +13,7 @@ import {
   Banknote,
   Printer,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
@@ -129,8 +130,9 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
   const discrepancy = Math.round((totalActualCash - expectedCash) * 100) / 100;
 
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  const [showConfirmClose, setShowConfirmClose] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (isOffline) {
@@ -143,6 +145,10 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       return;
     }
 
+    setShowConfirmClose(true);
+  };
+
+  const handleExecuteFinalClose = async () => {
     try {
       setIsSubmitting(true);
       const actorName =
@@ -210,6 +216,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
         console.warn('Post-close refresh warning:', refreshErr);
       }
 
+      setShowConfirmClose(false);
       onClose();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to close cash session in Supabase.');
@@ -288,13 +295,15 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                     ₱
                   </span>
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    required
+                    type="text"
+                    inputMode="decimal"
+                    pattern="[0-9]*\.?[0-9]*"
                     placeholder="0.00"
                     value={directCashInput}
-                    onChange={(e) => setDirectCashInput(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      setDirectCashInput(val);
+                    }}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autoFocus
                   />
@@ -436,16 +445,20 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                               <MinusCircle className="w-4 h-4" />
                             </button>
                             <input
-                              type="number"
-                              min="0"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
                               value={count === 0 ? '' : count}
                               placeholder="0"
-                              onChange={(e) =>
-                                handleDenomChange(
-                                  key,
-                                  parseInt(e.target.value, 10)
-                                )
-                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '') {
+                                  handleDenomChange(key, 0);
+                                  return;
+                                }
+                                const num = parseInt(val.replace(/\D/g, ''), 10);
+                                handleDenomChange(key, isNaN(num) ? 0 : num);
+                              }}
                               className="w-12 text-center py-1 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
                             />
                             <button
@@ -610,6 +623,78 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
           </div>
         </div>
       </form>
+
+      {/* CONFIRMATION POPUP OVERLAY TO PREVENT ACCIDENTAL CLOSURE */}
+      {showConfirmClose && (
+        <div className="fixed inset-0 z-500 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in text-left">
+          <div className="bg-white dark:bg-[#161920] border border-rose-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-heading font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                  CONFIRM CLOSE SESSION
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Session #{session.session_number}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Counted Physical Cash:</span>
+                <span className="font-heading font-bold text-slate-900 dark:text-white">
+                  ₱{totalActualCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Expected Closing Cash:</span>
+                <span className="font-heading font-bold text-slate-900 dark:text-white">
+                  ₱{expectedCash.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 dark:border-slate-700">
+                <span className="font-bold text-slate-700 dark:text-slate-300">Variance / Discrepancy:</span>
+                <span className={`font-mono font-black ${
+                  discrepancy === 0 ? 'text-emerald-600 dark:text-emerald-400' : discrepancy > 0 ? 'text-amber-500' : 'text-rose-500'
+                }`}>
+                  {discrepancy === 0 ? 'Balanced (₱0.00)' : discrepancy > 0 ? `+₱${discrepancy.toFixed(2)} (Overage)` : `-₱${Math.abs(discrepancy).toFixed(2)} (Shortage)`}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold leading-relaxed">
+              ⚠️ Warning: Closing this session permanently records drawer totals and reconciles the cash shift. This action cannot be undone.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => setShowConfirmClose(false)}
+                className="w-full py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel / Back
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleExecuteFinalClose}
+                className="w-full py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-heading font-black tracking-wide text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4" />
+                )}
+                <span>Yes, Close Session</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 };

@@ -37,7 +37,7 @@ interface StagedRestock {
   has_stock_limit: boolean;
   current_stock: number;
   low_stock_alert: number | null;
-  incoming_qty: number;
+  incoming_qty: number | '';
   supplier_note: string;
   manufacturer_barcode?: string | null;
 }
@@ -88,7 +88,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
       has_stock_limit: true,
       current_stock: p.stock_quantity,
       low_stock_alert: p.low_stock_alert,
-      incoming_qty: 0,
+      incoming_qty: '',
       supplier_note: '',
       manufacturer_barcode: p.manufacturer_barcode,
     }));
@@ -106,7 +106,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
           has_stock_limit: true,
           current_stock: p.stock_quantity,
           low_stock_alert: p.low_stock_alert,
-          incoming_qty: 0,
+          incoming_qty: '',
           supplier_note: '',
           manufacturer_barcode: p.manufacturer_barcode,
         }))
@@ -115,9 +115,18 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
     }
   }, [isOpen, limitedCatalog]);
 
-  // Handle incoming quantity changes
-  const handleUpdateQty = (id: string, qty: number) => {
-    const validQty = Math.max(0, Math.floor(qty || 0));
+  // Handle incoming quantity changes: allows blank and caps at 999
+  const handleUpdateQty = (id: string, rawVal: string) => {
+    if (rawVal === '') {
+      setStagedItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, incoming_qty: '' } : item
+        )
+      );
+      return;
+    }
+    const cleanNum = parseInt(rawVal.replace(/\D/g, ''), 10);
+    const validQty = isNaN(cleanNum) ? '' : Math.min(999, Math.max(0, cleanNum));
     setStagedItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, incoming_qty: validQty } : item
@@ -129,8 +138,9 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
     setStagedItems((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        const newQty = Math.max(0, item.incoming_qty + delta);
-        return { ...item, incoming_qty: newQty };
+        const curr = typeof item.incoming_qty === 'number' ? item.incoming_qty : 0;
+        const newQty = Math.min(999, Math.max(0, curr + delta));
+        return { ...item, incoming_qty: newQty === 0 ? '' : newQty };
       })
     );
   };
@@ -148,7 +158,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
     setStagedItems((prev) =>
       prev.map((item) => ({
         ...item,
-        incoming_qty: 0,
+        incoming_qty: '',
         supplier_note: '',
       }))
     );
@@ -158,11 +168,14 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
 
   // Metrics calculations
   const stagedProducts = useMemo(() => {
-    return stagedItems.filter((item) => item.incoming_qty > 0);
+    return stagedItems.filter((item) => Number(item.incoming_qty) > 0);
   }, [stagedItems]);
 
   const totalIncomingUnits = useMemo(() => {
-    return stagedProducts.reduce((sum, item) => sum + item.incoming_qty, 0);
+    return stagedProducts.reduce(
+      (sum, item) => sum + (Number(item.incoming_qty) || 0),
+      0
+    );
   }, [stagedProducts]);
 
   // 4. Stretched search filtering based on query
@@ -191,7 +204,8 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
       const auditSummaries: string[] = [];
 
       const updatePromises = stagedProducts.map((item) => {
-        const newStock = item.current_stock + item.incoming_qty;
+        const qtyAdded = Number(item.incoming_qty) || 0;
+        const newStock = item.current_stock + qtyAdded;
         const finalNote =
           supplierMode === 'global'
             ? globalSupplierNote.trim() || null
@@ -201,7 +215,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
           product_id: item.id,
           product_name: item.product_name,
           movement_type: 'RESTOCK',
-          quantity_added: item.incoming_qty,
+          quantity_added: qtyAdded,
           previous_stock: item.current_stock,
           new_stock: newStock,
           note: finalNote,
@@ -211,7 +225,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
         });
 
         auditSummaries.push(
-          `"${item.product_name}": +${item.incoming_qty} (${item.current_stock} → ${newStock})${
+          `"${item.product_name}": +${qtyAdded} (${item.current_stock} → ${newStock})${
             finalNote ? ` [Note: ${finalNote}]` : ''
           }`
         );
@@ -392,7 +406,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
               <div
                 key={item.id}
                 className={`p-3 sm:p-4 rounded-2xl border transition-all ${
-                  item.incoming_qty > 0
+                  Number(item.incoming_qty || 0) > 0
                     ? 'bg-emerald-50/70 border-emerald-400 dark:bg-[#17202c] dark:border-emerald-500/40 shadow-xs'
                     : 'bg-white dark:bg-[#141822] border-slate-200 dark:border-slate-800'
                 }`}
@@ -432,7 +446,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleAdjustQty(item.id, -1)}
-                      disabled={item.incoming_qty <= 0}
+                      disabled={!item.incoming_qty || Number(item.incoming_qty) <= 0}
                       className="w-7 h-7 sm:w-8.5 sm:h-8.5 rounded-lg bg-white dark:bg-[#141822] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 flex items-center justify-center disabled:opacity-30 cursor-pointer active:scale-95 transition-all"
                       title="Decrease incoming quantity"
                     >
@@ -440,20 +454,25 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
                     </button>
 
                     <input
-                      type="number"
-                      min="0"
-                      value={item.incoming_qty === 0 ? '0' : item.incoming_qty}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={3}
+                      value={item.incoming_qty}
+                      placeholder="0"
                       onChange={(e) =>
-                        handleUpdateQty(item.id, parseInt(e.target.value) || 0)
+                        handleUpdateQty(item.id, e.target.value)
                       }
-                      className="w-8 sm:w-11 text-center font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm sm:text-base bg-transparent outline-none p-0"
+                      className="w-9 sm:w-12 text-center font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm sm:text-base bg-transparent outline-none p-0"
+                      title="Enter restock units (0-999)"
                     />
 
                     <button
                       type="button"
                       onClick={() => handleAdjustQty(item.id, 1)}
-                      className="w-7 h-7 sm:w-8.5 sm:h-8.5 rounded-lg bg-white dark:bg-[#141822] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                      title="Increase incoming quantity"
+                      disabled={Number(item.incoming_qty || 0) >= 999}
+                      className="w-7 h-7 sm:w-8.5 sm:h-8.5 rounded-lg bg-white dark:bg-[#141822] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 flex items-center justify-center disabled:opacity-30 cursor-pointer active:scale-95 transition-all"
+                      title="Increase incoming quantity (max 999)"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>

@@ -33,7 +33,7 @@ interface SalesDialogProps {
 
 interface CartItem {
   product: any;
-  quantity: number;
+  quantity: number | '';
 }
 
 const getCameraErrorMessage = (err: any): string => {
@@ -351,7 +351,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   const totalPayable = useMemo(() => {
     const cartTotal = cart.reduce(
-      (sum, item) => sum + getProductPrice(item.product) * item.quantity,
+      (sum, item) =>
+        sum + getProductPrice(item.product) * (Number(item.quantity) || 0),
       0
     );
     return cartTotal + gcashFee;
@@ -373,10 +374,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     const limitActive = hasStockLimit(product);
 
     if (existingIndex > -1) {
-      const currentQty = cart[existingIndex].quantity;
+      const currentQty = Number(cart[existingIndex].quantity) || 0;
       if (!limitActive || currentQty < stock) {
         const updatedCart = [...cart];
-        updatedCart[existingIndex].quantity += 1;
+        updatedCart[existingIndex].quantity = currentQty + 1;
         setCart(updatedCart);
       } else {
         toast.error('Cannot add more. Stock limit reached.');
@@ -391,20 +392,58 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     const updatedCart = [...cart];
     const item = updatedCart[idx];
     const stock = getProductStock(item.product);
-    const newQty = item.quantity + delta;
+    const currQty = Number(item.quantity) || 1;
+    const newQty = currQty + delta;
     const limitActive = hasStockLimit(item.product);
 
     if (newQty <= 0) {
       updatedCart.splice(idx, 1);
     } else {
       if (!limitActive || newQty <= stock) {
-        item.quantity = newQty;
+        item.quantity = Math.min(999, newQty);
       } else {
         toast.error('Limit reached. Cannot exceed available inventory.');
         return;
       }
     }
     setCart(updatedCart);
+  };
+
+  const handleSetQuantity = (idx: number, rawVal: string) => {
+    const updatedCart = [...cart];
+    const item = updatedCart[idx];
+    if (!item) return;
+    const stock = getProductStock(item.product);
+    const limitActive = hasStockLimit(item.product);
+
+    if (rawVal === '') {
+      item.quantity = '' as any;
+      setCart(updatedCart);
+      return;
+    }
+
+    const cleanNum = parseInt(rawVal.replace(/\D/g, ''), 10);
+    if (isNaN(cleanNum)) {
+      item.quantity = '' as any;
+    } else if (cleanNum <= 0) {
+      item.quantity = 1;
+    } else if (limitActive && cleanNum > stock) {
+      toast.error(`Stock limit reached. Maximum available is ${stock}.`);
+      item.quantity = stock;
+    } else {
+      item.quantity = Math.min(999, cleanNum);
+    }
+    setCart(updatedCart);
+  };
+
+  const handleBlurQuantity = (idx: number) => {
+    const updatedCart = [...cart];
+    const item = updatedCart[idx];
+    if (!item) return;
+    if (!item.quantity || Number(item.quantity) <= 0) {
+      item.quantity = 1;
+      setCart(updatedCart);
+    }
   };
 
   const handleCompleteSale = async () => {
@@ -465,7 +504,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
           const stock = getProductStock(p);
           const limitActive = hasStockLimit(p);
           if (limitActive) {
-            const newStock = Math.max(0, stock - cartItem.quantity);
+            const newStock = Math.max(0, stock - (Number(cartItem.quantity) || 0));
             return p.stock_quantity !== undefined
               ? { ...p, stock_quantity: newStock }
               : { ...p, stock: newStock };
@@ -481,14 +520,14 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
         items: cart.map((item) => ({
           productId: item.product.id,
           productName: getProductName(item.product),
-          quantity: item.quantity,
+          quantity: Number(item.quantity) || 1,
           price: getProductPrice(item.product),
         })),
         productName: cart
           .map((item) => `${item.quantity}x ${getProductName(item.product)}`)
           .join(', '),
         barcode: cart.map((item) => getProductBarcode(item.product)).join(', '),
-        quantity: cart.reduce((sum, item) => sum + item.quantity, 0),
+        quantity: cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
         paymentMethod,
         amountReceived:
           paymentMethod === 'Cash' ? Number(amountReceived) : null,
@@ -787,7 +826,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 </div>
                 {cart.length > 0 && (
                   <span className="text-[10px] font-mono text-slate-400">
-                    {cart.reduce((sum, item) => sum + item.quantity, 0)} total
+                    {cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)} total
                     unit(s)
                   </span>
                 )}
@@ -818,23 +857,34 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, -1)}
                           className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading text-sm font-bold hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                          title="Decrease quantity"
                         >
                           -
                         </button>
-                        <span className="font-mono w-6 text-center text-xs font-black text-(--color-text)">
-                          {item.quantity}
-                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={3}
+                          value={item.quantity === '' ? '' : item.quantity}
+                          placeholder="1"
+                          onChange={(e) => handleSetQuantity(idx, e.target.value)}
+                          onBlur={() => handleBlurQuantity(idx)}
+                          className="w-10 sm:w-12 text-center font-mono text-xs sm:text-sm font-black text-(--color-text) bg-white dark:bg-zinc-800 border border-(--border-color) rounded-lg py-1 px-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                          title="Type quantity directly"
+                        />
                         <button
                           type="button"
                           disabled={isSubmitting}
                           onClick={() => handleUpdateQuantity(idx, 1)}
                           className="w-7 h-7 border border-(--border-color) bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center font-heading text-sm font-bold hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                          title="Increase quantity"
                         >
                           +
                         </button>
@@ -910,11 +960,16 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         ₱
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*\.?[0-9]*"
                         placeholder="0.00"
                         disabled={isSubmitting}
                         value={amountReceived}
-                        onChange={(e) => setAmountReceived(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, '');
+                          setAmountReceived(val);
+                        }}
                         className="w-full pl-8 pr-3 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-sm"
                       />
                     </div>
@@ -939,6 +994,8 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     </label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       placeholder="Enter 13-digit reference code..."
                       maxLength={13}
                       disabled={isSubmitting}
@@ -977,7 +1034,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 <div className="flex justify-between text-slate-500">
                   <span>Total Units:</span>
                   <span className="font-bold text-(--color-text)">
-                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                    {cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}
                   </span>
                 </div>
                 {paymentMethod === 'GCash' && gcashFee > 0 && (

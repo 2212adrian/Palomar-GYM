@@ -487,18 +487,29 @@ export const LogbookPage: React.FC = () => {
         return true;
       }
 
-      const isCard = isCardRecord(log);
-      const isSub = log.isSubscription || log.customerType === 'New Membership';
+      const planStr = (log.categoryOrPlan || '').toLowerCase();
+      const typeStr = (log.customerType || '').toLowerCase();
+      const isSub =
+        Boolean(log.isSubscription) ||
+        log.customerType === 'New Membership' ||
+        log.customerType === 'Membership Renewal' ||
+        typeStr.includes('renewal') ||
+        typeStr.includes('subscription') ||
+        planStr.includes('renewal') ||
+        planStr.includes('monthly') ||
+        planStr.includes('yearly') ||
+        planStr.includes('annual') ||
+        (planStr.includes('membership') &&
+          !planStr.includes('daily') &&
+          !planStr.includes('walk-in') &&
+          !planStr.includes('guest'));
 
-      // 24-hour void window policy for subscriptions
+      // Subscriptions and renewals cannot be deleted as log records; they can only be voided via Member Subscriptions
       if (isSub) {
-        const itemDate = log.timestamp ? new Date(log.timestamp).getTime() : 0;
-        const ageMs = Date.now() - itemDate;
-        if (ageMs > 24 * 60 * 60 * 1000) {
-          return false; // Permanently locked after 24h
-        }
-        return isSessionOpen;
+        return false;
       }
+
+      const isCard = isCardRecord(log);
 
       if (!isCard && (log as any).deletable === false) {
         return false;
@@ -526,18 +537,25 @@ export const LogbookPage: React.FC = () => {
 
   const getLogDeleteDisabledReason = useCallback(
     (log: LogRecord) => {
-      const isSub = log.isSubscription || log.customerType === 'New Membership';
+      const planStr = (log.categoryOrPlan || '').toLowerCase();
+      const typeStr = (log.customerType || '').toLowerCase();
+      const isSub =
+        Boolean(log.isSubscription) ||
+        log.customerType === 'New Membership' ||
+        log.customerType === 'Membership Renewal' ||
+        typeStr.includes('renewal') ||
+        typeStr.includes('subscription') ||
+        planStr.includes('renewal') ||
+        planStr.includes('monthly') ||
+        planStr.includes('yearly') ||
+        planStr.includes('annual') ||
+        (planStr.includes('membership') &&
+          !planStr.includes('daily') &&
+          !planStr.includes('walk-in') &&
+          !planStr.includes('guest'));
 
       if (isSub) {
-        const itemDate = log.timestamp ? new Date(log.timestamp).getTime() : 0;
-        const ageMs = Date.now() - itemDate;
-        if (ageMs > 24 * 60 * 60 * 1000) {
-          return 'Subscription is locked: Passed the 24-hour void window and cannot be deleted.';
-        }
-        if (!isSessionOpen) {
-          return 'Cash session is closed. Open a cash session to void this subscription.';
-        }
-        return undefined;
+        return 'Monthly and yearly subscriptions and renewals cannot be deleted from the logbook. They can only be voided within 24 hours in Member Subscriptions.';
       }
 
       if (!isSessionOpen) {

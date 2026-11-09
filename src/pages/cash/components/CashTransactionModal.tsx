@@ -88,10 +88,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
     }
 
     if (type === 'cash_out' && numAmount > safeCurrentDrawerCash) {
-      const confirmOverdraw = window.confirm(
-        `Warning: Amount (₱${numAmount.toFixed(2)}) exceeds current expected drawer cash (₱${safeCurrentDrawerCash.toFixed(2)}). Do you want to proceed anyway?`
+      toast.warning(
+        `Notice: Cash out amount (₱${numAmount.toFixed(2)}) exceeds current counted drawer cash (₱${safeCurrentDrawerCash.toFixed(2)}). Recording discrepancy...`
       );
-      if (!confirmOverdraw) return;
     }
 
     if (!reason.trim()) {
@@ -174,13 +173,16 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
               ₱
             </span>
             <input
-              type="number"
-              step="1"
-              min="1"
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*\.?[0-9]*"
               autoFocus
               placeholder="0.00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9.]/g, '');
+                setAmount(val);
+              }}
               className={`w-full pl-8 pr-4 py-3 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${config.ringClass}`}
               required
             />

@@ -1252,16 +1252,16 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </div>
 
                 {isSessionOpen && activeSession ? (
-                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 break-words leading-relaxed">
                     Session{' '}
                     <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                       {activeSession.session_number}
                     </span>{' '}
-                    • Opened by {activeSession.opened_by_name} at{' '}
+                    • Opened by <span className="font-semibold text-slate-700 dark:text-slate-300 break-all">{activeSession.opened_by_name}</span> at{' '}
                     {format(new Date(activeSession.opened_at), 'h:mm a')}
                   </p>
                 ) : (
-                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                     No cash session currently active. Money transactions require
                     an open session.
                   </p>
