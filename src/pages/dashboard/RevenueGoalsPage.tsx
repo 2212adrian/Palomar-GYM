@@ -1,5 +1,6 @@
 // src/pages/dashboard/RevenueGoalsPage.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Target,
   Sparkles,
@@ -15,8 +16,10 @@ import {
   Trophy,
   Save,
   WifiOff,
+  X,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-toastify';
 import {
   startOfWeek,
   endOfWeek,
@@ -226,10 +229,25 @@ export const RevenueGoalsPage: React.FC = () => {
     setEditValues(goalsConfig);
   }, [goalsConfig]);
 
-const handleSaveAll = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Dirty check: compares current input values against persisted targets
+  const isDirty = Boolean(
+    editValues.daily !== goalsConfig.daily ||
+    editValues.weekly !== goalsConfig.weekly ||
+    editValues.monthly !== goalsConfig.monthly ||
+    editValues.yearly !== goalsConfig.yearly
+  );
+
+  const handleCancel = () => {
+    setEditValues(goalsConfig);
+    setSaveError(null);
+    toast.info('Changes discarded.');
+  };
+
+  const handleSaveAll = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (isOffline) {
       setSaveError('Cannot save revenue targets: No internet connection.');
+      toast.error('Cannot save revenue targets: No internet connection.');
       return;
     }
 
@@ -240,9 +258,12 @@ const handleSaveAll = async (e: React.FormEvent) => {
     try {
       await updateGoals(editValues);
       setSaveSuccess(true);
+      toast.success('Revenue targets updated successfully.');
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
-      setSaveError(err?.message || 'Failed to save goals to database');
+      const errorMsg = err?.message || 'Failed to save goals to database';
+      setSaveError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setIsSaving(false);
     }
@@ -270,8 +291,8 @@ const handleSaveAll = async (e: React.FormEvent) => {
   const CurrentIcon = currentTheme.icon;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto select-none text-slate-900 dark:text-slate-100">
-{/* ─── SLEEK ACTION TOOLBAR (Eliminates redundant double header) ─── */}
+    <div className="space-y-6 max-w-7xl mx-auto select-none text-slate-900 dark:text-slate-100 pb-28 sm:pb-32">
+      {/* ─── SLEEK ACTION TOOLBAR (Eliminates redundant double header) ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div className="flex items-center gap-2"></div>
 
@@ -492,7 +513,7 @@ const handleSaveAll = async (e: React.FormEvent) => {
         </div>
       </div>
 
-{/* ─── SET TARGET AMOUNTS (CLEAN & 4-COLOR THEMED EDITOR) ─── */}
+      {/* ─── SET TARGET AMOUNTS (CLEAN & 4-COLOR THEMED EDITOR) ─── */}
       <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xs space-y-5">
         {isOffline && (
           <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs select-none">
@@ -538,7 +559,8 @@ const handleSaveAll = async (e: React.FormEvent) => {
           </div>
         )}
 
-      <form
+        <form
+          id="revenue-goals-form"
           onSubmit={handleSaveAll}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
         >
@@ -566,10 +588,10 @@ const handleSaveAll = async (e: React.FormEvent) => {
                 disabled={isOffline}
                 value={editValues.daily}
                 onChange={(e) =>
-                  setEditValues({
-                    ...editValues,
+                  setEditValues((prev) => ({
+                    ...prev,
                     daily: Number(e.target.value) || 0,
-                  })
+                  }))
                 }
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
@@ -600,10 +622,10 @@ const handleSaveAll = async (e: React.FormEvent) => {
                 disabled={isOffline}
                 value={editValues.weekly}
                 onChange={(e) =>
-                  setEditValues({
-                    ...editValues,
+                  setEditValues((prev) => ({
+                    ...prev,
                     weekly: Number(e.target.value) || 0,
-                  })
+                  }))
                 }
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
@@ -634,10 +656,10 @@ const handleSaveAll = async (e: React.FormEvent) => {
                 disabled={isOffline}
                 value={editValues.monthly}
                 onChange={(e) =>
-                  setEditValues({
-                    ...editValues,
+                  setEditValues((prev) => ({
+                    ...prev,
                     monthly: Number(e.target.value) || 0,
-                  })
+                  }))
                 }
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-violet-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
@@ -668,37 +690,72 @@ const handleSaveAll = async (e: React.FormEvent) => {
                 disabled={isOffline}
                 value={editValues.yearly}
                 onChange={(e) =>
-                  setEditValues({
-                    ...editValues,
+                  setEditValues((prev) => ({
+                    ...prev,
                     yearly: Number(e.target.value) || 0,
-                  })
+                  }))
                 }
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
-
-          {/* Save Button */}
-          <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end pt-2">
-            <button
-              type="submit"
-              disabled={isSaving || isOffline}
-              className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold tracking-wider uppercase transition-all shadow-xs flex items-center gap-2 ${
-                isOffline
-                  ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
-                  : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] cursor-pointer active:scale-95 disabled:opacity-50'
-              }`}
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              <span>{isSaving ? 'Saving Changes...' : 'Save Targets'}</span>
-            </button>
-          </div>
         </form>
       </div>
+
+      {/* ─── FLOATING ACTION BAR VIA PORTAL (Unbothered by scrolling, appears only when changes exist) ─── */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {isDirty && (
+              <motion.div
+                key="floating-revenue-actions"
+                initial={{ opacity: 0, y: 24, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 24, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="fixed bottom-[calc(4.85rem+env(safe-area-inset-bottom,0px))] md:bottom-24 lg:bottom-8 left-1/2 -translate-x-1/2 z-[250] pointer-events-auto select-none"
+              >
+                <div className="flex items-center gap-2 sm:gap-3 p-1.5 sm:p-2 rounded-2xl bg-white/95 dark:bg-[#12151c]/95 backdrop-blur-xl border border-slate-200/90 dark:border-zinc-700/80 shadow-[0_12px_36px_rgba(0,0,0,0.35)] ring-1 ring-black/5 dark:ring-white/5">
+                  <div className="hidden sm:flex items-center gap-2 pl-2.5 pr-1 text-xs font-semibold text-slate-600 dark:text-zinc-300">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>Unsaved target changes</span>
+                  </div>
+
+                  {/* Cancel Button */}
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={handleCancel}
+                    className="px-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Cancel</span>
+                  </button>
+
+                  {/* Save Changes Button */}
+                  <button
+                    type="button"
+                    disabled={isSaving || isOffline}
+                    onClick={() => handleSaveAll()}
+                    className={`px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md flex items-center gap-2 ${
+                      isOffline
+                        ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
+                        : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] cursor-pointer active:scale-95 disabled:opacity-50'
+                    }`}
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
     </div>
   );
 };

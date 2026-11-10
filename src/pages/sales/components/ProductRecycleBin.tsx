@@ -281,7 +281,7 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
 
       const { data: activeCatalog, error: activeErr } = await supabase
         .from('products')
-        .select('id, product_name, barcode_id')
+        .select('id, product_name, barcode_id, manufacturer_barcode')
         .is('deleted_at', null);
 
       if (activeErr) throw activeErr;
@@ -292,6 +292,11 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
       const activeBarcodes = new Set(
         (activeCatalog || []).map((p) => p.barcode_id).filter(Boolean)
       );
+      const activeMfgBarcodes = new Set(
+        (activeCatalog || [])
+          .map((p) => p.manufacturer_barcode?.trim().toLowerCase())
+          .filter(Boolean)
+      );
 
       const toRestore: any[] = [];
       const duplicatesSkipped: string[] = [];
@@ -299,9 +304,12 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
       candidatesToRestore.forEach((item) => {
         const normName = (item.product_name || '').trim().toLowerCase();
         const normBarcode = (item.barcode_id || '').trim();
+        const normMfg = (item.manufacturer_barcode || '').trim().toLowerCase();
+
         if (
           activeNames.has(normName) ||
-          (normBarcode && activeBarcodes.has(normBarcode))
+          (normBarcode && activeBarcodes.has(normBarcode)) ||
+          (normMfg && activeMfgBarcodes.has(normMfg))
         ) {
           duplicatesSkipped.push(item.product_name);
         } else {
@@ -423,13 +431,13 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
       </button>
 
       <div className="space-y-4 pt-2">
-        {/* Warning callout banner with Red Exclamation Caution styling */}
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+        {/* Safe 30-day grace period notification banner */}
+        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300 font-semibold">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
           <span>
-            <strong>Caution:</strong> Restorable items are kept for up to 30
-            days. Products here are locked and will be permanently deleted at
-            12:00 AM Manila Time.
+            <strong>Notice:</strong> Restorable items are safely kept for up to 30
+            days. Products here will only be permanently purged after their 30-day
+            retention period at 12:00 AM Manila Time.
           </span>
         </div>
 
@@ -584,7 +592,7 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
                           onClick={(e) => e.stopPropagation()}
                         >
                           {daysRemaining && (
-                            <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
+                            <span className="text-[9px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-md whitespace-nowrap">
                               {daysRemaining}
                             </span>
                           )}

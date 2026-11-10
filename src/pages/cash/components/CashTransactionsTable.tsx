@@ -82,7 +82,11 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
 
   const handleConfirmVoid = async () => {
     if (!voidTargetTx) return;
-    if (!voidReason.trim() || voidReason.trim().length < 5) {
+    if (!voidReason.trim()) {
+      toast.error('Please enter a reason for voiding this transaction.');
+      return;
+    }
+    if (voidReason.trim().length < 5) {
       toast.error('Please enter a specific reason (at least 5 characters) for voiding this transaction.');
       return;
     }
@@ -100,6 +104,9 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
         reason: voidReason.trim().slice(0, 300),
         adminId: user?.id || null,
         adminName,
+        activityDescription: voidTargetTx.reason,
+        amount: Number(voidTargetTx.amount),
+        type: voidTargetTx.displayType || voidTargetTx.type,
       });
 
       toast.success(`Transaction voided. Cash drawer balance recalculated.`);
@@ -531,7 +538,6 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value.slice(0, 300))}
               className="w-full px-3 py-2 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
-              required
             />
           </div>
 
@@ -546,10 +552,10 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
               Cancel
             </Button>
             <Button
-              type="submit"
+              type="button"
               variant="primary"
               loading={isVoiding}
-              disabled={isVoiding || voidReason.trim().length < 5}
+              disabled={isVoiding}
               onClick={handleConfirmVoid}
               className="flex-1 py-2.5 text-xs !bg-rose-600 hover:!bg-rose-700 !text-white"
             >

@@ -1,4 +1,4 @@
-// src/components/layout/NotificationPopover.tsx
+// src/components/layouts/NotificationPopover.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -16,7 +16,12 @@ import {
   Flame,
   UserCheck,
   ShieldAlert,
+  Wallet,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import {
   useNotificationStore,
   formatBadgeCount,
@@ -29,7 +34,7 @@ interface NotificationPopoverProps {
   onClose: () => void;
 }
 
-type TabType = 'all' | 'incidents' | 'stock' | 'members';
+type TabType = 'all' | 'approvals' | 'incidents' | 'stock' | 'members';
 
 export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   isOpen,
@@ -42,11 +47,14 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(
     null
   );
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const { user, profile } = useAuthStore();
   const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
 
   const {
+    pendingCashApprovalsCount,
+    pendingCashApprovals,
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
@@ -56,6 +64,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     browserPermission,
     checkBrowserPermission,
     requestBrowserPermission,
+    approveCashApproval,
+    rejectCashApproval,
     markIncidentRead,
     dismissAlert,
     markAllAsRead,
@@ -63,7 +73,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   } = useNotificationStore();
 
   const totalNotifications =
-    incidentUnreadCount + stockAlertsCount + expiringSubsCount;
+    pendingCashApprovalsCount +
+    incidentUnreadCount +
+    stockAlertsCount +
+    expiringSubsCount;
 
   useEffect(() => {
     setMounted(true);
@@ -128,6 +141,36 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     onClose();
   };
 
+  const handleApproveCash = async (id: string, type: 'cash_in' | 'cash_out') => {
+    try {
+      setProcessingId(id);
+      const actorName =
+        profile?.username || user?.email?.split('@')[0] || 'Admin';
+      await approveCashApproval(id, user?.id, actorName);
+      toast.success(
+        `${type === 'cash_in' ? 'Cash In' : 'Cash Out'} request approved.`
+      );
+    } catch {
+      toast.error('Failed to approve cash transaction.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleRejectCash = async (id: string, type: 'cash_in' | 'cash_out') => {
+    try {
+      setProcessingId(id);
+      await rejectCashApproval(id, 'Rejected by admin via notifications');
+      toast.info(
+        `${type === 'cash_in' ? 'Cash In' : 'Cash Out'} request rejected.`
+      );
+    } catch {
+      toast.error('Failed to reject cash transaction.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   const handleIncidentClick = async (incidentId: string) => {
     await markIncidentRead(incidentId);
     handleNavigate('/reports', { state: { openIncidentId: incidentId } });
@@ -145,6 +188,9 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     handleNavigate('/members/list', { state: { openMemberId: memberId } });
   };
 
+  const showApprovals =
+    (activeTab === 'all' || activeTab === 'approvals') &&
+    pendingCashApprovals.length > 0;
   const showIncidents =
     (activeTab === 'all' || activeTab === 'incidents') &&
     unreadIncidents.length > 0;
@@ -155,7 +201,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     (activeTab === 'all' || activeTab === 'members') &&
     expiringMembers.length > 0;
 
-  const hasItemsInTab = showIncidents || showStock || showMembers;
+  const hasItemsInTab =
+    showApprovals || showIncidents || showStock || showMembers;
 
   if (!mounted || typeof document === 'undefined') return null;
 
@@ -163,7 +210,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* 1. SCRIM: Mobile only (hidden on PC/desktop with sm:hidden) */}
+          {/* 1. SCRIM: Mobile only */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -187,7 +234,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                 ? { top: `${coords.top}px`, right: `${coords.right}px` }
                 : undefined
             }
-            className="fixed left-2.5 right-2 top-2.5 sm:left-auto sm:right-4 sm:top-16 sm:w-[390px] md:w-[410px] max-h-[66vh] sm:max-h-[480px] bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl z-[99999] overflow-hidden flex flex-col font-body select-none"
+            className="fixed left-2.5 right-2 top-2.5 sm:left-auto sm:right-4 sm:top-16 sm:w-[390px] md:w-[420px] max-h-[70vh] sm:max-h-[500px] bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl z-[99999] overflow-hidden flex flex-col font-body select-none"
           >
             {/* TOP HEADER */}
             <div className="p-3 sm:p-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/90 dark:bg-zinc-900/80 backdrop-blur-md shrink-0">
@@ -250,6 +297,21 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                   All ({totalNotifications})
                 </button>
 
+                {pendingCashApprovalsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('approvals')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                      activeTab === 'approvals'
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shadow-xs border border-emerald-500/30 font-black'
+                        : 'text-slate-500 hover:text-emerald-500'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Approvals ({pendingCashApprovalsCount})</span>
+                  </button>
+                )}
+
                 {incidentUnreadCount > 0 && (
                   <button
                     type="button"
@@ -308,12 +370,133 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                     No Active Alerts
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                    All inventory stocks are healthy, subscriptions are current,
-                    and reports are reviewed.
+                    All cash drawer requests are resolved, stocks are healthy,
+                    and subscriptions are current.
                   </p>
                 </div>
               ) : (
                 <>
+                  {/* CASH IN / OUT APPROVALS SECTION */}
+                  {showApprovals && (
+                    <div className="space-y-1.5 pt-1">
+                      {activeTab === 'all' && (
+                        <div className="flex items-center justify-between px-1.5 pb-1">
+                          <span className="text-[9px] font-heading font-black tracking-wider uppercase text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                            <Wallet className="w-3 h-3" />
+                            Cash Drawer Approvals
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleNavigate('/cash-management')}
+                            className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
+                          >
+                            Open Drawer <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        {pendingCashApprovals.map((tx) => {
+                          const isCashIn = tx.type === 'cash_in';
+                          const isBusy = processingId === tx.id;
+
+                          return (
+                            <div
+                              key={tx.id}
+                              onClick={() => handleNavigate('/cash-management')}
+                              className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-zinc-900/70 hover:bg-slate-100 dark:hover:bg-zinc-800/80 border border-slate-200/80 dark:border-white/5 transition-all cursor-pointer flex items-center justify-between gap-2.5 group"
+                            >
+                              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                <div
+                                  className={`p-2 rounded-lg shrink-0 mt-0.5 ${
+                                    isCashIn
+                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                  }`}
+                                >
+                                  {isCashIn ? (
+                                    <ArrowDownLeft className="w-4 h-4" />
+                                  ) : (
+                                    <ArrowUpRight className="w-4 h-4" />
+                                  )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[8px] font-heading font-black uppercase shrink-0 ${
+                                          isCashIn
+                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                        }`}
+                                      >
+                                        {isCashIn ? 'Cash In' : 'Cash Out'}
+                                      </span>
+                                      <h5 className="font-mono text-xs font-black text-slate-900 dark:text-white truncate">
+                                        {isCashIn ? '+' : '-'}₱
+                                        {tx.amount.toLocaleString('en-US', {
+                                          minimumFractionDigits: 2,
+                                        })}
+                                      </h5>
+                                    </div>
+                                  </div>
+
+                                  <span className="text-[9.5px] text-slate-600 dark:text-slate-300 font-medium truncate block mt-0.5">
+                                    {tx.reason}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-mono block mt-0.5 truncate">
+                                    By {tx.performed_by_name} •{' '}
+                                    {new Date(tx.created_at).toLocaleTimeString(
+                                      [],
+                                      { hour: '2-digit', minute: '2-digit' }
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Quick Actions */}
+                              <div
+                                className="flex items-center gap-1 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() =>
+                                        handleApproveCash(tx.id, tx.type)
+                                      }
+                                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                                      title="Approve Cash Transaction"
+                                    >
+                                      <Check className="w-3 h-3 stroke-[2.5]" />
+                                      <span className="hidden sm:inline">Approve</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() =>
+                                        handleRejectCash(tx.id, tx.type)
+                                      }
+                                      className="p-1 rounded-lg hover:bg-rose-500/15 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                                      title="Reject Cash Transaction"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* INCIDENTS SECTION */}
                   {showIncidents && (
                     <div className="space-y-1.5 pt-1">
@@ -324,6 +507,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                             Incident Reports
                           </span>
                           <button
+                            type="button"
                             onClick={() => handleNavigate('/reports')}
                             className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
                           >
@@ -397,6 +581,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                             Inventory Stock Alerts
                           </span>
                           <button
+                            type="button"
                             onClick={() => handleNavigate('/sales/products')}
                             className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
                           >
@@ -466,6 +651,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                             Expiring Subscriptions (&lt;7 Days)
                           </span>
                           <button
+                            type="button"
                             onClick={() => handleNavigate('/members/list')}
                             className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
                           >
@@ -545,10 +731,22 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
 
               <button
                 type="button"
-                onClick={() => handleNavigate(isAdmin ? '/reports' : '/sales')}
+                onClick={() =>
+                  handleNavigate(
+                    isAdmin
+                      ? pendingCashApprovalsCount > 0
+                        ? '/cash-management'
+                        : '/reports'
+                      : '/sales'
+                  )
+                }
                 className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <span>Dashboard</span>
+                <span>
+                  {pendingCashApprovalsCount > 0
+                    ? 'Drawer Ledger'
+                    : 'Dashboard'}
+                </span>
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>

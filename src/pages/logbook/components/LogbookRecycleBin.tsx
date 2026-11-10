@@ -930,7 +930,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-[9999]"
     >
       {countdown && (
-        <span className="absolute top-6 right-13 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+        <span className="absolute top-6 right-13 text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md">
           Shift Active
         </span>
       )}
@@ -945,13 +945,10 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       </button>
 
       <div className="space-y-4 pt-2">
-        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-700 dark:text-rose-300 font-medium">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
           <span>
-            <strong>Please note:</strong> Check-ins removed during this shift
-            can be restored here while the register is open. When the cash
-            session is ended and closed, all items in this bin will be
-            permanently cleared.
+            <strong>Notice:</strong> This recycle bin contains logbook entries, purchase cards and subscription. This will be deleted permanently upon closing session. 
           </span>
         </div>
 

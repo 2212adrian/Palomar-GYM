@@ -363,6 +363,23 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     let cleanCode = rawCode.replace(/[\x00-\x1F\x7F-\x9F\uFFFD]/g, '').trim();
     if (!cleanCode) return;
 
+    if (cleanCode.startsWith('{') && cleanCode.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(cleanCode);
+        const extracted =
+          parsed.registrationId ||
+          parsed.registration_id ||
+          parsed.regId ||
+          parsed.reg_id ||
+          parsed.memberId ||
+          parsed.member_id ||
+          parsed.id;
+        if (extracted && typeof extracted === 'string') {
+          cleanCode = extracted.trim();
+        }
+      } catch {}
+    }
+
     const now = Date.now();
     const SCAN_COOLDOWN_MS = 800;
 
@@ -383,10 +400,34 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       const currentCart = productCartRef.current;
       const isCartMode = currentCart.length > 0;
       const currentHint = scanModeRef.current;
-      const result = await scannerService.processHybridScan(
+      let result = await scannerService.processHybridScan(
         cleanCode,
         currentHint
       );
+
+      if (
+        result.type === 'unknown' ||
+        (result.type !== 'product' &&
+          result.type !== 'member' &&
+          result.type !== 'registration')
+      ) {
+        try {
+          const { data: regData } = await supabase
+            .from('online_registrations')
+            .select('*')
+            .or(`id.ilike.${cleanCode},phone.eq.${cleanCode}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (regData) {
+            result = {
+              type: 'registration',
+              registration: regData,
+              rawCode: cleanCode,
+            };
+          }
+        } catch {}
+      }
 
       if (isCartMode && (result.type !== 'product' || !result.product)) {
         toast.error(
@@ -455,22 +496,46 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           `Scanned: ${scannedProduct.productName} (${targetQty}x)`,
           { toastId: `cart-scan-${scannedProduct.id}` }
         );
-      } else if (result.type === 'member' || result.type === 'registration') {
-        if (result.type === 'member' && result.member) {
-          const todayDateStr = new Date().toISOString().split('T')[0];
-          const { data: todayAtt } = await supabase
-            .from('attendance')
-            .select('id')
-            .is('deleted_at', null)
-            .eq('member_id', result.member.memberId)
-            .gte('check_in_time', `${todayDateStr}T00:00:00.000Z`)
-            .lte('check_in_time', `${todayDateStr}T23:59:59.999Z`)
-            .limit(1);
-
-          result.member.alreadyCheckedInToday = Boolean(
-            todayAtt && todayAtt.length > 0
+      } else if (result.type === 'registration' && result.registration) {
+        if (result.registration.status !== 'Pending') {
+          toast.warning(
+            `Registration ticket ${result.registration.id} has already been ${result.registration.status.toLowerCase()}.`,
+            { toastId: `reg-${result.registration.id}` }
           );
+          return;
         }
+
+        playBeepSound();
+        triggerSuccessAnimation();
+        toast.success(
+          `Validated Pre-Registration: ${result.registration.full_name}`
+        );
+        isExitingRef.current = true;
+        forceStopCamera();
+        handleClose();
+        navigate('/members/plans', {
+          state: {
+            openWizard: true,
+            initialStep: 2,
+            initialIntakeMode: 'Manual',
+            prefillData: result.registration,
+          },
+        });
+        return;
+      } else if (result.type === 'member' && result.member) {
+        const todayDateStr = new Date().toISOString().split('T')[0];
+        const { data: todayAtt } = await supabase
+          .from('attendance')
+          .select('id')
+          .is('deleted_at', null)
+          .eq('member_id', result.member.memberId)
+          .gte('check_in_time', `${todayDateStr}T00:00:00.000Z`)
+          .lte('check_in_time', `${todayDateStr}T23:59:59.999Z`)
+          .limit(1);
+
+        result.member.alreadyCheckedInToday = Boolean(
+          todayAtt && todayAtt.length > 0
+        );
 
         playBeepSound();
         triggerSuccessAnimation();
@@ -1079,7 +1144,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             navigate('/members/plans', {
                               state: {
                                 openWizard: true,
-                                initialStep: 1,
+                                initialStep: 2,
                                 initialIntakeMode: 'Manual',
                                 prefillData: scanResult.registration,
                               },

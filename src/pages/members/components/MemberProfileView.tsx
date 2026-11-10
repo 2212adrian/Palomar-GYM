@@ -1,6 +1,6 @@
 // src/pages/members/components/MemberProfileView.tsx
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
@@ -29,6 +29,7 @@ import {
   Check,
   Undo2,
   WifiOff,
+  Zap,
 } from 'lucide-react';
 import { IntakeWizardModal } from './SubscriptionPlan';
 import {
@@ -225,7 +226,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   };
 
   const [activeTab, setActiveTab] = useState<
-    'Overview' | 'Contracts & Billing' | 'Cards' | 'Attendance' | 'Notes'
+    'Overview' | 'Member Plans' | 'Cards' | 'Attendance & Notes'
   >('Overview');
   const [notes, setNotes] = useState(member.notes || '');
 
@@ -317,6 +318,110 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       setPayCardAmountPaid(settings.card_printing_fee);
     }
   }, [settings.card_printing_fee]);
+
+  // Desktop screen check for responsive drawer transitions & interaction modes
+  const [isDesktop, setIsDesktop] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : true
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Freeform 25% - 100% Pullable Height State (Mobile touch screens only)
+  const [sheetHeightPercent, setSheetHeightPercent] = useState<number>(70);
+  const [isDraggingSheet, setIsDraggingSheet] = useState<boolean>(false);
+  const isDraggingSheetRef = useRef<boolean>(false);
+  const pointerStartYRef = useRef<number>(0);
+  const startHeightRef = useRef<number>(70);
+  const hasMovedRef = useRef<boolean>(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (isDesktop) return;
+    // Ignore right clicks or clicks on form controls
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea')
+    ) {
+      return;
+    }
+
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    isDraggingSheetRef.current = true;
+    hasMovedRef.current = false;
+    setIsDraggingSheet(true);
+    pointerStartYRef.current = e.clientY;
+    startHeightRef.current = sheetHeightPercent;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingSheetRef.current) return;
+    const currentY = e.clientY;
+    const deltaPx = pointerStartYRef.current - currentY; // Moving UP = positive delta
+
+    if (Math.abs(deltaPx) > 4) {
+      hasMovedRef.current = true;
+    }
+
+    const screenH =
+      typeof window !== 'undefined' ? window.innerHeight : 800;
+    const deltaPercent = (deltaPx / screenH) * 100;
+    let nextPercent = startHeightRef.current + deltaPercent;
+    nextPercent = Math.max(15, Math.min(100, nextPercent));
+    setSheetHeightPercent(nextPercent);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDraggingSheetRef.current) return;
+    isDraggingSheetRef.current = false;
+    setIsDraggingSheet(false);
+
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    // If it was just a quick tap without dragging, cycle snap points
+    if (!hasMovedRef.current) {
+      setSheetHeightPercent((prev) => {
+        if (prev <= 70) return 100;
+        return 70;
+      });
+      return;
+    }
+
+setSheetHeightPercent((current) => {
+      // Pulling below 55% dismisses the sheet
+      if (current < 55) {
+        onClose();
+        return current;
+      }
+      // Pulling near the top snaps to 100% full screen
+      if (current > 90) return 100;
+      // Otherwise stay hanging right where released (between 55% and 100%)
+      return Math.round(current);
+    });
+  };
 
   // Inline Profile Edit State
   const parsedName = useMemo(
@@ -576,7 +681,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         return false;
       const startMs = new Date(s.start_date).getTime();
       const endMs = new Date(s.end_date).getTime();
-      return startMs <= now && endMs >= now;
+      return (s.status === 'Active' || startMs <= now) && endMs >= now;
     });
   }, [subscriptions, localMember.member_id]);
 
@@ -606,6 +711,18 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
 
   const targetSubForDisplay = activeContract || latestContract;
 
+  const subscriptionStatus = useMemo<'Active' | 'Queued' | 'Expired' | 'No Subscription'>(() => {
+    const now = getServerNow().getTime();
+    if (activeContract) return 'Active';
+    if (queuedContract) return 'Queued';
+    if (targetSubForDisplay) {
+      const endMs = new Date(targetSubForDisplay.end_date).getTime();
+      if (!isNaN(endMs) && endMs < now) return 'Expired';
+      if (targetSubForDisplay.status === 'Active') return 'Active';
+    }
+    return 'No Subscription';
+  }, [activeContract, queuedContract, targetSubForDisplay]);
+
   const isRecentlyExpired = useMemo(() => {
     if (!targetSubForDisplay || activeContract) return false;
     const endMs = new Date(targetSubForDisplay.end_date).getTime();
@@ -623,6 +740,14 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
     return daysExpired === 0 ? '-1 day ago' : `-${daysExpired} days ago`;
   }, [isRecentlyExpired, targetSubForDisplay]);
+
+  const remainingDays = useMemo(() => {
+    if (!activeContract?.end_date) return 0;
+    const endMs = new Date(activeContract.end_date).getTime();
+    const now = getServerNow().getTime();
+    return Math.max(0, Math.ceil((endMs - now) / (1000 * 60 * 60 * 24)));
+  }, [activeContract]);
+
   const stats = useMemo(() => {
     return {
       totalSpent: receipts.reduce(
@@ -653,6 +778,13 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   const currentCard = useMemo(() => {
     return cards.find((c: MemberCard) => c.status === 'Active');
   }, [cards]);
+
+  const cardStatus = useMemo<'No Card' | 'Unpaid' | 'Pending Pickup' | 'Claimed'>(() => {
+    if (!currentCard || currentCard.card_type === 'None') return 'No Card';
+    if (currentCard.payment_status !== 'PAID') return 'Unpaid';
+    if (currentCard.claim_status === 'CLAIMED') return 'Claimed';
+    return 'Pending Pickup';
+  }, [currentCard]);
 
   useEffect(() => {
     if (currentCard?.card_type === 'Manual') {
@@ -855,7 +987,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     return { eligible: true, reason: '' };
   };
 
-  const hasActiveSubscription = !!activeContract;
+  const hasActiveSubscription = subscriptionStatus === 'Active';
   const [isEditConfirmModalOpen, setIsEditConfirmModalOpen] = useState(false);
 
   const calculatedAge = useMemo(() => {
@@ -1425,29 +1557,59 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-[250] flex items-end sm:items-center justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
+      className="fixed inset-0 z-[250] flex items-end sm:items-center justify-center sm:justify-end bg-black/70 backdrop-blur-xs font-body text-xs text-(--color-text)"
       onClick={onClose}
     >
       <motion.div
-        initial={{ x: '100%', y: 0 }}
-        animate={{ x: 0, y: 0 }}
-        exit={{ x: '100%', y: 0 }}
+        initial={isDesktop ? { x: '100%' } : { y: '100%' }}
+        animate={isDesktop ? { x: 0 } : { y: 0 }}
+        exit={isDesktop ? { x: '100%' } : { y: '100%' }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-        className="w-full sm:max-w-2xl h-[92dvh] max-h-[92dvh] sm:h-full sm:max-h-full bg-white dark:bg-[#16181a] border-t sm:border-t-0 sm:border-l border-(--border-color) rounded-t-3xl sm:rounded-none shadow-2xl flex flex-col overflow-hidden relative"
+        style={isDesktop ? { height: '100%' } : { height: `${sheetHeightPercent}dvh` }}
+        className={`w-full sm:max-w-2xl lg:max-w-3xl xl:max-w-4xl bg-white dark:bg-[#16181a] border-t sm:border-t-0 sm:border-l border-(--border-color) shadow-2xl flex flex-col overflow-hidden relative sm:!h-full select-none ${
+          isDraggingSheet
+            ? '!transition-none'
+            : 'transition-[height,border-radius] duration-200 ease-out'
+        } ${
+          sheetHeightPercent >= 98 || isDesktop
+            ? 'h-[100dvh] max-h-[100dvh] rounded-none'
+            : 'rounded-t-3xl sm:rounded-none'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* COMPACT HEADER WITH CLICKABLE AVATAR */}
-        <div className="p-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0">
+        {/* PULLABLE DRAG HANDLE (ONLY VISIBLE ON MOBILE TOUCH SCREENS) */}
+        <div
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          className="sm:hidden w-full flex flex-col items-center justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing select-none shrink-0 bg-(--bg-page) touch-none"
+          style={{ touchAction: 'none' }}
+          title="Hold and drag up/down to adjust height freely"
+        >
+          <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 hover:bg-slate-400 dark:hover:bg-zinc-600 transition-colors" />
+        </div>
+
+        {/* COMPACT HEADER (NO PULL TRIGGER ON PC DESKTOP) */}
+        <div
+          onPointerDown={isDesktop ? undefined : handlePointerDown}
+          onPointerMove={isDesktop ? undefined : handlePointerMove}
+          onPointerUp={isDesktop ? undefined : handlePointerUp}
+          onPointerCancel={isDesktop ? undefined : handlePointerUp}
+          style={isDesktop ? undefined : { touchAction: 'none' }}
+          className={`px-4 pb-4 sm:p-5 border-b border-(--border-color) space-y-3 select-none bg-(--bg-page) shrink-0 ${
+            isDesktop ? '' : 'touch-none cursor-grab active:cursor-grabbing'
+          }`}
+        >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-widest">
               MEMBER PROFILE
             </span>
-
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-500 hover:text-(--color-text) transition-all cursor-pointer shadow-xs z-30 relative"
-              title="Close panel"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-500/10 transition-colors cursor-pointer"
+              title="Close Profile (Esc)"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1544,29 +1706,16 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </span>
               <span
                 className={`text-xs font-bold truncate block mt-1 ${
-                  activeContract
+                  subscriptionStatus === 'Active'
                     ? 'text-emerald-600 dark:text-emerald-400'
-                    : isRecentlyExpired
+                    : subscriptionStatus === 'Expired'
                       ? 'text-rose-600 dark:text-rose-400'
-                      : 'text-slate-500 dark:text-slate-400'
+                      : subscriptionStatus === 'Queued'
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                {activeContract
-                  ? 'Active'
-                  : targetSubForDisplay?.status === 'Voided'
-                    ? 'Voided'
-                    : isRecentlyExpired
-                      ? 'Expired'
-                      : 'No Subscription'}
-              </span>
-            </div>
-
-            <div className="min-w-27.5 flex-1 p-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-center shadow-xs shrink-0">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">
-                Reissued
-              </span>
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400 block mt-1">
-                {stats.cardReplacements} cards
+                {subscriptionStatus}
               </span>
             </div>
           </div>
@@ -1576,10 +1725,9 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         <div className="sticky top-0 z-20 border-b border-(--border-color) bg-(--bg-card) px-3 sm:px-4 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none py-2 select-none shrink-0">
           {[
             'Overview',
-            'Contracts & Billing',
+            'Member Plans',
             'Cards',
-            'Attendance',
-            'Notes',
+            'Attendance & Notes',
           ].map((tab) => (
             <button
               key={tab}
@@ -1596,236 +1744,208 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
         </div>
 
         {/* TAB CONTENTS CONTAINER */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'Overview' && (
             <div className="space-y-4 text-left animate-fade-in">
-              {/* RENEW / SUBSCRIBE BANNER */}
-              {(!activeContract || queuedContract) && (
-                <div
-                  className={`p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none shadow-xs border ${
-                    expiredDaysText
-                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
-                      : queuedContract
-                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400'
-                        : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
-                  }`}
-                >
-                  <div className="space-y-0.5">
-                    <span className="font-heading font-bold text-xs block">
-                      {expiredDaysText
-                        ? `Subscription Expired (${expiredDaysText})`
-                        : queuedContract
-                          ? `Renewal Scheduled: ${queuedContract.plan_name}`
-                          : 'No Active Subscription (Profile Only)'}
-                    </span>
-                    <span className="text-xs text-slate-400 font-medium block">
-                      {expiredDaysText
-                        ? 'This contract expired. Renew to grant gym check-in access.'
-                        : queuedContract
-                          ? `Scheduled to activate on ${new Date(queuedContract.start_date).toLocaleDateString()}.`
-                          : 'Enroll this member to grant gym facility check-in access.'}
+              {/* COMPACT QUICK ACTIONS & MEMBERSHIP STATUS (HIDDEN DURING EDIT MODE) */}
+              {!isEditing && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      QUICK ACTIONS
                     </span>
                   </div>
 
-                  {!queuedContract && (
-                    <button
-                      type="button"
-                      onClick={handleEnrollOrRenewClick}
-                      title={
-                        isSuspended
-                          ? 'Member account is suspended. Activate member first.'
-                          : !isSessionOpen
-                            ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
-                            : expiredDaysText
-                              ? 'Renew Subscription'
-                              : 'Subscribe Plan'
-                      }
-                      className={`w-full sm:w-auto min-h-11 px-4 py-2.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border-none shadow-sm flex items-center justify-center gap-2 shrink-0 transition-colors ${
-                        isEnrollDisabled
-                          ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* QUICK ACTION 1: SUBSCRIPTION */}
+                    <div
+                      className={`p-3 bg-(--bg-card) border rounded-2xl shadow-xs flex items-center justify-between gap-3 transition-colors ${
+                        subscriptionStatus === 'Expired'
+                          ? 'border-rose-500/30'
+                          : subscriptionStatus === 'Active'
+                            ? 'border-emerald-500/30'
+                            : subscriptionStatus === 'Queued'
+                              ? 'border-blue-500/30'
+                              : 'border-amber-500/30'
                       }`}
                     >
-                      {isEnrollDisabled ? (
-                        <Lock className="w-4 h-4" />
-                      ) : (
-                        <CreditCard className="w-4 h-4" />
-                      )}
-                      <span>
-                        {expiredDaysText
-                          ? 'Renew Subscription'
-                          : 'Subscribe Plan'}
-                      </span>
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* PHYSICAL MEMBERSHIP CARD TRACKING WIDGET */}
-              <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3 shadow-xs">
-                <div className="flex justify-between items-center border-b border-(--border-color) pb-2.5">
-                  <h4 className="font-heading text-xs text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2 font-bold">
-                    <CreditCard className="w-4 h-4 text-blue-500" /> Physical
-                    Membership Card
-                  </h4>
-                  {currentCard && currentCard.card_type !== 'None' && (
-                    <span className="text-[10px] font-mono font-bold text-slate-400">
-                      Token: {currentCard.card_number}
-                    </span>
-                  )}
-                </div>
-
-                {!currentCard || currentCard.card_type === 'None' ? (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                    <span className="text-slate-400">
-                      No security badge registered for this member.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isSuspended) {
-                          toast.error(
-                            'Cannot issue card: Member account is suspended.'
-                          );
-                          return;
-                        }
-                        if (!isSessionOpen) {
-                          toast.warning(
-                            'Cannot issue card: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                          );
-                          return;
-                        }
-                        setActiveTab('Cards');
-                      }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase transition-colors ${
-                        isEnrollDisabled
-                          ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
-                      }`}
-                    >
-                      Issue Card
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3 text-xs">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">
-                          Payment:
-                        </span>
-                        {currentCard.payment_status === 'PAID' ? (
-                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
-                            PAID (₱{currentCard.card_fee_paid || cardFeeAmount}
-                            .00)
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              subscriptionStatus === 'Active'
+                                ? 'bg-emerald-500 animate-pulse'
+                                : subscriptionStatus === 'Expired'
+                                  ? 'bg-rose-500'
+                                  : subscriptionStatus === 'Queued'
+                                    ? 'bg-blue-500'
+                                    : 'bg-amber-500'
+                            }`}
+                          />
+                          <span className="font-heading font-bold text-xs text-(--color-text) uppercase truncate">
+                            {subscriptionStatus === 'Active'
+                              ? targetSubForDisplay?.plan_name || 'Active Plan'
+                              : subscriptionStatus === 'Expired'
+                                ? 'Expired Plan'
+                                : subscriptionStatus === 'Queued'
+                                  ? 'Renewal Queued'
+                                  : 'No Subscription'}
                           </span>
-                        ) : (
-                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
-                            UNPAID (₱0.00)
-                          </span>
-                        )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {subscriptionStatus === 'Active' ? (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              {remainingDays} days remaining
+                            </span>
+                          ) : subscriptionStatus === 'Expired' ? (
+                            <span className="text-rose-500 font-medium">
+                              Expired {expiredDaysText || 'recently'}
+                            </span>
+                          ) : subscriptionStatus === 'Queued' && queuedContract ? (
+                            <span className="text-blue-500 font-medium">
+                              Starts {new Date(queuedContract.start_date).toLocaleDateString()}
+                            </span>
+                          ) : (
+                            <span>Profile only • Needs enrollment</span>
+                          )}
+                        </p>
                       </div>
 
-                      <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">
-                          Claim Status:
-                        </span>
-                        {currentCard.claim_status === 'CLAIMED' ? (
-                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
-                            CLAIMED & HANDED OVER
-                          </span>
-                        ) : currentCard.claim_status === 'UNCLAIMED' ? (
-                          <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
-                            PENDING PICKUP
+                      <div className="shrink-0">
+                        {subscriptionStatus === 'Queued' ? (
+                          <span className="px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                            Queued
                           </span>
                         ) : (
-                          <span className="font-mono font-medium text-slate-400">
-                            DIGITAL ONLY
-                          </span>
+                          <button
+                            type="button"
+                            onClick={handleEnrollOrRenewClick}
+                            disabled={isEnrollDisabled}
+                            title={
+                              isSuspended
+                                ? 'Member account is suspended. Activate member first.'
+                                : !isSessionOpen
+                                  ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
+                                  : subscriptionStatus === 'Active'
+                                    ? 'Extend Plan'
+                                    : subscriptionStatus === 'Expired'
+                                      ? 'Renew Subscription'
+                                      : 'Subscribe Plan'
+                            }
+                            className={`min-h-9 px-3.5 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border-none shadow-xs flex items-center gap-1.5 transition-colors ${
+                              isEnrollDisabled
+                                ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
+                                : subscriptionStatus === 'Active'
+                                  ? 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 cursor-pointer'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95'
+                            }`}
+                          >
+                            {isEnrollDisabled ? (
+                              <Lock className="w-3.5 h-3.5" />
+                            ) : subscriptionStatus === 'Active' || subscriptionStatus === 'Expired' ? (
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            ) : (
+                              <CreditCard className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              {subscriptionStatus === 'Active'
+                                ? 'Extend'
+                                : subscriptionStatus === 'Expired'
+                                  ? 'Renew'
+                                  : 'Subscribe'}
+                            </span>
+                          </button>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-(--border-color)">
-                      <div className="text-[11px] text-slate-400">
-                        {currentCard.claimed_at ? (
-                          <span>
-                            Claimed on{' '}
-                            {new Date(
-                              currentCard.claimed_at
-                            ).toLocaleDateString()}{' '}
-                            {currentCard.claimed_by
-                              ? `by ${currentCard.claimed_by}`
-                              : ''}
+                    {/* QUICK ACTION 2: PHYSICAL MEMBERSHIP CARD */}
+                    <div
+                      className={`p-3 bg-(--bg-card) border rounded-2xl shadow-xs flex items-center justify-between gap-3 transition-colors ${
+                        cardStatus === 'Claimed'
+                          ? 'border-emerald-500/30'
+                          : cardStatus === 'Pending Pickup'
+                            ? 'border-amber-500/30'
+                            : cardStatus === 'Unpaid'
+                              ? 'border-amber-500/30'
+                              : 'border-(--border-color)'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="font-heading font-bold text-xs text-(--color-text) uppercase truncate">
+                            Physical Card
                           </span>
-                        ) : currentCard.payment_status === 'PAID' ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-medium">
-                            Card fee paid. Ready for handover at the front desk.
-                          </span>
-                        ) : (
-                          <span>
-                            Card printing fee of ₱{cardFeeAmount}.00 has not
-                            been paid yet.
-                          </span>
-                        )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {cardStatus === 'Claimed' ? (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              Claimed &amp; handed over
+                            </span>
+                          ) : cardStatus === 'Pending Pickup' ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">
+                              Paid (₱{currentCard?.card_fee_paid || cardFeeAmount}.00) • Ready
+                            </span>
+                          ) : cardStatus === 'Unpaid' ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">
+                              ₱{cardFeeAmount}.00 card fee unpaid
+                            </span>
+                          ) : (
+                            <span>No security card issued</span>
+                          )}
+                        </p>
                       </div>
 
-<div className="flex items-center gap-2 flex-wrap">
-                        {currentCard.payment_status === 'PAID' &&
-                          currentCard.claim_status === 'UNCLAIMED' && (
-                            <button
-                              type="button"
-                              disabled={isClaimingInProfile || isOffline}
-                              onClick={handleConfirmMarkClaimed}
-                              className={`px-3.5 py-2 text-white rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 shadow-xs ${
-                                isOffline
-                                  ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
-                                  : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer disabled:opacity-50'
-                              }`}
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>
-                                {isClaimingInProfile
-                                  ? 'Claiming...'
-                                  : 'Mark as Claimed'}
-                              </span>
-                            </button>
-                          )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {cardStatus === 'Pending Pickup' && (
+                          <button
+                            type="button"
+                            disabled={isClaimingInProfile || isOffline}
+                            onClick={handleConfirmMarkClaimed}
+                            className={`min-h-9 px-3 py-1.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center gap-1 shadow-xs transition-colors ${
+                              isOffline
+                                ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer active:scale-95 disabled:opacity-50'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{isClaimingInProfile ? 'Claiming...' : 'Claim'}</span>
+                          </button>
+                        )}
 
-                        {currentCard.claim_status === 'CLAIMED' && (
+                        {cardStatus === 'Claimed' && (
                           <button
                             type="button"
                             disabled={isOffline}
                             onClick={() => setIsUndoClaimModalOpen(true)}
-                            className={`px-3 py-2 border rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 transition-colors ${
+                            className={`min-h-9 px-2.5 py-1.5 border rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${
                               isOffline
                                 ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
-                                : 'bg-slate-500/10 hover:bg-amber-500/20 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 border-(--border-color) cursor-pointer'
+                                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 cursor-pointer active:scale-95'
                             }`}
-                            title="Accidentally marked as claimed? Revert back to Unclaimed state"
+                            title="Revert back to Unclaimed"
                           >
-                            <Undo2 className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Undo Claim</span>
+                            <Undo2 className="w-3.5 h-3.5" />
+                            <span>Undo</span>
                           </button>
                         )}
 
-                        {currentCard.payment_status !== 'PAID' && (
+                        {cardStatus === 'Unpaid' && (
                           <button
                             type="button"
                             disabled={isOffline}
                             onClick={() => setIsPayCardModalOpen(true)}
-                            className={`px-3.5 py-2 text-white rounded-xl text-xs font-heading font-bold uppercase flex items-center gap-1.5 shadow-xs ${
+                            className={`min-h-9 px-3 py-1.5 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 flex items-center gap-1 shadow-xs transition-colors ${
                               isOffline
                                 ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
-                                : 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
+                                : 'cursor-pointer active:scale-95'
                             }`}
                           >
-                            <CreditCard className="w-3.5 h-3.5" /> Pay Card Fee
-                            (₱{cardFeeAmount})
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Pay (₱{cardFeeAmount})</span>
                           </button>
                         )}
 
@@ -1833,19 +1953,20 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                           type="button"
                           disabled={isOffline}
                           onClick={() => setActiveTab('Cards')}
-                          className={`px-3 py-2 rounded-xl text-xs font-heading font-bold uppercase ${
+                          className={`min-h-9 px-2.5 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider border border-(--border-color) transition-colors ${
                             isOffline
                               ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 opacity-50 cursor-not-allowed'
                               : 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 cursor-pointer'
                           }`}
+                          title="Manage in Cards tab"
                         >
-                          Manage Card
+                          {cardStatus === 'No Card' ? 'Issue' : 'Manage'}
                         </button>
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* PERSONAL BIO & EMERGENCY CONTACT CARDS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
@@ -1873,36 +1994,36 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       </div>
 
                       {/* Name Breakdown: Last Name, First Name, M.I., Suffix */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2 px-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl">
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                      <div className="grid grid-cols-12 gap-2.5 py-2.5 px-3 bg-(--bg-card) border border-(--border-color) rounded-xl">
+                        <div className="col-span-5 sm:col-span-4 min-w-0">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">
                             Last Name
                           </span>
-                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                          <span className="text-xs font-bold text-(--color-text) uppercase break-words block">
                             {parsedName.lastName || '—'}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                        <div className="col-span-4 sm:col-span-4 min-w-0">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">
                             First Name
                           </span>
-                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                          <span className="text-xs font-bold text-(--color-text) uppercase break-words block">
                             {parsedName.firstName || '—'}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                        <div className="col-span-3 sm:col-span-2 min-w-0">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">
                             M.I.
                           </span>
-                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                          <span className="text-xs font-bold text-(--color-text) uppercase block">
                             {parsedName.middleInitial ? `${parsedName.middleInitial}.` : '—'}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase block">
+                        <div className="col-span-12 sm:col-span-2 min-w-0">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block tracking-wider">
                             Suffix
                           </span>
-                          <span className="text-xs font-bold text-(--color-text) uppercase truncate block">
+                          <span className="text-xs font-bold text-(--color-text) uppercase block">
                             {parsedName.suffix || '—'}
                           </span>
                         </div>
@@ -2003,7 +2124,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-slate-400 text-xs font-medium block mb-1">
-                            Gender
+                            Sex
                           </label>
                           <select
                             value={editGender}
@@ -2173,8 +2294,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 </div>
               </div>
 
-              {/* PARENT / GUARDIAN VERIFICATION PANEL */}
-              {(isMinor || extMember.parent_name) && (
+              {/* PARENT / GUARDIAN VERIFICATION PANEL (HIDDEN DURING EDIT MODE) */}
+              {!isEditing && (isMinor || extMember.parent_name) && (
                 <div className="p-4 bg-(--bg-page) border border-amber-500/30 rounded-2xl space-y-3 shadow-xs">
                   <div className="flex items-center justify-between border-b border-(--border-color) pb-2.5">
                     <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
@@ -2307,8 +2428,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
             </div>
           )}
 
-          {/* TAB 2: CONTRACTS & BILLING */}
-          {activeTab === 'Contracts & Billing' && (
+          {/* TAB 2: Member Plans */}
+          {activeTab === 'Member Plans' && (
             <div className="space-y-6 text-left animate-fade-in">
               {/* STATUS SUBSCRIPTION */}
               <div className="space-y-3">
@@ -2743,15 +2864,17 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                 }
               };
 
+              const isCurrentFormatInUse = currentCard?.card_type === selectedCardFormat;
+
               return (
                 <div className="space-y-4 text-left animate-fade-in">
-               {/* CARD TYPE FORMAT SEGMENTED SWITCHER */}
-                  <div className="grid grid-cols-2 gap-2 bg-(--bg-page) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
+                  {/* CARD TYPE FORMAT SEGMENTED SWITCHER WITH IN-USE BADGES */}
+                  <div className="grid grid-cols-2 gap-2 bg-(--bg-card) p-1.5 rounded-2xl border border-(--border-color) shadow-xs">
                     <button
                       type="button"
                       disabled={isOffline}
                       onClick={() => setSelectedCardFormat('QR')}
-                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                      className={`relative py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
                         isOffline
                           ? 'opacity-50 cursor-not-allowed text-slate-400'
                           : selectedCardFormat === 'QR'
@@ -2759,15 +2882,26 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             : 'text-slate-400 hover:text-(--color-text) cursor-pointer'
                       }`}
                     >
-                      <QrCode className="w-4 h-4" />
-                      <span>Digital QR Card</span>
+                      <QrCode className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Digital QR Card</span>
+                      {currentCard?.card_type === 'QR' && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-normal shrink-0 ${
+                            selectedCardFormat === 'QR'
+                              ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                              : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          }`}
+                        >
+                          IN USE
+                        </span>
+                      )}
                     </button>
 
                     <button
                       type="button"
                       disabled={isOffline}
                       onClick={() => setSelectedCardFormat('Manual')}
-                      className={`py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                      className={`relative py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
                         isOffline
                           ? 'opacity-50 cursor-not-allowed text-slate-400'
                           : selectedCardFormat === 'Manual'
@@ -2775,45 +2909,56 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             : 'text-slate-400 hover:text-(--color-text) cursor-pointer'
                       }`}
                     >
-                      <CreditCard className="w-4 h-4" />
-                      <span>Manual Card</span>
+                      <CreditCard className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Manual Card</span>
+                      {currentCard?.card_type === 'Manual' && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-normal shrink-0 ${
+                            selectedCardFormat === 'Manual'
+                              ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                              : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          }`}
+                        >
+                          IN USE
+                        </span>
+                      )}
                     </button>
                   </div>
 
                   {currentCard ? (
                     <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-4 shadow-xs">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-(--border-color) pb-3">
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest block">
-                            REGISTERED CREDENTIAL TOKEN
+                      {/* CARD PREVIEW HEADER: CLEAN STATUS & PRINT BUTTON (NO CONFIDENTIAL TOKEN) */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 border-b border-(--border-color) pb-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-heading font-bold text-xs uppercase tracking-wider text-(--color-text)">
+                            {selectedCardFormat === 'QR' ? 'Digital QR Badge' : 'Manual Card Template'}
                           </span>
-                          <h5 className="text-xs sm:text-sm font-bold text-(--color-text) font-mono break-all">
-                            {qrPayload}
-                          </h5>
-                          <p className="text-xs text-slate-400 font-mono">
-                            Registered Format:{' '}
-                            <strong>{currentCard.card_type}</strong> • Version:{' '}
-                            {currentCard.version}.0
-                          </p>
+                          {isCurrentFormatInUse ? (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              ✓ Active Registered Format
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                              Preview Mode
+                            </span>
+                          )}
                         </div>
 
-                   <div className="flex gap-2 w-full sm:w-auto">
-                          {currentCard.card_type !== selectedCardFormat && (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          {!isCurrentFormatInUse && (
                             <button
                               type="button"
                               disabled={isOffline}
-                              onClick={() =>
-                                handleSwitchCardTypeInDb(selectedCardFormat)
-                              }
-                              className={`flex-1 sm:flex-initial min-h-11 px-3.5 py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-1.5 transition-colors border-none ${
+                              onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
+                              className={`flex-1 sm:flex-initial min-h-9 px-3.5 py-1.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-xs flex items-center justify-center gap-1.5 transition-colors border-none ${
                                 isOffline
                                   ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95'
                               }`}
-                              title="Update registered card type in database"
+                              title="Set this format as the active card format"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
-                              <span>Set as Registered</span>
+                              <span>Set as In Use</span>
                             </button>
                           )}
 
@@ -2821,19 +2966,19 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             type="button"
                             disabled={isOffline}
                             onClick={() => setIsDigitalQrModalOpen(true)}
-                            className={`flex-1 sm:flex-initial min-h-11 px-4 py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 transition-colors border-none shrink-0 ${
+                            className={`flex-1 sm:flex-initial min-h-9 px-3.5 py-1.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-xs flex items-center justify-center gap-1.5 transition-colors border-none shrink-0 ${
                               isOffline
                                 ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                                : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                                : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer active:scale-95'
                             }`}
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                             <span>Print Card</span>
                           </button>
                         </div>
                       </div>
 
-                      {/* DYNAMIC DISPLAY: DIGITAL QR CARD VS MANUAL TEMPLATE ASSET */}
+                      {/* DYNAMIC CARD PREVIEW */}
                       {selectedCardFormat === 'QR' ? (
                         <div className="mx-auto w-full max-w-sm sm:max-w-md bg-black text-white rounded-2xl border border-zinc-800 p-4 shadow-2xl relative overflow-hidden font-sans text-left select-none space-y-3.5">
                           <div className="text-center space-y-0.5">
@@ -2900,9 +3045,7 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                                   </span>
                                   <div
                                     className={`bg-white font-extrabold text-[10px] py-1 text-center rounded-md font-mono truncate ${
-                                      isCardExpired
-                                        ? 'text-red-600'
-                                        : 'text-black'
+                                      isCardExpired ? 'text-red-600' : 'text-black'
                                     }`}
                                   >
                                     {cardExpDateStr}
@@ -2922,27 +3065,22 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                             />
                           </div>
                           <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
-                            Manual Card Template Asset • Official Gym Print
-                            Layout
+                            Manual Card Template Asset • Official Gym Print Layout
                           </span>
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="p-6 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 space-y-3">
-                      <p>
-                        No active security card assigned to this client yet.
-                      </p>
-                 <button
+                      <p>No active security card assigned to this client yet.</p>
+                      <button
                         type="button"
                         disabled={isOffline}
-                        onClick={() =>
-                          handleSwitchCardTypeInDb(selectedCardFormat)
-                        }
+                        onClick={() => handleSwitchCardTypeInDb(selectedCardFormat)}
                         className={`px-4 py-2 rounded-xl text-xs font-heading font-bold uppercase ${
                           isOffline
                             ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95'
                         }`}
                       >
                         Issue {selectedCardFormat} Security Card
@@ -2950,278 +3088,261 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     </div>
                   )}
 
-                  {/* PHYSICAL MEMBERSHIP CARD LIFECYCLE & CLAIM STATUS PANEL */}
+                  {/* PHYSICAL MEMBERSHIP CARD PAYMENT & CLAIM TRACKING */}
                   {currentCard && (
-                    <div className="p-4 bg-(--bg-page) rounded-2xl border border-(--border-color) space-y-3 shadow-xs">
-                      <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
-                        <h5 className="text-xs font-heading font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="p-4 bg-(--bg-card) rounded-2xl border border-(--border-color) space-y-3.5 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-(--border-color) pb-2.5">
+                        <div className="flex items-center gap-2">
                           <CreditCard className="w-4 h-4 text-blue-500" />
-                          PHYSICAL CARD PAYMENT & CLAIM TRACKING
-                        </h5>
+                          <span className="font-heading font-bold text-xs text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                            Physical Card Status
+                          </span>
+                        </div>
+
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
-                            currentCard.payment_status === 'PAID' &&
-                            currentCard.claim_status === 'CLAIMED'
+                          className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase border ${
+                            cardStatus === 'Claimed'
                               ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                              : currentCard.payment_status === 'PAID' &&
-                                  currentCard.claim_status === 'UNCLAIMED'
+                              : cardStatus === 'Pending Pickup'
                                 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                                : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
                           }`}
                         >
-                          {currentCard.payment_status === 'PAID' &&
-                          currentCard.claim_status === 'CLAIMED'
+                          {cardStatus === 'Claimed'
                             ? '✓ PAID & CLAIMED'
-                            : currentCard.payment_status === 'PAID' &&
-                                currentCard.claim_status === 'UNCLAIMED'
+                            : cardStatus === 'Pending Pickup'
                               ? '⚠ PAID • READY FOR PICKUP'
                               : 'UNPAID'}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        {/* Payment Status Card */}
-                        <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                            Card Fee Payment (₱{cardFeeAmount}.00)
-                          </span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">Status:</span>
+                      {/* Status Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                        <div className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between">
+                          <span className="text-slate-400">Card Fee:</span>
+                          <div className="text-right">
                             {currentCard.payment_status === 'PAID' ? (
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
-                                PAID (₱
-                                {currentCard.card_fee_paid || cardFeeAmount}.00)
+                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                PAID (₱{currentCard.card_fee_paid || cardFeeAmount}.00)
                               </span>
                             ) : (
-                              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
-                                UNPAID (₱0.00)
+                              <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                                UNPAID (₱{cardFeeAmount}.00)
+                              </span>
+                            )}
+                            {currentCard.receipt_number && (
+                              <span className="text-[10px] font-mono text-slate-400 block pt-0.5">
+                                Ref: {currentCard.receipt_number}
                               </span>
                             )}
                           </div>
-                          {currentCard.receipt_number && (
-                            <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color)">
-                              <span className="text-slate-400 text-[11px]">
-                                Official Receipt:
-                              </span>
-                              <span className="font-mono text-[11px] font-bold text-blue-500">
-                                {currentCard.receipt_number}
-                              </span>
-                            </div>
-                          )}
                         </div>
 
-                        {/* Claim Status Card */}
-                        <div className="p-3 bg-(--bg-card) border border-(--border-color) rounded-xl space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                            Handover & Claim State
-                          </span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">
-                              Claim Status:
-                            </span>
-                            {currentCard.claim_status === 'CLAIMED' ? (
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{' '}
-                                RELEASED TO MEMBER
-                              </span>
-                            ) : currentCard.claim_status === 'UNCLAIMED' ? (
-                              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />{' '}
-                                UNCLAIMED (At Front Desk)
-                              </span>
+                        <div className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between">
+                          <span className="text-slate-400">Handover:</span>
+                          <div className="text-right">
+                            {cardStatus === 'Claimed' ? (
+                              <div>
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 justify-end">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                  HANDED OVER
+                                </span>
+                                {currentCard.claimed_at && (
+                                  <span className="text-[10px] font-mono text-slate-400 block pt-0.5">
+                                    {new Date(currentCard.claimed_at).toLocaleDateString()}
+                                    {currentCard.claimed_by ? ` • ${currentCard.claimed_by}` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            ) : cardStatus === 'Pending Pickup' ? (
+                              <div>
+                                <span className="font-mono font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 justify-end">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                                  AT FRONT DESK
+                                </span>
+                                <span className="text-[10px] text-slate-400 block pt-0.5">
+                                  Ready for pickup
+                                </span>
+                              </div>
                             ) : (
-                              <span className="text-slate-400 font-mono">
-                                NOT APPLICABLE
+                              <span className="font-mono text-slate-400 text-xs">
+                                Pending payment
                               </span>
                             )}
                           </div>
-                          {currentCard.claimed_at && (
-                            <div className="flex items-center justify-between pt-1 border-t border-dashed border-(--border-color) text-[11px]">
-                              <span className="text-slate-400">
-                                Released On:
-                              </span>
-                              <span className="font-mono text-slate-300">
-                                {new Date(
-                                  currentCard.claimed_at
-                                ).toLocaleDateString()}{' '}
-                                {currentCard.claimed_by
-                                  ? `(${currentCard.claimed_by})`
-                                  : ''}
-                              </span>
-                            </div>
-                          )}
-                          {currentCard.claim_notes && (
-                            <p className="text-[10px] text-slate-400 italic pt-0.5">
-                              "{currentCard.claim_notes}"
-                            </p>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  )}
 
-                {/* ACTION BUTTONS: CLAIM, UNDO CLAIM, PAY FEE, REISSUE TOKEN & UNBIND CARD */}
-                  {currentCard && (
-                    <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                      {currentCard.payment_status === 'PAID' &&
-                      currentCard.claim_status === 'UNCLAIMED' ? (
-                        <button
-                          type="button"
-                          disabled={isClaimingInProfile || isOffline}
-                          onClick={handleConfirmMarkClaimed}
-                          className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-1.5 shadow-md transition-all ${
-                            isOffline
-                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                              : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer disabled:opacity-50'
-                          }`}
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>
-                            {isClaimingInProfile
-                              ? 'Claiming...'
-                              : 'Mark as Claimed'}
-                          </span>
-                        </button>
-                      ) : currentCard.claim_status === 'CLAIMED' ? (
-                        <button
-                          type="button"
-                          disabled={isOffline}
-                          onClick={() => setIsUndoClaimModalOpen(true)}
-                          className={`min-h-[44px] px-3.5 py-2.5 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 transition-all shadow-xs ${
-                            isOffline
-                              ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
-                              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 cursor-pointer'
-                          }`}
-                          title="Revert claim state back to Unclaimed"
-                        >
-                          <Undo2 className="w-4 h-4 text-amber-500" />
-                          <span>Undo Claim</span>
-                        </button>
-                      ) : currentCard.payment_status !== 'PAID' ? (
-                        <button
-                          type="button"
-                          disabled={isOffline}
-                          onClick={() => setIsPayCardModalOpen(true)}
-                          className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center gap-1.5 shadow-md transition-all ${
-                            isOffline
-                              ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                              : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
-                          }`}
-                        >
-                          <CreditCard className="w-4 h-4" />
-                          <span>Pay Card Fee (₱{cardFeeAmount})</span>
-                        </button>
-                      ) : (
-                        <div className="min-h-[44px] px-3.5 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Claim Completed</span>
+                      {/* ACTION BUTTONS (CLEAN HORIZONTAL GROUPING) */}
+                      <div className="pt-2 border-t border-(--border-color) flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          {cardStatus === 'Pending Pickup' && (
+                            <button
+                              type="button"
+                              disabled={isClaimingInProfile || isOffline}
+                              onClick={handleConfirmMarkClaimed}
+                              className={`min-h-10 px-4 py-2 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center gap-1.5 shadow-md transition-all ${
+                                isOffline
+                                  ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95 disabled:opacity-50'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>{isClaimingInProfile ? 'Claiming...' : 'Mark as Claimed'}</span>
+                            </button>
+                          )}
+
+                          {cardStatus === 'Claimed' && (
+                            <button
+                              type="button"
+                              disabled={isOffline}
+                              onClick={() => setIsUndoClaimModalOpen(true)}
+                              className={`min-h-10 px-3.5 py-2 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center gap-1.5 transition-all shadow-xs ${
+                                isOffline
+                                  ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 cursor-pointer active:scale-95'
+                              }`}
+                              title="Revert claim state back to Unclaimed"
+                            >
+                              <Undo2 className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Undo Claim</span>
+                            </button>
+                          )}
+
+                          {cardStatus === 'Unpaid' && (
+                            <button
+                              type="button"
+                              disabled={isOffline}
+                              onClick={() => setIsPayCardModalOpen(true)}
+                              className={`min-h-10 px-4 py-2 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center gap-1.5 shadow-md transition-all ${
+                                isOffline
+                                  ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                                  : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-95'
+                              }`}
+                            >
+                              <CreditCard className="w-4 h-4" />
+                              <span>Pay Card Fee (₱{cardFeeAmount})</span>
+                            </button>
+                          )}
                         </div>
-                      )}
 
-                      <button
-                        type="button"
-                        disabled={isOffline}
-                        onClick={() => setIsReissueModalOpen(true)}
-                        className={`min-h-[44px] px-3.5 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md transition-all ${
-                          isOffline
-                            ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                            : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer'
-                        }`}
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                        <span>Reissue Token</span>
-                      </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isOffline}
+                            onClick={() => setIsReissueModalOpen(true)}
+                            className={`min-h-10 px-3.5 py-2 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border border-(--border-color) flex items-center gap-1.5 transition-all ${
+                              isOffline
+                                ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 opacity-50 cursor-not-allowed'
+                                : 'bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 cursor-pointer active:scale-95'
+                            }`}
+                            title="Generate a fresh access token for this member"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Reissue Token</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        disabled={isOffline}
-                        onClick={() => setIsUnbindModalOpen(true)}
-                        className={`min-h-[44px] px-3.5 py-2.5 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center justify-center gap-2 transition-all shadow-xs ${
-                          isOffline
-                            ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
-                            : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20 cursor-pointer'
-                        }`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>Unbind Card</span>
-                      </button>
+                          <button
+                            type="button"
+                            disabled={isOffline}
+                            onClick={() => setIsUnbindModalOpen(true)}
+                            className={`min-h-10 px-3.5 py-2 border font-bold rounded-xl font-heading text-xs tracking-wider uppercase flex items-center gap-1.5 transition-all shadow-xs ${
+                              isOffline
+                                ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
+                                : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/20 cursor-pointer active:scale-95'
+                            }`}
+                            title="Deactivate and unbind this card"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Unbind</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
               );
             })()}
 
-          {/* TAB 4: ATTENDANCE */}
-          {activeTab === 'Attendance' && (
-            <div className="space-y-4 text-left animate-fade-in">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
-                <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-500" />
-                  FACILITY CHECK-IN LOGS
-                </span>
-
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="px-2.5 py-1 rounded-xl bg-slate-500/10 text-slate-400 border border-slate-500/20 font-bold">
-                    Visits: {attendance.length}
+          {/* TAB 4: ATTENDANCE & NOTES */}
+          {activeTab === 'Attendance & Notes' && (
+            <div className="space-y-6 text-left animate-fade-in">
+              {/* INTERNAL MEDICAL & STAFF NOTES */}
+              <div className="space-y-3 p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl shadow-xs">
+                <div className="flex items-center justify-between border-b border-(--border-color) pb-2">
+                  <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
+                    <FileSignature className="w-4 h-4 text-blue-500" />
+                    INTERNAL MEDICAL &amp; STAFF REMARKS
                   </span>
-                  <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">
-                    Total: ₱
-                    {totalAttendanceValue.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
+                </div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className="w-full p-3.5 border border-(--border-color) bg-(--bg-card) rounded-xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed"
+                  placeholder="Enter internal notes, medical remarks, or receptionist staff notes..."
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isOffline}
+                    onClick={handleUpdateNotes}
+                    className={`min-h-[40px] px-5 py-2 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md transition-all ${
+                      isOffline
+                        ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                        : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer'
+                    }`}
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Remarks</span>
+                  </button>
                 </div>
               </div>
 
-              {attendance.length === 0 ? (
-                <div className="p-8 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 text-xs">
-                  No check-in visits recorded for this member.
-                </div>
-              ) : (
-                <Table<AttendanceRecord>
-                  data={attendanceLogs}
-                  columns={attendanceColumns}
-                  itemsPerPage={5}
-                  searchKeys={[
-                    'plan_name',
-                    'payment_method',
-                    'staff_name',
-                    'receipt_number',
-                    'check_in_time',
-                  ]}
-                  searchPlaceholder="Search visits by plan, staff, payment..."
-                />
-              )}
-            </div>
-          )}
+              {/* FACILITY CHECK-IN LOGS */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--border-color) pb-2">
+                  <span className="text-xs font-heading font-bold tracking-wider text-slate-600 dark:text-slate-300 uppercase flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    FACILITY CHECK-IN LOGS
+                  </span>
 
-          {/* TAB 5: NOTES */}
-          {activeTab === 'Notes' && (
-            <div className="space-y-3 text-left animate-fade-in">
-              <label className="text-xs font-bold text-slate-400 uppercase block">
-                Internal Medical & Staff Remarks
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={6}
-                className="w-full p-3.5 border border-(--border-color) bg-(--bg-page) rounded-2xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed"
-                placeholder="Enter internal notes visible to reception staff..."
-              />
-<button
-                disabled={isOffline}
-                onClick={handleUpdateNotes}
-                className={`w-full sm:w-auto min-h-[44px] px-6 py-2.5 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md ${
-                  isOffline
-                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                    : 'bg-[#123c73] dark:bg-[#bf0202] text-white cursor-pointer'
-                }`}
-              >
-                <span>Save Notes</span>
-              </button>
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <span className="px-2.5 py-1 rounded-xl bg-slate-500/10 text-slate-400 border border-slate-500/20 font-bold">
+                      Visits: {attendance.length}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">
+                      Total: ₱
+                      {totalAttendanceValue.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                {attendance.length === 0 ? (
+                  <div className="p-8 bg-(--bg-page) border border-(--border-color) rounded-2xl text-center text-slate-400 text-xs">
+                    No check-in visits recorded for this member.
+                  </div>
+                ) : (
+                  <Table<AttendanceRecord>
+                    data={attendanceLogs}
+                    columns={attendanceColumns}
+                    itemsPerPage={5}
+                    searchKeys={[
+                      'plan_name',
+                      'payment_method',
+                      'staff_name',
+                      'receipt_number',
+                      'check_in_time',
+                    ]}
+                    searchPlaceholder="Search visits by plan, staff, payment..."
+                  />
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -3267,102 +3388,83 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
               </div>
             </div>
           ) : (
-            /* NORMAL MODE: Show status, suspend, Edit Details, and Delete Member */
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-400 font-mono">
-                    Status:
-                  </span>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-heading font-black uppercase tracking-wider border ${
-                      localMember.status === 'Active'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                    }`}
-                  >
-                    {localMember.status || 'Active'}
-                  </span>
-                </div>
+            /* NORMAL MODE: All 3 Buttons in One Single Row */
+            <div className="grid grid-cols-3 gap-2 w-full">
+              {/* 1. Edit Details */}
+              <button
+                type="button"
+                disabled={isOffline}
+                onClick={() => {
+                  setActiveTab('Overview');
+                  if (sheetHeightPercent <= 30) setSheetHeightPercent(70);
+                  const parsed = parseFullName(localMember.full_name || '');
+                  setEditLastName(parsed.lastName);
+                  setEditFirstName(parsed.firstName);
+                  setEditMiddleInitial(parsed.middleInitial);
+                  setEditSuffix(parsed.suffix);
+                  setIsEditing(true);
+                }}
+                className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase transition-all border-none ${
+                  isOffline
+                    ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
+                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer active:scale-95'
+                }`}
+                title="Edit Details"
+              >
+                <Pencil className="w-4 h-4 shrink-0" />
+                <span className="truncate">Edit Details</span>
+              </button>
 
-                <button
-                  type="button"
-                  disabled={isOffline}
-                  onClick={() => setIsStatusModalOpen(true)}
-                  className={`min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold border-none transition-all shadow-md ${
-                    isOffline
-                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                      : localMember.status === 'Active'
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
-                        : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
-                  }`}
-                >
-                  {localMember.status === 'Active' ? (
-                    <>
-                      <UserX className="w-4 h-4" />
-                      <span>Suspend Member</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck className="w-4 h-4" />
-                      <span>Activate Member</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              {/* 2. Suspend / Activate Member (Left of Delete) */}
+              <button
+                type="button"
+                disabled={isOffline}
+                onClick={() => setIsStatusModalOpen(true)}
+                className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase border-none transition-all shadow-md ${
+                  isOffline
+                    ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
+                    : localMember.status === 'Active'
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
+                      : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
+                }`}
+                title={localMember.status === 'Active' ? 'Suspend Member' : 'Activate Member'}
+              >
+                {localMember.status === 'Active' ? (
+                  <>
+                    <UserX className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Suspend</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Activate</span>
+                  </>
+                )}
+              </button>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-(--border-color)">
-                <div className="relative group flex-1 sm:flex-initial">
-                  <button
-                    type="button"
-                    disabled={isOffline}
-                    onClick={() => {
-                      setActiveTab('Overview');
-                      const parsed = parseFullName(localMember.full_name || '');
-                      setEditLastName(parsed.lastName);
-                      setEditFirstName(parsed.firstName);
-                      setEditMiddleInitial(parsed.middleInitial);
-                      setEditSuffix(parsed.suffix);
-                      setIsEditing(true);
-                    }}
-                    className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                      isOffline
-                        ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
-                        : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer'
-                    }`}
-                  >
-                    <Pencil className="w-4 h-4" />
-                    <span>EDIT DETAILS</span>
-                  </button>
-                </div>
-
-                <div className="relative group flex-1 sm:flex-initial">
-                  <button
-                    type="button"
-                    disabled={hasActiveSubscription || isOffline}
-                    onClick={() => setIsDeleteModalOpen(true)}
-                    className={`w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-heading font-bold transition-all border-none ${
-                      hasActiveSubscription || isOffline
-                        ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
-                        : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer'
-                    }`}
-                  >
-                    {hasActiveSubscription || isOffline ? (
-                      <Lock className="w-4 h-4" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                    <span>Delete Member</span>
-                  </button>
-
-                  {hasActiveSubscription && (
-                    <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-52 p-2 bg-zinc-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none font-sans font-medium">
-                      🔒 Member cannot be deleted while an active subscription
-                      contract exists.
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* 3. Delete Member */}
+              <button
+                type="button"
+                disabled={hasActiveSubscription || isOffline}
+                onClick={() => setIsDeleteModalOpen(true)}
+                className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase transition-all border-none ${
+                  hasActiveSubscription || isOffline
+                    ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
+                    : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer active:scale-95'
+                }`}
+                title={
+                  hasActiveSubscription
+                    ? 'Member cannot be deleted while an active subscription contract exists'
+                    : 'Delete Member'
+                }
+              >
+                {hasActiveSubscription || isOffline ? (
+                  <Lock className="w-4 h-4 shrink-0" />
+                ) : (
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                )}
+                <span className="truncate">Delete</span>
+              </button>
             </div>
           )}
         </div>

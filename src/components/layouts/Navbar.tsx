@@ -68,17 +68,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isSalesDomainActive = isSalesRegisterActive || isProductsActive;
   const isLogbookDomainActive = isLogbookActive || isMemberListActive;
 
-  // Auto-collapse when leaving sales or logbook domains
+  // Auto-collapse floating sub-menus on route changes
   useEffect(() => {
-    if (!isSalesDomainActive && !isLogbookDomainActive) {
-      closeFloating();
-    }
-  }, [
-    location.pathname,
-    isSalesDomainActive,
-    isLogbookDomainActive,
-    closeFloating,
-  ]);
+    closeFloating();
+  }, [location.pathname, closeFloating]);
 
   const handleScannerClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -98,12 +91,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (!isAdmin) return;
     e.preventDefault();
     notifyNavigationClick();
-    if (activeFloating === 'sales') {
+    if (!isSalesDomainActive) {
       closeFloating();
+      navigate('/sales');
     } else {
-      setActiveFloating('sales');
-      if (!isSalesDomainActive) {
-        navigate('/sales');
+      if (activeFloating === 'sales') {
+        closeFloating();
+      } else {
+        setActiveFloating('sales');
       }
     }
   };
@@ -112,12 +107,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (!isAdmin) return;
     e.preventDefault();
     notifyNavigationClick();
-    if (activeFloating === 'logbook') {
+    if (!isLogbookDomainActive) {
       closeFloating();
+      navigate('/logbook');
     } else {
-      setActiveFloating('logbook');
-      if (!isLogbookDomainActive) {
-        navigate('/logbook');
+      if (activeFloating === 'logbook') {
+        closeFloating();
+      } else {
+        setActiveFloating('logbook');
       }
     }
   };
@@ -412,7 +409,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
                 />
                 <span className="text-[10px] font-heading tracking-wider uppercase leading-none">
-                  Subscription
+                  Membership
                 </span>
               </Link>
             </div>

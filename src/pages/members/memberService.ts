@@ -2672,6 +2672,31 @@ export const cardService = {
 // REGISTRATION SERVICE (ONLINE QUEUE)
 // ==========================================
 export const registrationService = {
+  checkStatus: async (
+    ticketIds: string[]
+  ): Promise<
+    Array<{
+      id: string;
+      status: RegistrationStatus;
+      is_archived: boolean;
+      deleted_at: string | null;
+    }>
+  > => {
+    if (!ticketIds || ticketIds.length === 0) return [];
+
+    const { data, error } = await supabase.rpc(
+      'check_online_registration_tickets',
+      { p_ticket_ids: ticketIds.slice(0, 10) }
+    );
+
+    if (error) {
+      console.warn('Error checking registration tickets status:', error);
+      return [];
+    }
+
+    return (data || []) as any;
+  },
+
   getQueue: async (): Promise<OnlineRegistration[]> => {
     const { data, error } = await supabase
       .from('online_registrations')
@@ -2722,29 +2747,36 @@ export const registrationService = {
         ? 'yearly'
         : 'monthly';
 
+    const cleanFullName = (reg.full_name || '').trim().replace(/\s+/g, ' ');
+    const cleanPhone = (reg.phone || '').trim();
+
     const payload = {
       id:
         reg.id ||
         `REG-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-      full_name: reg.full_name,
-      email: reg.email || null,
-      phone: reg.phone,
+      full_name: cleanFullName,
+      email: reg.email?.trim() || null,
+      phone: cleanPhone,
       gender: reg.gender || 'Male',
       birthday: reg.birthday,
-      address: reg.address || null,
-      emergency_contact_name: reg.emergency_contact_name,
-      relationship: reg.relationship || 'Emergency Contact',
-      emergency_contact_phone: reg.emergency_contact_phone,
+      address: reg.address?.trim() || null,
+      emergency_contact_name: reg.emergency_contact_name?.trim() || 'N/A',
+      relationship: reg.relationship?.trim() || 'Emergency Contact',
+      emergency_contact_phone: reg.emergency_contact_phone?.trim() || 'N/A',
       preferred_plan: dbPlan,
-      status: reg.status || 'Pending',
+      status: 'Pending',
+      is_archived: false,
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null,
       submitted_at: reg.submitted_at || new Date().toISOString(),
       notes: reg.notes || null,
 
       parent_consent_required: reg.parent_consent_required || false,
-      parent_name: reg.parent_name || null,
-      parent_relationship: reg.parent_relationship || null,
-      parent_phone: reg.parent_phone || null,
-      parent_email: reg.parent_email || null,
+      parent_name: reg.parent_name?.trim() || null,
+      parent_relationship: reg.parent_relationship?.trim() || null,
+      parent_phone: reg.parent_phone?.trim() || null,
+      parent_email: reg.parent_email?.trim() || null,
       applicant_signature: reg.applicant_signature || null,
       parent_signature: reg.parent_signature || null,
       consent_date: reg.consent_date || null,

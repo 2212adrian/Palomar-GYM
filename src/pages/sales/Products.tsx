@@ -67,6 +67,7 @@ import {
   Check,
   Barcode as BarcodeIcon,
   Boxes,
+  CheckSquare,
 } from 'lucide-react';
 
 interface Product {
@@ -190,6 +191,7 @@ export const Products: React.FC<ProductsProps> = ({
   const { user, profile } = useAuthStore() as any;
   const itemsPerPage = useResponsiveItemsPerPage();
   const isMountedRef = useRef(true);
+  const mobileCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const activeFloating = useNavbarStore((s) => s.activeFloating);
   const isNavFloatingOpen = Boolean(activeFloating);
 
@@ -267,6 +269,7 @@ export const Products: React.FC<ProductsProps> = ({
       return [];
     }
   });
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
 
   useEffect(() => {
     try {
@@ -276,6 +279,12 @@ export const Products: React.FC<ProductsProps> = ({
       );
     } catch {}
   }, [selectedProductIds]);
+
+  useEffect(() => {
+    if (selectedProductIds.length === 0) {
+      setIsMultiSelect(false);
+    }
+  }, [selectedProductIds.length]);
 
   // Form States (Single Edit)
   const [formName, setFormName] = useState('');
@@ -584,6 +593,7 @@ export const Products: React.FC<ProductsProps> = ({
   // Clear active product selections and hide print, edit, and remove action toolbars on explicit user request
   const resetActionState = useCallback(() => {
     setSelectedProductIds([]);
+    setIsMultiSelect(false);
     setSelectedProductId(null);
     setDeleteConfirmId(null);
     setShowPrintModal(false);
@@ -755,7 +765,7 @@ export const Products: React.FC<ProductsProps> = ({
     setShowFormModal(true);
   };
 
-  const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
+const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
     e.preventDefault();
 
     try {
@@ -767,7 +777,23 @@ export const Products: React.FC<ProductsProps> = ({
           .insert(bulkItems)
           .select();
 
-        if (error) throw error;
+        if (error) {
+          if (
+            error.code === '23505' ||
+            error.message?.toLowerCase().includes('duplicate key') ||
+            error.message?.toLowerCase().includes('unique')
+          ) {
+            toast.error(
+              error.message?.includes('manufacturer_barcode') ||
+              error.message?.includes('products_manufacturer_barcode')
+                ? 'One or more items contain an external barcode already registered to another active product.'
+                : 'One or more items contain a duplicate product name or barcode.'
+            );
+            setSaving(false);
+            return false;
+          }
+          throw error;
+        }
 
         if (data) {
           const newProducts = data as Product[];
@@ -777,7 +803,6 @@ export const Products: React.FC<ProductsProps> = ({
             )
           );
 
-          // Mark bulk items as added
           setActiveDiffs((prev) => {
             const next = { ...prev };
             newProducts.forEach((p) => {
@@ -806,17 +831,84 @@ export const Products: React.FC<ProductsProps> = ({
         const auditDetails = `Successfully listed ${bulkItems.length} new products to your store catalog:\n\n${itemsList}`;
 
         await logAudit('BULK_PRODUCTS_CREATED', auditDetails);
+        setShowFormModal(false);
       } else {
         const nameClean = formName.trim();
         const priceNum = parseFloat(formPrice);
 
         if (!nameClean || nameClean.length > 100) {
           toast.error('Product name is required.');
-          return;
+          setSaving(false);
+          return false;
         }
         if (isNaN(priceNum) || priceNum < 0) {
           toast.error('Please enter a valid price.');
-          return;
+          setSaving(false);
+          return false;
+        }
+
+        const cleanMfgBarcode = formManufacturerBarcode.trim() || null;
+
+        // 1. In-memory check for external barcode duplicate
+        if (cleanMfgBarcode) {
+          const duplicateMfg = products.find(
+            (p) =>
+              p.id !== selectedProductId &&
+              p.manufacturer_barcode &&
+              p.manufacturer_barcode.trim().toLowerCase() === cleanMfgBarcode.toLowerCase()
+          );
+
+          if (duplicateMfg) {
+            toast.error(
+              `External barcode "${cleanMfgBarcode}" is already assigned to "${duplicateMfg.product_name}".`
+            );
+            setSaving(false);
+            return false;
+          }
+        }
+
+        // 2. In-memory check for product name duplicate
+        const duplicateName = products.find(
+          (p) =>
+            p.id !== selectedProductId &&
+            p.product_name.trim().toLowerCase() === nameClean.toLowerCase()
+        );
+
+        if (duplicateName) {
+          toast.error(
+            `A product named "${nameClean}" already exists in inventory.`
+          );
+          setSaving(false);
+          return false;
+        }
+
+        const isOffline =
+          typeof navigator !== 'undefined' && !navigator.onLine;
+
+        // 3. Database uniqueness check before attempting insert/update
+        if (!isOffline && cleanMfgBarcode) {
+          try {
+            let mfgQuery = supabase
+              .from('products')
+              .select('id, product_name')
+              .eq('manufacturer_barcode', cleanMfgBarcode)
+              .is('deleted_at', null);
+
+            if (selectedProductId) {
+              mfgQuery = mfgQuery.neq('id', selectedProductId);
+            }
+
+            const { data: dbMfgMatch } = await mfgQuery.maybeSingle();
+            if (dbMfgMatch) {
+              toast.error(
+                `External barcode "${cleanMfgBarcode}" is already registered to "${dbMfgMatch.product_name}".`
+              );
+              setSaving(false);
+              return false;
+            }
+          } catch (chkErr) {
+            console.warn('Pre-save barcode uniqueness check skipped:', chkErr);
+          }
         }
 
         const stockQty = formHasStockLimit ? parseInt(formStockQuantity) : 0;
@@ -833,7 +925,7 @@ export const Products: React.FC<ProductsProps> = ({
           low_stock_alert: alertQty,
           status: formStatus,
           image_url: formImageUrl.trim() || null,
-          manufacturer_barcode: formManufacturerBarcode.trim() || null,
+          manufacturer_barcode: cleanMfgBarcode,
           manufacturer_source: formManufacturerSource,
           updated_at: new Date().toISOString(),
         };
@@ -885,38 +977,8 @@ export const Products: React.FC<ProductsProps> = ({
             }
           }
 
-          // Optimistically update product in local state
-          setProducts((prev) =>
-            prev
-              .map((p) =>
-                p.id === selectedProductId
-                  ? ({ ...p, ...productPayload } as Product)
-                  : p
-              )
-              .sort((a, b) => a.product_name.localeCompare(b.product_name))
-          );
-
-          // Register before/after highlight
-          const editedId = selectedProductId;
-          setActiveDiffs((prev) => ({
-            ...prev,
-            [editedId]: {
-              type: 'updated',
-              previous: previousState,
-              current: {
-                product_name: nameClean,
-                selling_price: priceNum,
-                stock_quantity: stockQty,
-                has_stock_limit: formHasStockLimit,
-                status: formStatus,
-              },
-            },
-          }));
-
           let updateSuccess = false;
           let updatedOffline = false;
-          const isOffline =
-            typeof navigator !== 'undefined' && !navigator.onLine;
 
           if (isOffline) {
             try {
@@ -930,35 +992,96 @@ export const Products: React.FC<ProductsProps> = ({
               updatedOffline = true;
             } catch (stageErr) {
               console.warn('Failed to stage offline update:', stageErr);
-              updatedOffline = true; // still allow local update
+              updatedOffline = true;
             }
           } else {
-            try {
-              const { error } = await supabase
-                .from('products')
-                .update(productPayload)
-                .eq('id', selectedProductId);
+            const { error } = await supabase
+              .from('products')
+              .update(productPayload)
+              .eq('id', selectedProductId);
 
-              if (error) throw error;
-              updateSuccess = true;
-            } catch (netErr) {
-              console.warn('Network error updating product, staging offline:', netErr);
-              try {
-                await stagePendingTransaction({
-                  type: 'product_create',
-                  cashSessionId: '',
-                  userId: user?.id || 'admin',
-                  userName: profile?.username || user?.email || 'Admin',
-                  payload: { ...productPayload, id: selectedProductId },
-                });
-                updatedOffline = true;
-              } catch {
-                updatedOffline = true;
+            if (error) {
+              if (
+                error.code === '23505' ||
+                error.message?.toLowerCase().includes('duplicate key') ||
+                error.message?.toLowerCase().includes('unique')
+              ) {
+                if (
+                  error.message?.includes('manufacturer_barcode') ||
+                  error.message?.includes('products_manufacturer_barcode')
+                ) {
+                  toast.error(
+                    'This external barcode is already registered to another active product.'
+                  );
+                } else if (error.message?.includes('product_name')) {
+                  toast.error(
+                    'A product with this name already exists in inventory.'
+                  );
+                } else {
+                  toast.error(`Duplicate entry rejected: ${error.message}`);
+                }
+                setSaving(false);
+                return false;
               }
+
+              const isNetworkError =
+                error.message?.toLowerCase().includes('failed to fetch') ||
+                error.message?.toLowerCase().includes('network');
+
+              if (isNetworkError) {
+                console.warn(
+                  'Network error updating product, staging offline:',
+                  error
+                );
+                try {
+                  await stagePendingTransaction({
+                    type: 'product_create',
+                    cashSessionId: '',
+                    userId: user?.id || 'admin',
+                    userName: profile?.username || user?.email || 'Admin',
+                    payload: { ...productPayload, id: selectedProductId },
+                  });
+                  updatedOffline = true;
+                } catch {
+                  updatedOffline = true;
+                }
+              } else {
+                toast.error(error.message || 'Failed to update product.');
+                setSaving(false);
+                return false;
+              }
+            } else {
+              updateSuccess = true;
             }
           }
 
           if (updateSuccess || updatedOffline) {
+            setProducts((prev) =>
+              prev
+                .map((p) =>
+                  p.id === selectedProductId
+                    ? ({ ...p, ...productPayload } as Product)
+                    : p
+                )
+                .sort((a, b) => a.product_name.localeCompare(b.product_name))
+            );
+
+            const editedId = selectedProductId;
+            setActiveDiffs((prev) => ({
+              ...prev,
+              [editedId]: {
+                type: 'updated',
+                previous: previousState,
+                current: {
+                  product_name: nameClean,
+                  selling_price: priceNum,
+                  stock_quantity: stockQty,
+                  has_stock_limit: formHasStockLimit,
+                  status: formStatus,
+                },
+              },
+            }));
+
             toast.success(
               updatedOffline
                 ? `Updated "${nameClean}" offline (will sync when online).`
@@ -986,11 +1109,11 @@ export const Products: React.FC<ProductsProps> = ({
             setSelectedProductIds((prev) =>
               prev.filter((id) => id !== selectedProductId)
             );
+
+            setShowFormModal(false);
           }
         } else {
           let createdProduct: Product | null = null;
-          const isOffline =
-            typeof navigator !== 'undefined' && !navigator.onLine;
 
           if (isOffline) {
             try {
@@ -1005,54 +1128,92 @@ export const Products: React.FC<ProductsProps> = ({
               createdProduct = {
                 ...productPayload,
                 id: vaultId,
+                barcode_id: `PR-OFFLINE-${Date.now().toString().slice(-4)}`,
                 sync_status: 'pending',
               } as any;
             } catch (err: any) {
-              console.warn('Failed to stage offline product, using local fallback:', err);
+              console.warn(
+                'Failed to stage offline product, using local fallback:',
+                err
+              );
               createdProduct = {
                 ...productPayload,
                 id: `offline-prod-${Date.now()}`,
+                barcode_id: `PR-OFFLINE-${Date.now().toString().slice(-4)}`,
                 sync_status: 'pending',
               } as any;
             }
           } else {
-            try {
-              const { data, error } = await supabase
-                .from('products')
-                .insert(productPayload)
-                .select()
-                .single();
+            const { data, error } = await supabase
+              .from('products')
+              .insert(productPayload)
+              .select()
+              .single();
 
-              if (error) throw error;
-              if (data) createdProduct = data as Product;
-            } catch {
-              try {
-                const vaultId = await stagePendingTransaction({
-                  type: 'product_create',
-                  cashSessionId: '',
-                  userId: user?.id || 'admin',
-                  userName: profile?.username || user?.email || 'Admin',
-                  payload: productPayload,
-                });
-
-                createdProduct = {
-                  ...productPayload,
-                  id: vaultId,
-                  sync_status: 'pending',
-                } as any;
-              } catch {
-                createdProduct = {
-                  ...productPayload,
-                  id: `offline-prod-${Date.now()}`,
-                  sync_status: 'pending',
-                } as any;
+            if (error) {
+              if (
+                error.code === '23505' ||
+                error.message?.toLowerCase().includes('duplicate key') ||
+                error.message?.toLowerCase().includes('unique')
+              ) {
+                if (
+                  error.message?.includes('manufacturer_barcode') ||
+                  error.message?.includes('products_manufacturer_barcode')
+                ) {
+                  toast.error(
+                    'This external barcode is already registered to another active product.'
+                  );
+                } else if (error.message?.includes('product_name')) {
+                  toast.error(
+                    'A product with this name already exists in inventory.'
+                  );
+                } else {
+                  toast.error(`Duplicate entry rejected: ${error.message}`);
+                }
+                setSaving(false);
+                return false;
               }
+
+              const isNetworkError =
+                error.message?.toLowerCase().includes('failed to fetch') ||
+                error.message?.toLowerCase().includes('network');
+
+              if (isNetworkError) {
+                try {
+                  const vaultId = await stagePendingTransaction({
+                    type: 'product_create',
+                    cashSessionId: '',
+                    userId: user?.id || 'admin',
+                    userName: profile?.username || user?.email || 'Admin',
+                    payload: productPayload,
+                  });
+
+                  createdProduct = {
+                    ...productPayload,
+                    id: vaultId,
+                    barcode_id: `PR-OFFLINE-${Date.now().toString().slice(-4)}`,
+                    sync_status: 'pending',
+                  } as any;
+                } catch {
+                  createdProduct = {
+                    ...productPayload,
+                    id: `offline-prod-${Date.now()}`,
+                    barcode_id: `PR-OFFLINE-${Date.now().toString().slice(-4)}`,
+                    sync_status: 'pending',
+                  } as any;
+                }
+              } else {
+                toast.error(error.message || 'Failed to register product.');
+                setSaving(false);
+                return false;
+              }
+            } else if (data) {
+              createdProduct = data as Product;
             }
           }
 
           if (createdProduct) {
             const newProduct = createdProduct;
-            // Prepend new product so it is immediately visible
             setProducts((prev) => [
               newProduct,
               ...prev.filter((p) => p.id !== newProduct.id),
@@ -1074,7 +1235,6 @@ export const Products: React.FC<ProductsProps> = ({
               }
             } catch {}
 
-            // Register newly added highlight
             setActiveDiffs((prev) => ({
               ...prev,
               [newProduct.id]: {
@@ -1101,14 +1261,16 @@ export const Products: React.FC<ProductsProps> = ({
               `Created new product catalog entry "${nameClean}" priced at ₱${priceNum.toFixed(2)}.`,
               newProduct.id
             ).catch(() => {});
+
+            setShowFormModal(false);
           }
         }
       }
 
       fetchProducts(true).catch(() => {});
       return true;
-    } catch {
-      toast.error('Failed to save parameters.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save parameters.');
       fetchProducts(true).catch(() => {});
       return false;
     } finally {
@@ -1319,89 +1481,120 @@ export const Products: React.FC<ProductsProps> = ({
     const isSelected = selectedProductIds.includes(product.id);
     const diff = activeDiffs[product.id];
     const isHidden = product.status === 'Inactive';
+    const rowClass = `product-row-${product.id}`;
 
     if (diff?.type === 'deleted') {
-      return '!bg-rose-500/15 dark:!bg-rose-950/40 border-l-4 !border-rose-500 text-rose-950 dark:text-rose-200 opacity-75 pointer-events-none transition-all duration-300';
+      return `${rowClass} !bg-rose-500/15 dark:!bg-rose-950/40 border-l-4 !border-rose-500 text-rose-950 dark:text-rose-200 opacity-75 pointer-events-none transition-all duration-300`;
     }
     if (diff?.type === 'added') {
-      return '!bg-emerald-500/15 dark:!bg-emerald-950/40 border-l-4 !border-emerald-500 shadow-sm transition-all duration-300';
+      return `${rowClass} !bg-emerald-500/15 dark:!bg-emerald-950/40 border-l-4 !border-emerald-500 shadow-sm transition-all duration-300`;
     }
     if (diff?.type === 'updated') {
-      return '!bg-blue-500/15 dark:!bg-blue-950/40 border-l-4 !border-blue-500 shadow-sm transition-all duration-300';
+      return `${rowClass} !bg-blue-500/15 dark:!bg-blue-950/40 border-l-4 !border-blue-500 shadow-sm transition-all duration-300`;
     }
 
     if (isSelected) {
-      return 'group !bg-[#123c73]/10 dark:!bg-[#bf0202]/15 border-l-2 border-[#123c73] dark:border-[#bf0202] transition-colors duration-150';
+      return `${rowClass} group !bg-blue-500/10 dark:!bg-blue-600/20 border-l-4 border-blue-600 dark:border-blue-500 transition-colors duration-150`;
     }
     if (isHidden) {
-      return 'group bg-slate-100/50 dark:bg-[#161920]/40 hover:!bg-slate-200/50 dark:hover:!bg-[#1e232d]/50 opacity-60 text-slate-400 dark:text-slate-500 transition-colors duration-150';
+      return `${rowClass} group bg-slate-100/50 dark:bg-[#161920]/40 hover:!bg-slate-200/50 dark:hover:!bg-[#1e232d]/50 opacity-60 text-slate-400 dark:text-slate-500 transition-colors duration-150`;
     }
-    return 'group hover:!bg-slate-100/70 dark:hover:!bg-[#1e232d]/60 transition-colors duration-150';
+    return `${rowClass} group hover:!bg-slate-100/70 dark:hover:!bg-[#1e232d]/60 transition-colors duration-150`;
   };
 
   const handleRowClick = (product: Product) => {
     if (activeDiffs[product.id]?.type === 'deleted') return;
-    setSelectedProductIds((prev) =>
-      prev.includes(product.id)
-        ? prev.filter((id) => id !== product.id)
-        : [...prev, product.id]
-    );
+
+    if (!isMultiSelect) {
+      const isCurrentlySelected = selectedProductIds.includes(product.id);
+      const next = isCurrentlySelected ? [] : [product.id];
+      setSelectedProductIds(next);
+
+      if (!isCurrentlySelected) {
+        // Center auto-scroll focus on PC desktop table
+        setTimeout(() => {
+          const rowEl = document.querySelector(`.product-row-${product.id}`);
+          if (rowEl) {
+            rowEl.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            });
+          }
+        }, 80);
+      }
+    } else {
+      setSelectedProductIds((prev) => {
+        const next = prev.includes(product.id)
+          ? prev.filter((id) => id !== product.id)
+          : [...prev, product.id];
+        if (next.length === 0) {
+          setIsMultiSelect(false);
+        }
+        return next;
+      });
+    }
   };
 
   const isSelectionActive = selectedProductIds.length > 0;
 
   const columns: Column<Product>[] = [
-    {
-      key: 'select',
-      header: isSelectionActive ? (
-        <div className="flex items-center justify-center h-full w-full py-1">
-          <input
-            type="checkbox"
-            ref={(el) => {
-              if (el) el.indeterminate = isSomeSelected;
-            }}
-            checked={isAllSelected}
-            onChange={handleToggleSelectAll}
-            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
-            title="Toggle Select All"
-          />
-        </div>
-      ) : null,
-      headerClassName: 'w-12 text-center',
-      cellClassName: 'text-center p-0',
-      render: (item) => {
-        const isDeleted = activeDiffs[item.id]?.type === 'deleted';
-        if (isDeleted) return null;
+    ...(isSelectionActive && isMultiSelect
+      ? [
+          {
+            key: 'select',
+            header: (
+              <div className="flex items-center justify-center h-full w-full py-1">
+                <input
+                  type="checkbox"
+                  ref={(el) => {
+                    if (el) el.indeterminate = isSomeSelected;
+                  }}
+                  checked={isAllSelected}
+                  onChange={handleToggleSelectAll}
+                  className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 transition-transform duration-150 hover:scale-105"
+                  title="Toggle Select All"
+                />
+              </div>
+            ),
+            headerClassName: 'w-12 text-center',
+            cellClassName: 'text-center p-0',
+            render: (item: Product) => {
+              const isDeleted = activeDiffs[item.id]?.type === 'deleted';
+              if (isDeleted) return null;
 
-        return isSelectionActive ? (
-          <label
-            className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={selectedProductIds.includes(item.id)}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  setSelectedProductIds((prev) => [...prev, item.id]);
-                } else {
-                  setSelectedProductIds((prev) =>
-                    prev.filter((id) => id !== item.id)
-                  );
-                }
-              }}
-              className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
-            />
-          </label>
-        ) : null;
-      },
-    },
+              return (
+                <label
+                  className="flex items-center justify-center w-full h-11 py-2 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.includes(item.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedProductIds((prev) => [...prev, item.id]);
+                      } else {
+                        setSelectedProductIds((prev) => {
+                          const next = prev.filter((id) => id !== item.id);
+                          if (next.length === 0) setIsMultiSelect(false);
+                          return next;
+                        });
+                      }
+                    }}
+                    className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-blue-600 transition-transform duration-150 hover:scale-110"
+                  />
+                </label>
+              );
+            },
+          } as Column<Product>,
+        ]
+      : []),
     {
       key: 'barcode_id',
       header: 'Scan / Barcode',
       sortable: true,
       render: (item) => (
-        <div className="relative group/tooltip inline-block">
+        <div className="inline-flex flex-col items-start gap-0.5">
           <button
             type="button"
             onClick={(e) => {
@@ -1417,33 +1610,10 @@ export const Products: React.FC<ProductsProps> = ({
           </button>
 
           {item.manufacturer_barcode && (
-            <span className="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-mono block">
+            <span className="text-[9px] text-slate-500 dark:text-slate-400 font-mono block pl-0.5">
               EXT: {item.manufacturer_barcode}
             </span>
           )}
-
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/tooltip:flex flex-col items-center z-[100] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl min-w-[280px] max-w-[340px] p-3 animate-scale-up pointer-events-none">
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[-1px] border-[6px] border-transparent border-b-white dark:border-b-slate-900" />
-            
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-inner w-full flex items-center justify-center">
-              <BarcodeComponent
-                value={item.barcode_id}
-                width={2}
-                height={68}
-                margin={12}
-                displayValue={true}
-              />
-            </div>
-
-            <div className="mt-2 text-center w-full px-1 space-y-0.5">
-              <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate">
-                {item.product_name}
-              </p>
-              <p className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
-                Click barcode pill to enlarge for phone camera
-              </p>
-            </div>
-          </div>
         </div>
       ),
     },
@@ -1804,7 +1974,7 @@ export const Products: React.FC<ProductsProps> = ({
         </div>
       </div>
 
-      {/* Product actions sticky pin bar - shown when one or more items are selected */}
+{/* Product actions sticky pin bar - shown when one or more items are selected */}
       {location.pathname.startsWith('/sales/products') &&
         !isNavFloatingOpen &&
         selectedProductIds.length >= 1 &&
@@ -1817,9 +1987,138 @@ export const Products: React.FC<ProductsProps> = ({
             onRestock={() => setShowRestockModal(true)}
             onBulkDelete={() => setShowBulkDeleteModal(true)}
             isHidden={isNavFloatingOpen}
+            isMultiSelect={isMultiSelect}
+            onToggleMultiSelect={() => {
+              setIsMultiSelect((prev) => {
+                const next = !prev;
+                if (!next && selectedProductIds.length > 1) {
+                  setSelectedProductIds([selectedProductIds[0]]);
+                }
+                return next;
+              });
+            }}
+            barcodeSlot={
+              selectedProductIds.length === 1 ? (() => {
+                const selectedItem = products.find(
+                  (p) => p.id === selectedProductIds[0]
+                );
+                if (!selectedItem || !selectedItem.barcode_id) return null;
+                return (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBarcodeModalProduct(selectedItem);
+                      setActiveBarcodeTab('system');
+                    }}
+                    className="w-full bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-300 dark:border-white/15 shadow-2xl flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-cyan-500 transition-all select-none group"
+                    title="Click to view full screen barcode"
+                  >
+                    <div className="w-full flex items-center justify-between gap-3">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 aspect-square rounded-xl overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 bg-slate-100 flex items-center justify-center shadow-xs">
+                        <ProductImage
+                          src={selectedItem.image_url}
+                          alt={selectedItem.product_name}
+                          className="w-full h-full object-cover"
+                          fallbackLetter={selectedItem.product_name[0]}
+                          fallbackClassName="w-full h-full flex items-center justify-center bg-slate-900 text-white font-black text-base"
+                        />
+                      </div>
+
+                      <div className="flex-1 min-w-0 bg-white rounded-lg p-1.5 flex flex-col items-center justify-center overflow-x-auto border border-slate-200 dark:border-slate-700 shadow-inner">
+                        <BarcodeComponent
+                          value={selectedItem.barcode_id}
+                          width={1.8}
+                          height={42}
+                          margin={4}
+                          displayValue={true}
+                        />
+                      </div>
+                    </div>
+
+                    <span className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mt-1.5 text-center block group-hover:underline">
+                      Tap to enlarge barcode for phone camera
+                    </span>
+                  </div>
+                );
+              })() : null
+            }
           />,
           document.body
         )}
+
+      {/* SELECTION CONTROL TOOLBAR (VISIBLE ON BOTH PC & MOBILE DURING SELECT MODE) */}
+      {isSelectionActive && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-blue-500/10 dark:bg-blue-600/15 border-2 border-blue-500/30 rounded-2xl animate-fade-in shadow-xs select-none">
+          <div className="flex items-center gap-2.5">
+            <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+              {selectedProductIds.length}
+            </span>
+            <div className="flex flex-col">
+              <span className="text-xs font-heading font-black uppercase tracking-wider text-(--color-text)">
+                {isMultiSelect ? 'Multi-Select Mode' : 'Single-Select Mode'}
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                {isMultiSelect
+                  ? 'Click products or use checkboxes to select multiple items'
+                  : 'Click any product to switch focus. Enable Multi-Select to select more'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Multi-Select Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMultiSelect((prev) => {
+                  const next = !prev;
+                  if (!next && selectedProductIds.length > 1) {
+                    setSelectedProductIds([selectedProductIds[0]]);
+                  }
+                  return next;
+                });
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border active:scale-95 ${
+                isMultiSelect
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40'
+                  : 'bg-(--bg-card) text-slate-700 dark:text-slate-200 border-(--border-color) hover:border-blue-500'
+              }`}
+            >
+              <CheckSquare className="w-4 h-4" />
+              <span>Multi-Select</span>
+              <span
+                className={`text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase ${
+                  isMultiSelect
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {isMultiSelect ? 'ON' : 'OFF'}
+              </span>
+            </button>
+
+            {/* Select All Button (Only available when Multi-Select is ON) */}
+            {isMultiSelect && (
+              <button
+                type="button"
+                onClick={handleToggleSelectAll}
+                className="px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider bg-(--bg-card) hover:bg-slate-200 dark:hover:bg-zinc-800 border border-(--border-color) text-(--color-text) transition-colors cursor-pointer active:scale-95"
+              >
+                {isAllSelected ? 'Unselect All' : `Select All (${filteredProducts.length})`}
+              </button>
+            )}
+
+            {/* Deselect All / Clear Selection */}
+            <button
+              type="button"
+              onClick={resetActionState}
+              className="text-xs font-heading font-bold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 uppercase tracking-wider px-3 py-1.5 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer active:scale-95"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Products Table & Mobile Cards */}
       {loading ? (
@@ -1873,65 +2172,8 @@ export const Products: React.FC<ProductsProps> = ({
         <>
           {/* MOBILE VIEW */}
           <div className="space-y-3 md:hidden">
-            {isSelectionActive && (
-              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[48px]">
-                <label
-                  className="flex items-center gap-3 cursor-pointer py-2 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1 min-h-[44px]"
-                  onClick={() => {
-                    const isAllSelected =
-                      filteredProducts.length > 0 &&
-                      filteredProducts.every((p) =>
-                        selectedProductIds.includes(p.id)
-                      );
-                    if (isAllSelected) {
-                      setSelectedProductIds([]);
-                    } else {
-                      setSelectedProductIds(filteredProducts.map((p) => p.id));
-                    }
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    ref={(el) => {
-                      if (el) {
-                        const isAllSelected =
-                          filteredProducts.length > 0 &&
-                          filteredProducts.every((p) =>
-                            selectedProductIds.includes(p.id)
-                          );
-                        el.indeterminate =
-                          selectedProductIds.length > 0 && !isAllSelected;
-                      }
-                    }}
-                    checked={
-                      filteredProducts.length > 0 &&
-                      filteredProducts.every((p) =>
-                        selectedProductIds.includes(p.id)
-                      )
-                    }
-                    onChange={() => {}}
-                    className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
-                  />
-                  <span className="text-xs font-bold text-(--color-text)">
-                    Selected Products{' '}
-                    <span className="font-mono text-slate-400 font-normal">
-                      ({selectedProductIds.length}/{filteredProducts.length})
-                    </span>
-                  </span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedProductIds([])}
-                  className="text-[11px] font-bold text-rose-500 uppercase tracking-wider px-3 py-2 hover:bg-rose-500/10 rounded-lg active:scale-95 transition-all shrink-0 min-h-[44px] flex items-center"
-                >
-                  Deselect All
-                </button>
-              </div>
-            )}
-
             {/* Mobile Product Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {filteredProducts.map((product) => {
                 const isSelected = selectedProductIds.includes(product.id);
                 const isHidden = product.status === 'Inactive';
@@ -1945,13 +2187,53 @@ export const Products: React.FC<ProductsProps> = ({
                 return (
                   <div
                     key={product.id}
+                    ref={(el) => {
+                      if (el) mobileCardRefs.current.set(product.id, el);
+                      else mobileCardRefs.current.delete(product.id);
+                    }}
                     onClick={() => {
                       if (isDeleted) return;
-                      setSelectedProductIds((prev) =>
-                        prev.includes(product.id)
+                      setSelectedProductIds((prev) => {
+                        if (!isMultiSelect) {
+                          const isCurrentlySelected = prev.includes(product.id);
+                          const next = isCurrentlySelected ? [] : [product.id];
+                          if (!isCurrentlySelected) {
+                            setTimeout(() => {
+                              const el = mobileCardRefs.current.get(product.id);
+                              if (el) {
+                                el.scrollIntoView({
+                                  behavior: 'smooth',
+                                  block: 'center',
+                                });
+                              }
+                            }, 100);
+                          }
+                          return next;
+                        }
+
+                        const isCurrentlySelected = prev.includes(product.id);
+                        const next = isCurrentlySelected
                           ? prev.filter((id) => id !== product.id)
-                          : [...prev, product.id]
-                      );
+                          : [...prev, product.id];
+
+                        if (next.length === 0) {
+                          setIsMultiSelect(false);
+                        }
+
+                        // Auto-scroll and center card to middle of screen when selected
+                        if (!isCurrentlySelected && next.length === 1) {
+                          setTimeout(() => {
+                            const el = mobileCardRefs.current.get(product.id);
+                            if (el) {
+                              el.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }
+                          }, 100);
+                        }
+                        return next;
+                      });
                     }}
                     className={`p-4 border rounded-2xl relative flex flex-col gap-3 transition-all duration-200 cursor-pointer ${
                       isDeleted
@@ -1967,66 +2249,96 @@ export const Products: React.FC<ProductsProps> = ({
                                 : 'bg-(--bg-card) border-(--border-color) hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      {isSelectionActive && !isDeleted ? (
-                        <label
-                          className="flex items-center gap-2 cursor-pointer py-1.5 pr-4 min-h-[36px]"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {
-                              setSelectedProductIds((prev) =>
-                                prev.includes(product.id)
-                                  ? prev.filter((id) => id !== product.id)
-                                  : [...prev, product.id]
-                              );
-                            }}
-                            className="w-5 h-5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73]"
+                    {/* TOP SECTION: AVATAR BOX (SEE-THROUGH BLUE CHECKBOX LAYER) + PRODUCT NAME & PRICE + STACKED BADGES */}
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Clean Picture Box (No checkmark overlay) */}
+                        <div className="relative shrink-0 w-14 h-14 rounded-2xl overflow-hidden select-none border border-(--border-color)">
+                          <ProductImage
+                            src={product.image_url}
+                            alt={product.product_name}
+                            className={`w-full h-full object-cover shrink-0 ${
+                              isHidden || isDeleted ? 'grayscale opacity-65' : ''
+                            }`}
+                            fallbackLetter={product.product_name[0]}
+                            fallbackClassName="w-full h-full bg-(--bg-page) flex items-center justify-center text-slate-400 dark:text-slate-300 font-black text-xl shadow-inner uppercase"
                           />
-                          <span className="text-[10px] font-bold uppercase select-none">
-                            Select
-                          </span>
-                        </label>
-                      ) : (
-                        <div className="w-1" />
-                      )}
 
-                      <div className="flex items-center gap-1.5">
+                          {/* Subtle indicator in multi-selection mode */}
+                          {isSelectionActive && isMultiSelect && (
+                            <div className="absolute top-1 left-1 pointer-events-none">
+                              <div
+                                className={`w-4 h-4 rounded-md flex items-center justify-center transition-all ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'border border-white/60 bg-black/40'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <h4
+                            className={`font-bold text-sm sm:text-base text-(--color-text) truncate leading-tight ${
+                              isDeleted ? 'line-through text-rose-500' : ''
+                            }`}
+                          >
+                            {product.product_name}
+                          </h4>
+
+                          <div className="flex items-center gap-1.5 font-mono">
+                            {oldPrice !== undefined &&
+                              oldPrice !== product.selling_price && (
+                                <span className="text-xs text-slate-400 line-through">
+                                  ₱{oldPrice.toFixed(2)}
+                                </span>
+                              )}
+                            <p className="font-extrabold text-emerald-500 dark:text-emerald-400 text-base leading-none tracking-tight">
+                              ₱{Number(product.selling_price).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stacked Status Badges on Top Right */}
+                      <div className="flex flex-col items-end gap-1.5 shrink-0 pt-0.5">
                         {isAdded && (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
                             NEW
                           </span>
                         )}
                         {isUpdated && (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-blue-600 text-white shadow-xs">
                             UPDATED
                           </span>
                         )}
                         {isDeleted && (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-rose-600 text-white shadow-xs">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-rose-600 text-white shadow-xs">
                             REMOVED
                           </span>
                         )}
-                        {/* Sync status indicator badge */}
+
+                        {/* Sync status badge */}
                         {(product as any).sync_status === 'pending' ||
                         String(product.id).startsWith('offline-') ||
                         String(product.id).startsWith('prod_off_') ? (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                            <RefreshCw className="w-2.5 h-2.5 animate-spin" /> PENDING SYNC
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <RefreshCw className="w-2.5 h-2.5 animate-spin" /> PENDING
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                             <Check className="w-2.5 h-2.5" /> SYNCED
                           </span>
                         )}
 
                         <span
-                          className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                          className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${
                             product.status === 'Active'
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-slate-500/10 text-slate-455'
+                              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 dark:text-emerald-400'
+                              : 'bg-slate-500/10 border border-slate-500/20 text-slate-400'
                           }`}
                         >
                           {product.status === 'Active' ? 'VISIBLE' : 'HIDDEN'}
@@ -2034,74 +2346,17 @@ export const Products: React.FC<ProductsProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 min-h-12 text-xs font-semibold">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <ProductImage
-                          src={product.image_url}
-                          alt={product.product_name}
-                          className={`w-12 h-12 rounded-xl object-cover border border-(--border-color) shrink-0 ${
-                            isHidden || isDeleted
-                              ? 'grayscale opacity-65'
-                              : ''
-                          }`}
-                          fallbackLetter={product.product_name[0]}
-                          fallbackClassName="w-12 h-12 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-400 font-bold text-lg shadow-inner shrink-0"
-                        />
-
-                        <div className="min-w-0 flex-1">
-                          <h4
-                            className={`font-semibold text-sm truncate leading-snug ${
-                              isDeleted ? 'line-through text-rose-500' : ''
-                            }`}
-                          >
-                            {product.product_name}
-                          </h4>
-
-                          <div className="flex items-center gap-1.5 mt-0.5 font-mono">
-                            {oldPrice !== undefined &&
-                              oldPrice !== product.selling_price && (
-                                <span className="text-xs text-slate-400 line-through">
-                                  ₱{oldPrice.toFixed(2)}
-                                </span>
-                              )}
-                            <p className="font-bold text-emerald-500 text-sm leading-none">
-                              ₱{product.selling_price.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Only display barcode preview when exactly 1 product is selected (hide when multi-selecting) */}
-                      {isSelected && selectedProductIds.length === 1 && (
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setBarcodeModalProduct(product);
-                            setActiveBarcodeTab('system');
-                          }}
-                          className="bg-white p-2 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center animate-scale-up cursor-pointer hover:ring-2 hover:ring-cyan-500 transition-all"
-                          title="Click to view full screen barcode"
-                        >
-                          <BarcodeComponent
-                            value={product.barcode_id}
-                            width={2}
-                            height={52}
-                            margin={12}
-                            displayValue={false}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 border-t border-(--border-color) pt-2 text-[11px] leading-none">
-                      <div className="space-y-1">
-                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">
-                          Stock Status
+                    {/* BOTTOM SECTION: QUANTITY | BARCODES | EXTERNAL | INTERNAL */}
+                    <div className="border-t border-(--border-color) pt-2.5 flex items-center justify-between gap-2 text-xs select-none">
+                      {/* Left: QUANTITY */}
+                      <div className="space-y-0.5 min-w-0">
+                        <span className="text-slate-400 dark:text-slate-500 font-bold uppercase text-[9px] tracking-wider block leading-none">
+                          QUANTITY
                         </span>
-                        <span className="font-bold inline-block">
+                        <span className="font-extrabold text-xs block leading-tight">
                           {oldStock !== undefined &&
                           oldStock !== product.stock_quantity ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-mono">
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px]">
                               <span className="line-through text-slate-400">
                                 {oldStock}
                               </span>
@@ -2111,68 +2366,48 @@ export const Products: React.FC<ProductsProps> = ({
                               </span>
                             </span>
                           ) : !product.has_stock_limit ? (
-                            <span className="text-blue-400">UNLIMITED</span>
+                            <span className="text-blue-400 font-bold">UNLIMITED</span>
                           ) : product.stock_quantity === 0 ? (
-                            <span className="text-red-500">OUT OF STOCK</span>
+                            <span className="text-rose-500 font-bold">OUT OF STOCK</span>
+                          ) : product.low_stock_alert !== null &&
+                            product.stock_quantity <= product.low_stock_alert ? (
+                            <span className="text-amber-500 font-bold">
+                              LOW ({product.stock_quantity})
+                            </span>
                           ) : (
-                            <span className="text-slate-350">
+                            <span className="text-(--color-text) font-bold">
                               {product.stock_quantity} UNITS
                             </span>
                           )}
                         </span>
                       </div>
 
-                      <div className="space-y-1 text-right">
-                        <span className="text-slate-400 dark:text-slate-500 font-semibold uppercase text-[9px] block">
-                          Code Number
-                        </span>
-                        <span className="font-mono font-bold text-slate-400 dark:text-slate-300 inline-block">
-                          {product.barcode_id}
-                          {product.manufacturer_barcode && (
-                            <span className="block text-[9px] text-slate-500 dark:text-slate-400 font-normal mt-1">
-                              EXT: {product.manufacturer_barcode}
-                            </span>
-                          )}
-                        </span>
+                      {/* Middle: BARCODES Header */}
+                      <div className="text-[9px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500 px-1 hidden xs:block">
+                        BARCODES
+                      </div>
+
+                      {/* Right: EXTERNAL & INTERNAL Codes */}
+                      <div className="flex items-center gap-3 sm:gap-4 text-right shrink-0">
+                        <div className="space-y-0.5">
+                          <span className="text-slate-400 dark:text-slate-500 font-bold uppercase text-[9px] tracking-wider block leading-none">
+                            EXTERNAL
+                          </span>
+                          <span className="font-mono text-xs text-slate-400 dark:text-slate-300 font-medium block leading-tight">
+                            {product.manufacturer_barcode || '—'}
+                          </span>
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <span className="text-slate-400 dark:text-slate-500 font-bold uppercase text-[9px] tracking-wider block leading-none">
+                            INTERNAL
+                          </span>
+                          <span className="font-mono font-bold text-xs text-(--color-text) block leading-tight">
+                            {product.barcode_id || '—'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-
-                    {isAdmin &&
-                      isSelected &&
-                      selectedProductIds.length === 1 &&
-                      !isDeleted && (
-                        <div
-                          className="flex gap-2 mt-1 pt-2 border-t border-(--border-color) animate-slide-up"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => handleEditClick(product)}
-                            className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Edit Item
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(product.id)}
-                            className="flex-1 py-2.5 bg-red-500/10 text-red-500 hover:bg-red-655 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Remove
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setSelectedProductIds((prev) =>
-                                prev.filter((id) => id !== product.id)
-                              );
-                            }}
-                            className="px-3 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer hover:bg-slate-350 dark:hover:bg-slate-750 transition-colors min-h-[44px]"
-                            title="Close options"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
                   </div>
                 );
               })}

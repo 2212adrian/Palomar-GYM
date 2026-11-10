@@ -317,6 +317,7 @@ export const AuditLogs: React.FC = () => {
       act.includes('TERMINAL') ||
       act.includes('SUBSCRIPTION_DROPPED') ||
       act.includes('SUBSCRIPTION_VOIDED') ||
+      act.includes('VOID') ||
       act.includes('DELETE') ||
       act.includes('PURGE') ||
       act.includes('RESTORE_DATABASE') ||
@@ -349,6 +350,8 @@ export const AuditLogs: React.FC = () => {
     const style = 'w-4 h-4';
     if (act.includes('SUPERADMIN'))
       return <AlertTriangle className={`${style} text-red-500`} />;
+    if (act.includes('VOID'))
+      return <Wallet className={`${style} text-red-500`} />;
     if (
       act.includes('CASH') ||
       act.includes('DRAWER') ||
@@ -438,6 +441,68 @@ export const AuditLogs: React.FC = () => {
   const renderFormattedAuditDetails = (details: string) => {
     if (!details)
       return <span className="text-slate-400 italic">System action executed.</span>;
+
+    // Rich visual formatting for Voided Cash Transactions
+    if (details.includes('Voided cash transaction') && details.includes('Reason:')) {
+      const voidMatch = details.match(/Voided cash transaction\s*#?([A-Za-z0-9]*)\s*by\s*([^•—.]+)/i);
+      const activityMatch = details.match(/Activity:\s*"([^"]+)"/i);
+      const amountMatch = details.match(/\(₱([0-9,.]+)\)/);
+      const reasonMatch = details.match(/Reason:\s*(.+)$/i);
+
+      if (voidMatch || activityMatch || reasonMatch) {
+        const txId = voidMatch?.[1]?.trim() || '';
+        const actor = voidMatch?.[2]?.trim() || '';
+        const activity = activityMatch?.[1]?.trim() || '';
+        const amount = amountMatch?.[1]?.trim() || '';
+        const reason = reasonMatch?.[1]?.trim() || '';
+
+        return (
+          <div className="space-y-1.5 py-0.5 text-left">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                Voided transaction
+              </span>
+              {txId && (
+                <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300">
+                  #{txId}
+                </span>
+              )}
+              {actor && (
+                <span className="text-slate-500 text-[11px]">
+                  by <strong className="text-slate-700 dark:text-slate-300">{actor}</strong>
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              {activity && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500/80">
+                    Activity:
+                  </span>
+                  <span className="font-semibold">{activity}</span>
+                </div>
+              )}
+
+              {amount && (
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-xs font-mono font-bold line-through" title="Voided Amount">
+                  ₱{amount}
+                </div>
+              )}
+
+              {reason && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-xs">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500/80">
+                    Reason:
+                  </span>
+                  <span className="font-medium">{reason}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+    }
 
     const hasArrowChange =
       details.includes('->') ||

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
+import { supabase } from '../../../lib/supabase/client';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { getCachedImageUrl } from '../../../lib/cacheUtils';
 
@@ -61,8 +62,10 @@ interface ProductFormModalProps {
   onClose: () => void;
   existingProducts: {
     id: string;
+    barcode_id?: string;
     product_name: string;
     image_url: string | null;
+    manufacturer_barcode?: string | null;
   }[];
   editingProductId?: string | null;
 }
@@ -166,6 +169,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const isLocked = formStatus === 'Inactive';
   const isInfiniteStock = !formHasStockLimit;
 
+  const [recycleBinMatch, setRecycleBinMatch] = useState<{
+    id: string;
+    product_name: string;
+    barcode_id: string;
+  } | null>(null);
+  const [restoringRecycleId, setRestoringRecycleId] = useState<string | null>(null);
+
   const isDuplicateName = useMemo(() => {
     if (saving || isSubmitting || isSuccess) return false;
     const nameClean = formName.trim().toLowerCase();
@@ -175,6 +185,70 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         p.product_name.toLowerCase() === nameClean && p.id !== editingProductId
     );
   }, [formName, existingProducts, editingProductId, saving, isSubmitting, isSuccess]);
+
+  const isDuplicateBarcode = useMemo(() => {
+    if (saving || isSubmitting || isSuccess) return false;
+    const barcodeClean = formManufacturerBarcode.trim();
+    if (!barcodeClean) return false;
+    return existingProducts.some(
+      (p) =>
+        p.id !== editingProductId &&
+        ((p.manufacturer_barcode &&
+          p.manufacturer_barcode.trim().toLowerCase() === barcodeClean.toLowerCase()) ||
+          (p.barcode_id &&
+            p.barcode_id.trim().toLowerCase() === barcodeClean.toLowerCase()))
+    );
+  }, [formManufacturerBarcode, existingProducts, editingProductId, saving, isSubmitting, isSuccess]);
+
+  const checkRecycleBinForBarcode = async (barcode: string) => {
+    const trimmed = barcode?.trim();
+    if (!trimmed || isEditing) {
+      setRecycleBinMatch(null);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('id, product_name, barcode_id')
+        .not('deleted_at', 'is', null)
+        .eq('manufacturer_barcode', trimmed)
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setRecycleBinMatch(data[0]);
+      } else {
+        setRecycleBinMatch(null);
+      }
+    } catch {
+      setRecycleBinMatch(null);
+    }
+  };
+
+  const handleRestoreFromRecycleBin = async () => {
+    if (!recycleBinMatch) return;
+    setRestoringRecycleId(recycleBinMatch.id);
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          deleted_at: null,
+          deleted_by: null,
+        })
+        .eq('id', recycleBinMatch.id);
+
+      if (error) throw error;
+
+      toast.success(
+        `Restored "${recycleBinMatch.product_name}" (${recycleBinMatch.barcode_id}) from Recycle Bin!`
+      );
+      onClose();
+    } catch (err: any) {
+      toast.error('Failed to restore product from Recycle Bin.');
+    } finally {
+      setRestoringRecycleId(null);
+    }
+  };
 
   const applyOFFData = (data: any, barcode: string) => {
     setFormManufacturerBarcode(barcode);
@@ -260,12 +334,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setFormImageUrl(trimmed);
     } else if (isBarcodeDigits) {
       setFormManufacturerBarcode(trimmed);
+      checkRecycleBinForBarcode(trimmed);
       if (trimmed !== lastFetchedBarcode.current) {
         fetchProductFromOFF(trimmed);
       }
     } else if (!trimmed) {
       setFormImageUrl('');
       setFormManufacturerBarcode('');
+      setRecycleBinMatch(null);
     }
   };
 
@@ -329,6 +405,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         (decodedText) => {
           setFormManufacturerBarcode(decodedText);
           setCombinedInput(decodedText);
+          checkRecycleBinForBarcode(decodedText);
           fetchProductFromOFF(decodedText);
           toast.success(`Scanned: ${decodedText}`);
           setShowLiveScanner(false);
@@ -479,6 +556,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
     if (!isEditing && isDuplicateName) {
       toast.error('A product with this name already exists in inventory.');
+      return;
+    }
+
+    if (!isEditing && isDuplicateBarcode) {
+      toast.error('This external barcode is already registered to another active product.');
       return;
     }
 
@@ -1142,10 +1224,49 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     onClick={() => {
                       setFormManufacturerBarcode('');
                       setFormManufacturerSource('manual');
+                      setRecycleBinMatch(null);
                     }}
                     className="text-rose-500 hover:text-rose-600 text-[10px] font-bold uppercase cursor-pointer shrink-0"
                   >
                     Clear
+                  </button>
+                </div>
+              )}
+
+              {/* ACTIVE BARCODE DUPLICATE WARNING */}
+              {isDuplicateBarcode && (
+                <div className="flex items-center gap-1.5 p-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] font-bold text-rose-500">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>External barcode is already assigned to another active product.</span>
+                </div>
+              )}
+
+              {/* RECYCLE BIN MATCH DETECTED BANNER */}
+              {recycleBinMatch && !isEditing && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2 animate-fade-in text-left">
+                  <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-xs font-bold block">
+                        Found in Recycle Bin
+                      </span>
+                      <span className="text-[11px] text-(--color-text)/80 block leading-tight">
+                        <strong>{recycleBinMatch.product_name}</strong> ({recycleBinMatch.barcode_id}) already uses this barcode and is currently in the Recycle Bin.
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={Boolean(restoringRecycleId)}
+                    onClick={handleRestoreFromRecycleBin}
+                    className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {restoringRecycleId ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <PackageCheck className="w-3.5 h-3.5" />
+                    )}
+                    <span>Restore Item From Recycle Bin</span>
                   </button>
                 </div>
               )}
@@ -1294,13 +1415,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   saving ||
                   isSubmitting ||
                   isSuccess ||
-                  (!isEditing && isDuplicateName)
+                  (!isEditing && (isDuplicateName || isDuplicateBarcode))
                 }
                 className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 font-heading font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-1.5 active:scale-95 border border-white/10 min-w-0 truncate ${
                   saving ||
                   isSubmitting ||
                   isSuccess ||
-                  (!isEditing && isDuplicateName)
+                  (!isEditing && (isDuplicateName || isDuplicateBarcode))
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer'
                 } ${

@@ -1,4 +1,3 @@
-// src/lib/supabase/audit.ts
 import { supabase } from './client';
 
 /**
@@ -9,7 +8,12 @@ export function sanitizeLogDetails(text: string): string {
   if (!text) return '';
   return (
     text
-      // Replace raw UUID patterns (e.g. 550e8400-e29b-41d4-a716-446655440000) with a cleaner label if present
+      // Preserve reference IDs: convert #UUID into clean 8-character uppercase identifier #XXXXXXXX
+      .replace(
+        /#([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+        (_match, p1) => `#${p1.toUpperCase()}`
+      )
+      // Replace remaining standalone raw UUID patterns
       .replace(
         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
         ''

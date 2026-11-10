@@ -19,7 +19,7 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     version: '1.0.5',
     date: '2026-11-10',
     summary:
-      'Cash drawer integrity overhaul, admin authorization workflow for staff manual movements, transaction void reversal, 13-digit digital payment validation on exports, official reports auditing enhancements, and multi-view display modes for Logbook and Sales registers.',
+      'Cash drawer integrity overhaul, admin authorization workflow for staff manual movements, transaction void reversal, 13-digit digital payment validation on exports, official reports auditing enhancements, member profile workspace redesign with responsive transitions and quick actions, auto-scroll focus, and SuperAdmin legacy data migration (Beta).',
     sections: [
       {
         type: 'Member Management & Staff Workflow',
@@ -29,6 +29,18 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
           'Parent Consent & Signatures: Fixed intake wizard to display and lock existing parent details, rendering signatures read-only with high-contrast white backgrounds.',
           'On-Demand Signature Caching: Enabled click-to-view minor signatures with local storage caching to prevent redundant database fetches.',
           'Search & Category Toolbar: Replaced crowded filter buttons with an integrated category dropdown and added a "Recently Subscribed" filter.',
+          'Auto-Scroll Center Focus: Added smooth automatic centering scroll on desktop table rows and mobile card lists when selecting or switching focus between members.',
+        ],
+      },
+      {
+        type: 'Member Profile Workspace Redesign',
+        items: [
+          'Responsive Pull Handle & Transitions: Added a fluid pull-to-adjust sheet handle for mobile touchscreens while completely hiding pull triggers on PC desktop and switching to a smooth horizontal right-to-left drawer slide-in transition.',
+          'Low-Profile Quick Actions Bar: Replaced tall, stacked full-width banners in the Overview tab with a compact 2-column Quick Actions bar for instant plan renewals and physical card handovers.',
+          'Form-Focused Edit Mode: Automatically hides non-editable subscription and card widgets during profile editing, displaying only the editable bio and emergency contact form inputs.',
+          'Clean Card Credential Management: Removed confidential database token strings from view and added clear "IN USE" active format badges for Digital QR vs Manual cards.',
+          'Combined Attendance & Notes Tab: Consolidated facility check-in logs and internal medical/staff remarks into a single unified workspace.',
+          'Spacious Name Breakdown: Re-architected the name breakdown grid on PC with weighted column distribution and word wrapping to eliminate name compression and text clipping.',
         ],
       },
       {
@@ -69,6 +81,16 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
           'Enabled a space-efficient 2-column mobile Grid View with unified identity headers and enlarged touch hitboxes.',
           'Distinguished subscription and renewal payments in the logbook with a dedicated "Paid" badge and removed redundant collection buttons.',
           'Introduced an interactive live update notice badge beside the app version in the sidebar across desktop, mini-sidebar, and mobile views with instant one-tap redirection to System Information.',
+        ],
+      },
+      {
+        type: 'SuperAdmin Legacy Data Migration (Beta)',
+        items: [
+          'Exclusive SuperAdmin Beta Tool: Dedicated migration utility restricted strictly to authenticated SuperAdmin accounts.',
+          'Security Authorization Gate: Protected historical imports behind SuperAdmin password verification or Google SSO session validation.',
+          'Streamlined Batch Intake: Multi-row spreadsheet import requiring only core historical fields (Name, Plan, Start Date, and End Date).',
+          'Smart Duration Guard: Enforced a 1-month ceiling (max 31 days) for monthly plans and 366 days for yearly plans.',
+          'Cash Session Safety Blocker: Blocked legacy migrations while an active cash drawer session is open to maintain ledger audit integrity.',
         ],
       },
     ],

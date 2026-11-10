@@ -31,6 +31,8 @@ import {
   Lock,
   RefreshCw,
   ChevronDown,
+  CheckSquare,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -47,6 +49,10 @@ import { supabase } from '../../lib/supabase/client';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
+import { LegacyDataMigrationModal } from './components/LegacyDataMigrationModal';
+import { Database } from 'lucide-react';
 
 // Import Shared Types
 import type {
@@ -74,7 +80,6 @@ import {
   StaffPlansConsole,
   IntakeWizardModal,
 } from './components/SubscriptionPlan';
-import { DigitalQRCardModal } from './components/DigitalQRCardModal';
 import { ManualCardTemplateModal } from './components/ManualCardTemplateModal';
 import { MemberCardPrintModal } from './components/MemberCardPrintModal';
 import { MemberAvatar } from './components/MemberAvatar';
@@ -146,6 +151,10 @@ export const MembersList: React.FC<MembersListProps> = ({
     return location.pathname.includes('/plans');
   }, [location.pathname]);
 
+  const { user } = useAuthStore();
+  const isSuper = isSuperAdmin(user?.email);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'Directory' | 'Queue'>(
     'Directory'
   );
@@ -160,6 +169,19 @@ export const MembersList: React.FC<MembersListProps> = ({
 
   // Selection state for multi-select batch operations
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const mobileCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  useEffect(() => {
+    if (selectedMemberIds.length === 0) {
+      setIsMultiSelect(false);
+    }
+  }, [selectedMemberIds.length]);
+
+  const resetActionState = useCallback(() => {
+    setSelectedMemberIds([]);
+    setIsMultiSelect(false);
+  }, []);
 
   // Modals state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -223,7 +245,6 @@ export const MembersList: React.FC<MembersListProps> = ({
     useState<Member | null>(null);
 
   // Card modal state
-  const [qrModalMember, setQrModalMember] = useState<Member | null>(null);
   const [manualModalMember, setManualModalMember] = useState<Member | null>(
     null
   );
@@ -432,6 +453,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     setHasAttemptedEmptyRefresh(false);
     if (!location.pathname.startsWith('/members/list')) {
       setSelectedMemberIds([]);
+      setIsMultiSelect(false);
       setOpenActionMenuId(null);
       setMobileActionSheetMember(null);
     }
@@ -577,17 +599,33 @@ export const MembersList: React.FC<MembersListProps> = ({
       setWizardPrefill(undefined);
       setIsWizardOpen(true);
     };
+    const handleMigrationEvent = () => {
+      if (!isSuper) {
+        toast.error('Legacy Data Migration is restricted to SuperAdmin.');
+        return;
+      }
+      if (isSessionOpen) {
+        toast.warning(
+          'Cannot perform legacy data migration: Cash drawer session is currently open. Please close the session in Cash Management first.',
+          { toastId: 'migration-session-open-block' }
+        );
+        return;
+      }
+      setIsMigrationModalOpen(true);
+    };
 
     window.addEventListener('trigger-member-print', handlePrintEvent);
     window.addEventListener('trigger-member-recycle', handleRecycleEvent);
     window.addEventListener('trigger-member-wizard', handleWizardEvent);
+    window.addEventListener('trigger-member-migration', handleMigrationEvent);
 
     return () => {
       window.removeEventListener('trigger-member-print', handlePrintEvent);
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
+      window.removeEventListener('trigger-member-migration', handleMigrationEvent);
     };
-  }, [handleOpenPrintModal, isOffline]);
+  }, [handleOpenPrintModal, isOffline, isSuper]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -1148,67 +1186,97 @@ const chipCounts = useMemo(() => {
   const isSelectionActive = selectedMemberIds.length > 0;
 
   const handleRowClick = (member: Member) => {
-    setSelectedMemberIds((prev) =>
-      prev.includes(member.id)
-        ? prev.filter((id) => id !== member.id)
-        : [...prev, member.id]
-    );
+    if (!isMultiSelect) {
+      const isCurrentlySelected = selectedMemberIds.includes(member.id);
+      const next = isCurrentlySelected ? [] : [member.id];
+      setSelectedMemberIds(next);
+
+      if (!isCurrentlySelected) {
+        // Center auto-scroll focus on PC desktop table
+        setTimeout(() => {
+          const rowEl = document.querySelector(`.member-row-${member.id}`);
+          if (rowEl) {
+            rowEl.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            });
+          }
+        }, 80);
+      }
+    } else {
+      setSelectedMemberIds((prev) => {
+        const next = prev.includes(member.id)
+          ? prev.filter((id) => id !== member.id)
+          : [...prev, member.id];
+        if (next.length === 0) {
+          setIsMultiSelect(false);
+        }
+        return next;
+      });
+    }
   };
 
   const getRowStyle = (member: Member) => {
     const isSelected = selectedMemberIds.includes(member.id);
     const isSuspended = member.status === 'Suspended';
+    const rowClass = `member-row-${member.id}`;
 
     if (isSelected) {
-      return 'group !bg-blue-500/10 hover:!bg-blue-500/15 border-l-2 border-blue-500 transition-colors duration-150 cursor-pointer';
+      return `${rowClass} group !bg-blue-500/10 hover:!bg-blue-500/15 border-l-2 border-blue-500 transition-colors duration-150 cursor-pointer`;
     }
     if (isSuspended) {
-      return 'group bg-amber-500/10 dark:bg-amber-500/15 hover:!bg-amber-500/20 border-l-2 border-amber-500 text-amber-950 dark:text-amber-200 transition-colors duration-150 cursor-pointer';
+      return `${rowClass} group bg-amber-500/10 dark:bg-amber-500/15 hover:!bg-amber-500/20 border-l-2 border-amber-500 text-amber-950 dark:text-amber-200 transition-colors duration-150 cursor-pointer`;
     }
-    return 'group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150 cursor-pointer';
+    return `${rowClass} group hover:!bg-blue-500/5 dark:hover:!bg-blue-500/10 transition-colors duration-150 cursor-pointer`;
   };
 
   const columns: Column<Member>[] = [
-    {
-      key: 'select',
-      header: (
-        <div className="flex items-center justify-center h-full w-full py-0.5">
-          <input
-            type="checkbox"
-            ref={(el) => {
-              if (el) el.indeterminate = isSomeSelected;
-            }}
-            checked={isAllSelected}
-            onChange={handleToggleSelectAll}
-            className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
-            title="Toggle Select All"
-          />
-        </div>
-      ),
-      headerClassName: 'w-10 text-center',
-      cellClassName: 'text-center p-0',
-      render: (item) => (
-        <label
-          className="flex items-center justify-center w-full h-10 py-1 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={selectedMemberIds.includes(item.id)}
-            onChange={(e) => {
-              if (e.target.checked) {
-                setSelectedMemberIds((prev) => [...prev, item.id]);
-              } else {
-                setSelectedMemberIds((prev) =>
-                  prev.filter((id) => id !== item.id)
-                );
-              }
-            }}
-            className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
-          />
-        </label>
-      ),
-    },
+    ...(isSelectionActive && isMultiSelect
+      ? [
+          {
+            key: 'select',
+            header: (
+              <div className="flex items-center justify-center h-full w-full py-0.5">
+                <input
+                  type="checkbox"
+                  ref={(el) => {
+                    if (el) el.indeterminate = isSomeSelected;
+                  }}
+                  checked={isAllSelected}
+                  onChange={handleToggleSelectAll}
+                  className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-105"
+                  title="Toggle Select All"
+                />
+              </div>
+            ),
+            headerClassName: 'w-10 text-center',
+            cellClassName: 'text-center p-0',
+            render: (item: Member) => (
+              <label
+                className="flex items-center justify-center w-full h-10 py-1 cursor-pointer transition-colors hover:bg-slate-500/5 select-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedMemberIds.includes(item.id)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedMemberIds((prev) => [...prev, item.id]);
+                    } else {
+                      setSelectedMemberIds((prev) => {
+                        const next = prev.filter((id) => id !== item.id);
+                        if (next.length === 0) setIsMultiSelect(false);
+                        return next;
+                      });
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-[#123c73] transition-transform duration-150 hover:scale-110"
+                />
+              </label>
+            ),
+          } as Column<Member>,
+        ]
+      : []),
     {
       key: 'full_name',
       header: 'Member / ID',
@@ -1337,7 +1405,7 @@ const chipCounts = useMemo(() => {
                   <button
                     type="button"
                     onClick={() =>
-                      isQr ? setQrModalMember(item) : setManualModalMember(item)
+                      isQr ? setSelectedProfileMember(item) : setManualModalMember(item)
                     }
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 hover:opacity-85 cursor-pointer transition-opacity"
                     title="Physical card fee is paid but card is not yet claimed by member. Click to view."
@@ -1366,7 +1434,7 @@ const chipCounts = useMemo(() => {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (isQr) {
-                      setQrModalMember(item);
+                      setSelectedProfileMember(item);
                     } else {
                       setManualModalMember(item);
                     }
@@ -1488,12 +1556,13 @@ const chipCounts = useMemo(() => {
                     type="button"
                     onClick={() => {
                       setOpenActionMenuId(null);
-                      setQrModalMember(item);
+                      setSelectedMemberIds([item.id]);
+                      setShowBatchCardModal(true);
                     }}
                     className="w-full px-3.5 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-(--color-text) cursor-pointer"
                   >
-                    <QrCode className="w-4 h-4 text-blue-500" />
-                    <span>Digital QR Card</span>
+                    <Printer className="w-4 h-4 text-blue-500" />
+                    <span>Print Member Card</span>
                   </button>
 
                   <div className="border-t border-(--border-color) my-1" />
@@ -1572,6 +1641,31 @@ const chipCounts = useMemo(() => {
               <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
               <span>RECYCLE BIN</span>
             </Button>
+
+            {isSuper && (
+              <Button
+                onClick={() => {
+                  if (isSessionOpen) {
+                    toast.warning(
+                      'Cannot perform legacy data migration: Cash drawer session is open. Please close the session in Cash Management first.',
+                      { toastId: 'migration-session-open-block' }
+                    );
+                    return;
+                  }
+                  setIsMigrationModalOpen(true);
+                }}
+                variant="secondary"
+                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 cursor-pointer"
+                title={
+                  isSessionOpen
+                    ? 'Legacy Data Migration is locked while cash drawer session is open'
+                    : 'SuperAdmin Legacy Data Migration'
+                }
+              >
+                <Database className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
+                <span>DATA MIGRATION</span>
+              </Button>
+            )}
 
             <Button
               onClick={() => {
@@ -1870,6 +1964,80 @@ const chipCounts = useMemo(() => {
                   </div>
                 </div>
 
+                {/* SELECTION CONTROL TOOLBAR (VISIBLE ON BOTH PC & MOBILE DURING SELECT MODE) */}
+                {isSelectionActive && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-blue-500/10 dark:bg-blue-600/15 border-2 border-blue-500/30 rounded-2xl animate-fade-in shadow-xs select-none">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+                        {selectedMemberIds.length}
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-heading font-black uppercase tracking-wider text-(--color-text)">
+                          {isMultiSelect ? 'Multi-Select Mode' : 'Single-Select Mode'}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                          {isMultiSelect
+                            ? 'Click members or use checkboxes to select multiple items'
+                            : 'Click any member to switch focus. Enable Multi-Select to select more'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Multi-Select Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMultiSelect((prev) => {
+                            const next = !prev;
+                            if (!next && selectedMemberIds.length > 1) {
+                              setSelectedMemberIds([selectedMemberIds[0]]);
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border active:scale-95 ${
+                          isMultiSelect
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40'
+                            : 'bg-(--bg-card) text-slate-700 dark:text-slate-200 border-(--border-color) hover:border-blue-500'
+                        }`}
+                      >
+                        <CheckSquare className="w-4 h-4" />
+                        <span>Multi-Select</span>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase ${
+                            isMultiSelect
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-200 dark:bg-zinc-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {isMultiSelect ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+
+                      {/* Select All Button (Only available when Multi-Select is ON) */}
+                      {isMultiSelect && (
+                        <button
+                          type="button"
+                          onClick={handleToggleSelectAll}
+                          className="px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider bg-(--bg-card) hover:bg-slate-200 dark:hover:bg-zinc-800 border border-(--border-color) text-(--color-text) transition-colors cursor-pointer active:scale-95"
+                        >
+                          {isAllSelected ? 'Unselect All' : `Select All (${filteredMembers.length})`}
+                        </button>
+                      )}
+
+                      {/* Deselect All / Clear Selection */}
+                      <button
+                        type="button"
+                        onClick={resetActionState}
+                        className="text-xs font-heading font-bold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 uppercase tracking-wider px-3 py-1.5 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer active:scale-95"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* DESKTOP TABLE VIEW (HIGH DENSITY COMPACT ROWS) */}
                 <div className="hidden md:block p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden shadow-xs">
                   {loading ? (
@@ -1966,6 +2134,25 @@ const chipCounts = useMemo(() => {
                             <span>
                               {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
                             </span>
+                          </button>
+                        )}
+                        {isSuper && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isSessionOpen) {
+                                toast.warning(
+                                  'Cannot perform legacy data migration: Cash drawer session is open. Please close the session in Cash Management first.',
+                                  { toastId: 'migration-session-open-block' }
+                                );
+                                return;
+                              }
+                              setIsMigrationModalOpen(true);
+                            }}
+                            className="px-4 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-amber-500/30 transition-all inline-flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Database className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Legacy Data Migration</span>
                           </button>
                         )}
                       </div>
@@ -2086,45 +2273,20 @@ const chipCounts = useMemo(() => {
                             </span>
                           </button>
                         )}
+                        {isSuper && (
+                          <button
+                            type="button"
+                            onClick={() => setIsMigrationModalOpen(true)}
+                            className="px-3.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-amber-500/30 transition-all inline-flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Database className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Data Migration</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : (
                     <>
-                      {/* Select All Row on Mobile */}
-                      {isSelectionActive && (
-                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-500/10 border border-(--border-color) rounded-xl select-none min-h-[44px]">
-                          <label
-                            className="flex items-center gap-2.5 cursor-pointer py-1.5 px-2 -ml-1 rounded-lg hover:bg-slate-500/10 active:scale-[0.98] transition-all flex-1"
-                            onClick={handleToggleSelectAll}
-                          >
-                            <input
-                              type="checkbox"
-                              ref={(el) => {
-                                if (el) el.indeterminate = isSomeSelected;
-                              }}
-                              checked={isAllSelected}
-                              onChange={() => {}}
-                              className="w-4 h-4 rounded border-slate-300 dark:border-white/20 text-blue-600 accent-[#123c73] cursor-pointer shrink-0"
-                            />
-                            <span className="text-xs font-bold text-(--color-text)">
-                              Selected Members{' '}
-                              <span className="font-mono text-slate-400 font-normal">
-                                ({selectedMemberIds.length}/
-                                {filteredMembers.length})
-                              </span>
-                            </span>
-                          </label>
-
-                          <button
-                            type="button"
-                            onClick={() => setSelectedMemberIds([])}
-                            className="text-[11px] font-bold text-rose-500 uppercase tracking-wider px-2.5 py-1.5 hover:bg-rose-500/10 rounded-lg active:scale-95 transition-all shrink-0"
-                          >
-                            Deselect All
-                          </button>
-                        </div>
-                      )}
-
                       {/* Mobile Cards Map with Windowing/Virtualization */}
                       <VirtualWindowList
                         items={paginatedMobileMembers}
@@ -2142,15 +2304,59 @@ const chipCounts = useMemo(() => {
                           );
                         const isSuspended = member.status === 'Suspended';
                         const isQr = cardObj && cardObj.card_type === 'QR';
-                        const isActionDisabled = !isSessionOpen || isSuspended || isOffline;
 
                         return (
                           <div
                             key={member.id}
-                            onClick={() => handleRowClick(member)}
+                            ref={(el) => {
+                              if (el) mobileCardRefs.current.set(member.id, el);
+                              else mobileCardRefs.current.delete(member.id);
+                            }}
+                            onClick={() => {
+                              setSelectedMemberIds((prev) => {
+                                if (!isMultiSelect) {
+                                  const isCurrentlySelected = prev.includes(member.id);
+                                  const next = isCurrentlySelected ? [] : [member.id];
+                                  if (!isCurrentlySelected) {
+                                    setTimeout(() => {
+                                      const el = mobileCardRefs.current.get(member.id);
+                                      if (el) {
+                                        el.scrollIntoView({
+                                          behavior: 'smooth',
+                                          block: 'center',
+                                        });
+                                      }
+                                    }, 100);
+                                  }
+                                  return next;
+                                }
+
+                                const isCurrentlySelected = prev.includes(member.id);
+                                const next = isCurrentlySelected
+                                  ? prev.filter((id) => id !== member.id)
+                                  : [...prev, member.id];
+
+                                if (next.length === 0) {
+                                  setIsMultiSelect(false);
+                                }
+
+                                if (!isCurrentlySelected && next.length === 1) {
+                                  setTimeout(() => {
+                                    const el = mobileCardRefs.current.get(member.id);
+                                    if (el) {
+                                      el.scrollIntoView({
+                                        behavior: 'smooth',
+                                        block: 'center',
+                                      });
+                                    }
+                                  }, 100);
+                                }
+                                return next;
+                              });
+                            }}
                             className={`p-3.5 rounded-2xl border transition-all select-none space-y-2.5 relative ${
                               isSelected
-                                ? 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500 shadow-md'
+                                ? 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500 shadow-md ring-1 ring-blue-500'
                                 : isSuspended
                                   ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/40 text-amber-950 dark:text-amber-200'
                                   : 'bg-(--bg-card) border-(--border-color) shadow-xs active:scale-[0.99]'
@@ -2159,23 +2365,33 @@ const chipCounts = useMemo(() => {
                             {/* Card Header: Checkbox + Avatar + Details + Status */}
                             <div className="flex items-start justify-between gap-2.5">
                               <div className="flex items-center gap-2.5 min-w-0">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    handleRowClick(member);
-                                  }}
-                                  className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 accent-[#123c73] shrink-0 cursor-pointer"
-                                />
+                                {/* Picture Box with Top-Left Checkbox Overlay */}
+                                <div className="relative shrink-0 w-11 h-11 rounded-xl overflow-hidden select-none border border-(--border-color)">
+                                  <MemberAvatar
+                                    src={member.image_url || member.avatar_url}
+                                    name={member.full_name}
+                                    size={44}
+                                    roundedClassName="rounded-xl"
+                                    className="shadow-xs shrink-0 w-full h-full"
+                                  />
 
-                                <MemberAvatar
-                                  src={member.image_url || member.avatar_url}
-                                  name={member.full_name}
-                                  size={40}
-                                  roundedClassName="rounded-xl"
-                                  className="shadow-xs shrink-0"
-                                />
+                                  {/* Multi-Selection Checkbox Indicator Badge */}
+                                  {isSelectionActive && isMultiSelect && (
+                                    <div className="absolute top-1 left-1 pointer-events-none">
+                                      <div
+                                        className={`w-3.5 h-3.5 rounded-md flex items-center justify-center transition-all ${
+                                          isSelected
+                                            ? 'bg-blue-600 text-white shadow-xs'
+                                            : 'border border-white/60 bg-black/40'
+                                        }`}
+                                      >
+                                        {isSelected && (
+                                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
 
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -2270,7 +2486,7 @@ const chipCounts = useMemo(() => {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (isQr) {
-                                          setQrModalMember(member);
+                                          setSelectedProfileMember(member);
                                         } else {
                                           setManualModalMember(member);
                                         }
@@ -2293,76 +2509,7 @@ const chipCounts = useMemo(() => {
                               </div>
                             </div>
 
-                            {/* Card Action Buttons Bar with Gated Renew */}
-                            <div className="flex items-center gap-2 pt-2 border-t border-(--border-color)">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedProfileMember(member);
-                                }}
-                                className="flex-1 min-h-[40px] px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border border-blue-500/20 transition-colors"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Profile</span>
-                              </button>
-
-                              {subInfo.canRenew && (
-                                <button
-                                  type="button"
-                                  disabled={isActionDisabled}
-                                  onClick={(e) =>
-                                    handleTableRenewOrSubscribe(
-                                      member,
-                                      subInfo.hasSub,
-                                      e
-                                    )
-                                  }
-                                  title={
-                                    isOffline
-                                      ? 'Subscriptions locked: Internet connection required.'
-                                      : isSuspended
-                                        ? 'Member account is suspended. Activate member first.'
-                                        : !isSessionOpen
-                                          ? 'Cash drawer session is closed. Open a cash session in Cash Management.'
-                                          : subInfo.hasSub
-                                            ? 'Renew Subscription'
-                                            : 'Subscribe Plan'
-                                  }
-                                  className={`flex-1 min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-                                    isActionDisabled
-                                      ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed border border-transparent'
-                                      : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 cursor-pointer'
-                                  }`}
-                                >
-                                  {isActionDisabled ? (
-                                    <Lock className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <CreditCard className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>
-                                    {isOffline
-                                      ? 'Locked'
-                                      : subInfo.hasSub
-                                        ? 'Renew'
-                                        : 'Subscribe'}
-                                  </span>
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setMobileActionSheetMember(member);
-                                }}
-                                className="min-h-[40px] min-w-[40px] px-2.5 py-1.5 bg-(--bg-page) text-slate-400 border border-(--border-color) rounded-xl flex items-center justify-center hover:text-(--color-text)"
-                                title="More Actions"
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </button>
                             </div>
-                          </div>
                         );
                       }}
                     />
@@ -2443,6 +2590,41 @@ const chipCounts = useMemo(() => {
               <button
                 type="button"
                 onClick={() => {
+                  setIsMultiSelect((prev) => {
+                    const next = !prev;
+                    if (!next && selectedMemberIds.length > 1) {
+                      setSelectedMemberIds([selectedMemberIds[0]]);
+                    }
+                    return next;
+                  });
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-all border active:scale-95 ${
+                  isMultiSelect
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/30'
+                    : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-(--border-color)'
+                }`}
+                title={
+                  isMultiSelect
+                    ? 'Multi-select is active (click to switch to single-select)'
+                    : 'Enable multi-select mode'
+                }
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>Multi-Select</span>
+                <span
+                  className={`text-[9px] px-1 py-0.2 rounded font-extrabold uppercase ${
+                    isMultiSelect
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {isMultiSelect ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   if (!isSessionOpen) {
                     toast.warning(
                       'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
@@ -2451,7 +2633,7 @@ const chipCounts = useMemo(() => {
                   }
                   setIsBatchBuyCardModalOpen(true);
                 }}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
               >
                 <CreditCard className="w-3.5 h-3.5" />
                 <span>
@@ -2474,7 +2656,7 @@ const chipCounts = useMemo(() => {
 
               <button
                 type="button"
-                onClick={() => setSelectedMemberIds([])}
+                onClick={resetActionState}
                 className="p-2 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
                 title="Clear selection"
               >
@@ -2491,69 +2673,171 @@ const chipCounts = useMemo(() => {
         !isPlansPath &&
         isSelectionActive &&
         createPortal(
-          <div
-            style={{ position: 'fixed' }}
-            className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 min-h-14 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) p-2.5 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none transition-all duration-300 ease-in-out ${
-              isNavFloatingOpen
-                ? 'translate-y-24 opacity-0 pointer-events-none'
-                : 'translate-y-0 opacity-100 pointer-events-auto'
-            }`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-7 h-7 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
-                {selectedMemberIds.length}
-              </span>
-              <div className="min-w-0">
-                <span className="font-heading text-[11px] font-bold uppercase tracking-wider block text-(--color-text) leading-none truncate">
-                  Selected
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMemberIds([])}
-                  className="text-[9px] text-slate-400 hover:text-rose-500 font-bold underline cursor-pointer mt-0.5"
-                >
-                  Clear
-                </button>
+          (() => {
+            const singleSelectedMember =
+              selectedMemberIds.length === 1
+                ? members.find((m) => m.id === selectedMemberIds[0])
+                : null;
+            const singleSubInfo = singleSelectedMember
+              ? getSubscriptionDetails(singleSelectedMember.member_id)
+              : null;
+            const isSingleActionDisabled =
+              !isSessionOpen ||
+              singleSelectedMember?.status === 'Suspended' ||
+              isOffline;
+
+            return (
+              <div
+                style={{ position: 'fixed' }}
+                className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-3 py-2 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none transition-all duration-300 ease-in-out ${
+                  isNavFloatingOpen
+                    ? 'translate-y-24 opacity-0 pointer-events-none'
+                    : 'translate-y-0 opacity-100 pointer-events-auto'
+                }`}
+              >
+                {/* Selected Counter Badge + Multi Button */}
+                <div className="flex items-center gap-1.5 pr-2 border-r border-(--border-color) shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+                    {selectedMemberIds.length}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMultiSelect((prev) => {
+                        const next = !prev;
+                        if (!next && selectedMemberIds.length > 1) {
+                          setSelectedMemberIds([selectedMemberIds[0]]);
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`px-2 py-1 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-all border active:scale-95 ${
+                      isMultiSelect
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-(--border-color)'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>Multi</span>
+                    <span
+                      className={`text-[9px] px-1 py-0.2 rounded font-extrabold uppercase ${
+                        isMultiSelect
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {isMultiSelect ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Action Buttons: Profile (with text), Subscribe (with text), Purchase (Indigo), 3-Dots */}
+                <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto scrollbar-none py-0.5">
+                  {singleSelectedMember && (
+                    <>
+                      {/* Profile: with Profile Label */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProfileMember(singleSelectedMember)}
+                        className="h-9 px-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider border border-blue-500/20 active:scale-95 transition-colors cursor-pointer shrink-0"
+                        title="View Profile"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Profile</span>
+                      </button>
+
+                      {/* Subscribe / Renew: with Subscribe / Renew Label */}
+                      <button
+                        type="button"
+                        disabled={isSingleActionDisabled}
+                        onClick={(e) => {
+                          if (isSingleActionDisabled || !singleSelectedMember) return;
+                          handleTableRenewOrSubscribe(
+                            singleSelectedMember,
+                            singleSubInfo?.hasSub || false,
+                            e
+                          );
+                        }}
+                        className={`h-9 px-2.5 rounded-xl flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider active:scale-95 transition-colors border cursor-pointer shrink-0 ${
+                          isSingleActionDisabled
+                            ? 'bg-slate-400/20 text-slate-400 border-slate-500/20 opacity-60 cursor-not-allowed'
+                            : 'bg-emerald-500/10 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                        }`}
+                        title={
+                          isOffline
+                            ? 'Offline'
+                            : singleSubInfo?.hasSub
+                              ? 'Renew Subscription'
+                              : 'Subscribe Plan'
+                        }
+                      >
+                        {isSingleActionDisabled ? (
+                          <Lock className="w-3.5 h-3.5" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5" />
+                        )}
+                        <span>{singleSubInfo?.hasSub ? 'Renew' : 'Subscribe'}</span>
+                      </button>
+                    </>
+                  )}
+
+                  {/* Purchase Physical Cards: Distinct Indigo Color & CreditCard Icon */}
+                  <button
+                    type="button"
+                    disabled={!isSessionOpen}
+                    onClick={() => {
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                        );
+                        return;
+                      }
+                      setIsBatchBuyCardModalOpen(true);
+                    }}
+                    className="h-9 px-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-md active:scale-95 transition-transform border border-indigo-500/30 shrink-0"
+                    title="Purchase physical cards"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {selectedMemberIds.length === 1
+                        ? `₱${settings.card_printing_fee || 50}`
+                        : `₱${(
+                            selectedMemberIds.length *
+                            (settings.card_printing_fee || 50)
+                          ).toLocaleString()}`}
+                    </span>
+                  </button>
+
+                  {/* 3-Dots Action Menu Trigger (Opens pullable container with 2 per row) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (singleSelectedMember) {
+                        setMobileActionSheetMember(singleSelectedMember);
+                      } else {
+                        setShowBatchCardModal(true);
+                      }
+                    }}
+                    className="w-9 h-9 bg-(--bg-page) text-slate-400 border border-(--border-color) rounded-xl flex items-center justify-center hover:text-(--color-text) active:scale-95 cursor-pointer transition-colors shrink-0"
+                    title="More Options"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {/* Clear Selection */}
+                  <button
+                    type="button"
+                    onClick={resetActionState}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors active:scale-95 shrink-0"
+                    title="Clear selection"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                    );
-                    return;
-                  }
-                  setIsBatchBuyCardModalOpen(true);
-                }}
-                className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-md active:scale-95 transition-transform"
-                title="Purchase cards for selected members"
-              >
-                <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Purchase (₱
-                  {(
-                    selectedMemberIds.length *
-                    (settings.card_printing_fee || 50)
-                  ).toLocaleString()}
-                  )
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowBatchCardModal(true)}
-                className="px-3 py-2 bg-blue-600 dark:bg-red-600 text-white rounded-xl text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 transition-transform"
-                title="Print cards for selected members"
-              >
-                <Printer className="w-3.5 h-3.5 shrink-0" />
-                <span>Print</span>
-              </button>
-            </div>
-          </div>,
+            );
+          })(),
           document.body
         )}
 
@@ -2639,7 +2923,7 @@ const chipCounts = useMemo(() => {
           document.body
         )}
 
-{/* 4. MOBILE SLIDE-UP ACTION SHEET */}
+{/* 4. MOBILE SLIDE-UP ACTION SHEET (PULLABLE DRAGGABLE WITH 2 BUTTONS PER ROW) */}
       {createPortal(
         <AnimatePresence>
           {mobileActionSheetMember && (
@@ -2656,13 +2940,22 @@ const chipCounts = useMemo(() => {
               />
               <motion.div
                 key="mobile-action-sheet-panel"
+                drag="y"
+                dragConstraints={{ top: 0 }}
+                dragElastic={{ top: 0, bottom: 0.6 }}
+                onDragEnd={(_, info) => {
+                  if (info.offset.y > 80 || info.velocity.y > 400) {
+                    setMobileActionSheetMember(null);
+                  }
+                }}
                 initial={{ y: '100%' }}
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="fixed bottom-0 left-0 right-0 z-[310] bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+                className="fixed bottom-0 left-0 right-0 z-[310] bg-(--bg-card) border-t border-(--border-color) rounded-t-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto touch-pan-y select-none"
               >
-                <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto shrink-0" />
+                {/* Pullable Top Drag Handle */}
+                <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto shrink-0 cursor-grab active:cursor-grabbing mb-1" />
 
                 <div className="flex items-center gap-3 border-b border-(--border-color) pb-4">
                   <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
@@ -2679,49 +2972,53 @@ const chipCounts = useMemo(() => {
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-1">
+                {/* 2 Buttons Per Row Grid with Profile Alone at Bottom */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  {/* Row 1: Print Card & Purchase Card */}
                   <button
                     type="button"
                     onClick={() => {
                       const target = mobileActionSheetMember;
                       setMobileActionSheetMember(null);
-                      setSelectedProfileMember(target);
+                      setSelectedMemberIds([target.id]);
+                      setShowBatchCardModal(true);
                     }}
-                    className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
+                    className="p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98] transition-all cursor-pointer"
                   >
-                    <Eye className="w-4 h-4 text-blue-500" />
-                    <span>View Profile</span>
+                    <Printer className="w-5 h-5 text-blue-500" />
+                    <span>Print Card</span>
                   </button>
 
-                  {(() => {
-                    const card = getActiveCard(mobileActionSheetMember.member_id);
-                    if (!card || card.card_type === 'None') return null;
+                  <button
+                    type="button"
+                    disabled={!isSessionOpen}
+                    onClick={() => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      setSelectedMemberIds([target.id]);
+                      if (!isSessionOpen) {
+                        toast.warning(
+                          'Cannot purchase cards: Cash drawer session is closed.'
+                        );
+                        return;
+                      }
+                      setIsBatchBuyCardModalOpen(true);
+                    }}
+                    className="p-3 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/25 rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <CreditCard className="w-5 h-5 text-indigo-500" />
+                    <span>Purchase (₱{settings.card_printing_fee || 50})</span>
+                  </button>
 
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = mobileActionSheetMember;
-                          setMobileActionSheetMember(null);
-                          if (card.card_type === 'Manual') {
-                            setManualModalMember(target);
-                          } else {
-                            setQrModalMember(target);
-                          }
-                        }}
-                        className="w-full p-3.5 bg-(--bg-page) rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98]"
-                      >
-                        <QrCode className="w-4 h-4 text-blue-500" />
-                        <span>View Member Card</span>
-                      </button>
-                    );
-                  })()}
-
+                  {/* Row 2: Colorful Subscribe & Suspend */}
                   {(() => {
                     const isActionDisabled =
                       !isSessionOpen ||
                       mobileActionSheetMember.status === 'Suspended' ||
                       isOffline;
+                    const subInfo = getSubscriptionDetails(
+                      mobileActionSheetMember.member_id
+                    );
 
                     return (
                       <button
@@ -2731,7 +3028,6 @@ const chipCounts = useMemo(() => {
                           if (isActionDisabled) return;
                           const target = mobileActionSheetMember;
                           setMobileActionSheetMember(null);
-                          const subInfo = getSubscriptionDetails(target.member_id);
                           handleTableRenewOrSubscribe(target, subInfo.hasSub, e);
                         }}
                         title={
@@ -2739,21 +3035,19 @@ const chipCounts = useMemo(() => {
                             ? 'Subscriptions locked: Internet connection required.'
                             : undefined
                         }
-                        className={`w-full p-3.5 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] ${
+                        className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] transition-all ${
                           isActionDisabled
-                            ? 'bg-slate-400/20 text-slate-400 border border-slate-500/20 cursor-not-allowed'
-                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 cursor-pointer'
+                            ? 'bg-slate-400/10 text-slate-400 border border-slate-500/20 cursor-not-allowed opacity-60'
+                            : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35 cursor-pointer shadow-xs'
                         }`}
                       >
                         {isActionDisabled ? (
-                          <Lock className="w-4 h-4" />
+                          <Lock className="w-5 h-5" />
                         ) : (
-                          <CreditCard className="w-4 h-4" />
+                          <Zap className="w-5 h-5 text-emerald-500" />
                         )}
                         <span>
-                          {isOffline
-                            ? 'Enroll/Renew Locked (Offline)'
-                            : 'Enroll or Renew Subscription'}
+                          {subInfo.hasSub ? 'Renew Plan' : 'Subscribe'}
                         </span>
                       </button>
                     );
@@ -2766,26 +3060,32 @@ const chipCounts = useMemo(() => {
                       setMobileActionSheetMember(null);
                       handleToggleSuspend(target);
                     }}
-                    className="w-full p-3.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98]"
+                    className="p-3 bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer shadow-xs"
                   >
                     {mobileActionSheetMember.status === 'Active' ? (
-                      <UserX className="w-4 h-4" />
+                      <UserX className="w-5 h-5 text-amber-500" />
                     ) : (
-                      <UserCheck className="w-4 h-4" />
+                      <UserCheck className="w-5 h-5 text-emerald-500" />
                     )}
                     <span>
                       {mobileActionSheetMember.status === 'Active'
-                        ? 'Suspend Member Access'
-                        : 'Reactivate Member Access'}
+                        ? 'Suspend'
+                        : 'Reactivate'}
                     </span>
                   </button>
 
+                  {/* Row 3: View Profile Alone at the Bottom */}
                   <button
                     type="button"
-                    onClick={() => setMobileActionSheetMember(null)}
-                    className="w-full p-3.5 bg-slate-500/10 text-slate-400 rounded-2xl text-xs font-heading font-bold uppercase tracking-wider text-center mt-2"
+                    onClick={() => {
+                      const target = mobileActionSheetMember;
+                      setMobileActionSheetMember(null);
+                      setSelectedProfileMember(target);
+                    }}
+                    className="col-span-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-2xl flex items-center justify-center gap-2 text-center text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) active:scale-[0.98] transition-all cursor-pointer"
                   >
-                    Cancel
+                    <Eye className="w-4 h-4 text-blue-500" />
+                    <span>View Profile</span>
                   </button>
                 </div>
               </motion.div>
@@ -2850,20 +3150,6 @@ const chipCounts = useMemo(() => {
       </AnimatePresence>
 
       {/* SINGLE CARD MODALS */}
-      {qrModalMember && (
-        <DigitalQRCardModal
-          member={qrModalMember}
-          subscription={getActiveSubscription(qrModalMember.member_id)}
-          card={getActiveCard(qrModalMember.member_id)}
-          onClose={() => setQrModalMember(null)}
-          onOpenPrintModal={(memberId) => {
-            setQrModalMember(null);
-            setSelectedMemberIds([memberId]);
-            setShowBatchCardModal(true);
-          }}
-        />
-      )}
-
       {manualModalMember && (
         <ManualCardTemplateModal
           member={manualModalMember}
@@ -2878,6 +3164,15 @@ const chipCounts = useMemo(() => {
           initialSelectedIds={selectedMemberIds}
           onClose={() => setShowBatchCardModal(false)}
           onSuccess={fetchMembers}
+        />
+      )}
+
+      {/* SUPERADMIN LEGACY DATA MIGRATION MODAL */}
+      {isMigrationModalOpen && (
+        <LegacyDataMigrationModal
+          isOpen={isMigrationModalOpen}
+          onClose={() => setIsMigrationModalOpen(false)}
+          onSuccess={() => fetchMembers(true)}
         />
       )}
 

@@ -166,6 +166,24 @@ export const IncidentReports: React.FC = () => {
   );
   const [isLegalExpanded, setIsLegalExpanded] = useState(false);
 
+  // Erase Confirmation Warning Modal State
+  const [eraseTarget, setEraseTarget] = useState<
+    | { type: 'single'; report: IncidentReport }
+    | { type: 'bulk'; count: number }
+    | null
+  >(null);
+
+  // 30-Day Auto-Erase calculation
+  const getDaysUntilAutoErase = (readAt: string | null) => {
+    if (!readAt) return 30;
+    const readDate = new Date(readAt).getTime();
+    const elapsedDays = Math.floor(
+      (Date.now() - readDate) / (1000 * 60 * 60 * 24)
+    );
+    const remaining = 30 - elapsedDays;
+    return remaining > 0 ? remaining : 0;
+  };
+
   // Emergency Member Directory States
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [allMembers, setAllMembers] = useState<Member[]>([]);
@@ -284,7 +302,7 @@ export const IncidentReports: React.FC = () => {
     setSelectedEmergencyMember(m);
     recordAuditLog(
       'EMERGENCY_DOSSIER_ACCESSED',
-      `Staff accessed emergency dossier for member "${m.full_name}" (ID: ${m.member_id || m.id}) under R.A. 10173 vital interest protocol.`
+      `Opened Emergency Hub information member of "${m.full_name}" (ID: ${m.member_id || m.id}) under R.A. 10173 vital interest protocol.`
     );
   };
 
@@ -983,12 +1001,12 @@ export const IncidentReports: React.FC = () => {
       if (error) throw error;
 
       await recordAuditLog(
-        'INCIDENT_DELETED',
-        `Deleted incident report "${stagedReport.title}".`
+        'INCIDENT_ERASED',
+        `Permanently erased incident report "${stagedReport.title}".`
       );
-      toast.success(`Report "${stagedReport.title}" deleted.`);
+      toast.success(`Report "${stagedReport.title}" permanently erased.`);
     } catch {
-      toast.error('Deletion failure. Restoring report file.');
+      toast.error('Erase failure. Restoring report file.');
       setReports((prev) =>
         [stagedReport, ...prev].sort(
           (a, b) =>
@@ -1044,13 +1062,13 @@ export const IncidentReports: React.FC = () => {
     toast.info(`Restored all ${itemsToRestore.length} incident reports.`);
   };
 
-const startPendingDelete = (report: IncidentReport) => {
+  const startPendingDelete = (report: IncidentReport) => {
     if (isOffline) {
-      toast.error('Cannot delete report: No internet connection.');
+      toast.error('Cannot erase report: No internet connection.');
       return;
     }
     if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
-      toast.error('Reviewed or archived incidents cannot be deleted.');
+      toast.error('Reviewed or archived incidents cannot be erased.');
       return;
     }
 
@@ -1129,10 +1147,10 @@ const handleBulkAction = async (
           .delete()
           .in('id', selectedIds);
         if (error) throw error;
-        toast.success(`Successfully removed ${selectedIds.length} reports.`);
+        toast.success(`Successfully erased ${selectedIds.length} reports.`);
         await recordAuditLog(
-          'INCIDENT_DELETED',
-          `Deleted ${selectedIds.length} incident reports: ${targetTitles}.`
+          'INCIDENT_ERASED',
+          `Erased ${selectedIds.length} incident reports: ${targetTitles}.`
         );
       } else if (action === 'Archive') {
         const { error } = await supabase
@@ -1332,6 +1350,23 @@ const handleBulkAction = async (
           </p>
         </div>
 
+        {/* 30-Day Auto-Erase Notice if marked as Read */}
+        {report.status === 'Read' && !report.is_archived && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+            <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+            <div className="space-y-0.5 min-w-0">
+              <span className="font-heading text-[10px] font-bold tracking-wider uppercase">
+                30-Day Auto-Erase Schedule
+              </span>
+              <p className="text-[11px] leading-relaxed text-amber-900/80 dark:text-amber-200/85">
+                This report was marked as reviewed
+                {report.read_at && ` on ${new Date(report.read_at).toLocaleDateString()}`}.
+                Under gym data retention policy, reviewed reports are automatically and permanently erased after 30 days ({getDaysUntilAutoErase(report.read_at)} days remaining). If you need to keep this record indefinitely, move it to Archive.
+              </p>
+            </div>
+          </div>
+        )}
+
      {/* Actions panel according to Role */}
         <div className="border-t border-slate-100 dark:border-white/5 pt-4">
           {isAdmin ? (
@@ -1404,7 +1439,9 @@ const handleBulkAction = async (
                 <button
                   type="button"
                   disabled={isOffline}
-                  onClick={() => startPendingDelete(report)}
+                  onClick={() =>
+                    setEraseTarget({ type: 'single', report })
+                  }
                   className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all ${
                     isOffline
                       ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
@@ -1412,15 +1449,14 @@ const handleBulkAction = async (
                   }`}
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Delete</span>
+                  <span className="truncate">Erase</span>
                 </button>
               </div>
 
-              <div className="p-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200/60 dark:border-white/5 rounded-xl flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
-                <Info className="w-3.5 h-3.5 shrink-0 text-blue-500" />
+              <div className="p-2.5 bg-slate-50 dark:bg-black/20 border border-slate-200/60 dark:border-white/5 rounded-xl flex items-start gap-2 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
+                <Info className="w-3.5 h-3.5 shrink-0 text-blue-500 mt-0.5" />
                 <span>
-                  Status changes sync with staff. Archived reports can be
-                  retrieved anytime.
+                  Notice: Reports marked as Read are automatically erased after 30 days. Archived reports are protected and can be retrieved anytime.
                 </span>
               </div>
             </div>
@@ -1449,7 +1485,9 @@ const handleBulkAction = async (
                   <button
                     type="button"
                     disabled={isOffline}
-                    onClick={() => startPendingDelete(report)}
+                    onClick={() =>
+                      setEraseTarget({ type: 'single', report })
+                    }
                     className={`flex items-center justify-center gap-1.5 px-4 py-2 border rounded-xl text-xs font-bold uppercase tracking-wider ${
                       isOffline
                         ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200'
@@ -1457,7 +1495,7 @@ const handleBulkAction = async (
                     }`}
                   >
                     <Trash2 className="w-4 h-4 shrink-0" />
-                    <span>Delete Report</span>
+                    <span>Erase Report</span>
                   </button>
                 </div>
               ) : (
@@ -1465,7 +1503,7 @@ const handleBulkAction = async (
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
                   <span>
                     This incident report has been reviewed or archived by gym
-                    management and is now locked from further edits or deletion.
+                    management and is now locked from further edits or erase operations. Note that reviewed reports will be automatically erased after 30 days unless archived.
                   </span>
                 </div>
               )}
@@ -1646,15 +1684,20 @@ const handleBulkAction = async (
                 )}
                 <button
                   disabled={isOffline}
-                  onClick={() => handleBulkAction('Delete')}
-                  title="Delete selected"
+                  onClick={() =>
+                    setEraseTarget({
+                      type: 'bulk',
+                      count: selectedIds.length,
+                    })
+                  }
+                  title="Permanently erase selected"
                   className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-colors ${
                     isOffline
                       ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
                       : 'bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 cursor-pointer'
                   }`}
                 >
-                  Delete
+                  Erase
                 </button>
                 <button
                   onClick={() => setSelectedIds([])}
@@ -1804,7 +1847,7 @@ const handleBulkAction = async (
                                   ? 'Archived'
                                   : report.status === 'Unread'
                                     ? 'New'
-                                    : 'Reviewed'}
+                                    : `Reviewed (${getDaysUntilAutoErase(report.read_at)}d left)`}
                               </span>
                             </div>
 
@@ -1911,6 +1954,89 @@ const handleBulkAction = async (
         onUndoAll={handleUndoAll}
         onConfirmAll={handleConfirmAll}
       />
+
+      {/* ─── PERMANENT ERASE CONFIRMATION WARNING MODAL ─── */}
+      {eraseTarget &&
+        createPortal(
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEraseTarget(null)}
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white dark:bg-[#161920] border border-red-500/30 rounded-2xl w-full max-w-md shadow-2xl relative z-10 p-5 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <h3 className="font-heading font-bold text-sm text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                    Confirm Permanent Erase
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {eraseTarget.type === 'single' ? (
+                      <>
+                        Are you sure you want to permanently erase{' '}
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          "{eraseTarget.report.title}"
+                        </span>
+                        ? This report will be permanently deleted and cannot be recovered.
+                      </>
+                    ) : (
+                      <>
+                        Are you sure you want to permanently erase{' '}
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          {eraseTarget.count} selected incident report{eraseTarget.count > 1 ? 's' : ''}
+                        </span>
+                        ? This action will permanently delete these records and cannot be undone.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400 font-medium">
+                <AlertOctagon className="w-4 h-4 shrink-0" />
+                <span>
+                  Warning: Erased reports are permanently purged from the database.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setEraseTarget(null)}
+                  className="px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 hover:opacity-90 rounded-xl text-xs font-heading font-bold tracking-wider uppercase cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (eraseTarget.type === 'single') {
+                      startPendingDelete(eraseTarget.report);
+                    } else {
+                      handleBulkAction('Delete');
+                    }
+                    setEraseTarget(null);
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold tracking-wider uppercase cursor-pointer shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Permanently Erase</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>,
+          document.body
+        )}
 
       {/* Mobile & Tablet Detail Modal Overlay (< 1024px) */}
       {isDetailModalOpen &&

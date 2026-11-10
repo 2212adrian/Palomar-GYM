@@ -1,3 +1,4 @@
+// src/stores/useNotificationStore.ts
 import { create } from 'zustand';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { supabase } from '../lib/supabase/client';
@@ -84,6 +85,16 @@ const triggerBrowserNotification = async (
   }
 };
 
+export interface PendingCashApproval {
+  id: string;
+  type: 'cash_in' | 'cash_out';
+  amount: number;
+  reason: string;
+  performed_by_name: string;
+  created_at: string;
+  session_id: string;
+}
+
 export interface UnreadIncident {
   id: string;
   title: string;
@@ -119,6 +130,7 @@ interface NotificationState {
   pendingCashApprovalsCount: number;
   unreadBadgeCount: number;
 
+  pendingCashApprovals: PendingCashApproval[];
   unreadIncidents: UnreadIncident[];
   stockAlertProducts: StockAlertProduct[];
   expiringMembers: ExpiringMemberSub[];
@@ -136,9 +148,18 @@ interface NotificationState {
     userRole?: string | null,
     isRealtimeEvent?: boolean
   ) => Promise<void>;
+  approveCashApproval: (
+    id: string,
+    actorId?: string,
+    actorName?: string
+  ) => Promise<void>;
+  rejectCashApproval: (id: string, reason?: string) => Promise<void>;
   markIncidentRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
-  dismissAlert: (type: 'incident' | 'stock' | 'member', id: string) => void;
+  dismissAlert: (
+    type: 'cash' | 'incident' | 'stock' | 'member',
+    id: string
+  ) => void;
   subscribeRealtime: (
     userEmail?: string | null,
     userRole?: string | null
@@ -160,6 +181,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   pendingCashApprovalsCount: 0,
   unreadBadgeCount: 0,
 
+  pendingCashApprovals: [],
   unreadIncidents: [],
   stockAlertProducts: [],
   expiringMembers: [],
@@ -178,6 +200,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     const state = get();
     // Gather all active notification unique IDs
     const activeIds = [
+      ...state.pendingCashApprovals.map((a) => `cash_approval_${a.id}`),
       ...state.unreadIncidents.map((i) => `incident_${i.id}`),
       ...state.stockAlertProducts.map((p) => `stock_${p.id}`),
       ...state.expiringMembers.map((m) => `member_${m.id}`),
@@ -237,7 +260,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           await triggerBrowserNotification(
             'Wolf Palomar Gym Notifications Enabled',
             {
-              body: 'You will receive real-time notifications for incidents, inventory stock alerts, and expiring subscriptions.',
+              body: 'You will receive real-time notifications for cash drawer approvals, incidents, stock alerts, and expiring subscriptions.',
             }
           );
         }
@@ -256,7 +279,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       set({ browserPermission: permission });
       if (permission === 'granted') {
         triggerBrowserNotification('Wolf Palomar Gym Notifications Enabled', {
-          body: 'You will receive real-time notifications for incidents, inventory stock alerts, and expiring subscriptions.',
+          body: 'You will receive real-time notifications for cash drawer approvals, incidents, stock alerts, and expiring subscriptions.',
         });
       }
       return permission;
@@ -451,27 +474,76 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       console.warn('Failed to load expiring subscriptions:', err);
     }
 
-    // 4. PENDING CASH OUT APPROVALS (For Admins)
+    // 4. PENDING CASH IN & OUT APPROVALS (For Admins - strictly scoped to the active open cash session)
     let pendingApprovals = 0;
-    try {
-      const { data: pendingTxs, error: pendingErr } = await supabase
-        .from('cash_transactions')
-        .select('id, amount, performed_by_name, reason')
-        .eq('status', 'pending')
-        .eq('is_voided', false);
+    let pendingApprovalsList: PendingCashApproval[] = [];
 
-      if (!pendingErr && pendingTxs) {
-        pendingApprovals = pendingTxs.length;
-        pendingTxs.forEach((tx) => {
-          const key = `cash_approval_${tx.id}`;
-          if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-            triggerBrowserNotification(`💵 Cash Out Request: ₱${Number(tx.amount).toFixed(2)}`, {
-              body: `Requested by ${tx.performed_by_name || 'Staff'}: ${tx.reason || 'Cash outflow'}`,
-            });
-            dispatchedIdsSet.add(key);
-            hasNewDispatches = true;
-          }
-        });
+    try {
+      const { data: openSession } = await supabase
+        .from('cash_sessions')
+        .select('id')
+        .eq('status', 'open')
+        .is('closed_at', null)
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (openSession?.id) {
+        const { data: pendingTxs, error: pendingErr } = await supabase
+          .from('cash_transactions')
+          .select('id, type, amount, performed_by_name, reason, created_at, session_id')
+          .eq('session_id', openSession.id)
+          .eq('status', 'pending')
+          .eq('is_voided', false)
+          .order('created_at', { ascending: false });
+
+        if (!pendingErr && pendingTxs) {
+          pendingApprovals = pendingTxs.length;
+          pendingApprovalsList = pendingTxs.map((t: any) => ({
+            id: String(t.id),
+            type: t.type === 'cash_out' ? 'cash_out' : 'cash_in',
+            amount: Number(t.amount || 0),
+            reason: t.reason || (t.type === 'cash_out' ? 'Cash Outflow' : 'Cash Inflow'),
+            performed_by_name: t.performed_by_name || 'Staff',
+            created_at: t.created_at || new Date().toISOString(),
+            session_id: t.session_id || openSession.id,
+          }));
+
+          pendingApprovalsList.forEach((tx) => {
+            const key = `cash_approval_${tx.id}`;
+            if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+              const label = tx.type === 'cash_out' ? 'Cash Out' : 'Cash In';
+              triggerBrowserNotification(`💵 ${label} Request: ₱${tx.amount.toFixed(2)}`, {
+                body: `Requested by ${tx.performed_by_name}: ${tx.reason}`,
+              });
+              dispatchedIdsSet.add(key);
+              hasNewDispatches = true;
+            }
+          });
+        }
+
+        // Auto-cleanup: Dismiss orphaned pending transactions left from older closed sessions
+        try {
+          await supabase
+            .from('cash_transactions')
+            .update({
+              status: 'rejected',
+              rejection_reason: 'Session closed before request was resolved',
+            })
+            .neq('session_id', openSession.id)
+            .eq('status', 'pending');
+        } catch {}
+      } else {
+        // When drawer is closed, no pending cash movements can be active
+        try {
+          await supabase
+            .from('cash_transactions')
+            .update({
+              status: 'rejected',
+              rejection_reason: 'Session closed before request was resolved',
+            })
+            .eq('status', 'pending');
+        } catch {}
       }
     } catch (err) {
       console.warn('Failed to load pending cash approvals:', err);
@@ -483,6 +555,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
     // Compute unseen count using individual item keys
     const allCurrentItemKeys = [
+      ...pendingApprovalsList.map((a) => `cash_approval_${a.id}`),
       ...unreadList.map((i) => `incident_${i.id}`),
       ...stockAlertList.map((p) => `stock_${p.id}`),
       ...expiringList.map((m) => `member_${m.id}`),
@@ -499,11 +572,72 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       lowStockCount: lowStock,
       expiringSubsCount: expiringCount,
       pendingCashApprovalsCount: pendingApprovals,
+      pendingCashApprovals: pendingApprovalsList,
       unreadIncidents: unreadList,
       stockAlertProducts: stockAlertList,
       expiringMembers: expiringList,
       unreadBadgeCount: unreadBadge,
     });
+  },
+
+  approveCashApproval: async (id: string, actorId?: string, actorName?: string) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transactions')
+        .update({
+          status: 'approved',
+          approved_by: actorId || null,
+          approved_by_name: actorName || 'Admin',
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (!error) {
+        set((state) => {
+          const filtered = state.pendingCashApprovals.filter((a) => a.id !== id);
+          const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+          seenSet.add(`cash_approval_${id}`);
+          saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
+
+          return {
+            pendingCashApprovals: filtered,
+            pendingCashApprovalsCount: filtered.length,
+            unreadBadgeCount: Math.max(0, state.unreadBadgeCount - 1),
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to approve cash transaction:', err);
+    }
+  },
+
+  rejectCashApproval: async (id: string, reason?: string) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transactions')
+        .update({
+          status: 'rejected',
+          rejection_reason: reason || 'Rejected by admin via notifications',
+        })
+        .eq('id', id);
+
+      if (!error) {
+        set((state) => {
+          const filtered = state.pendingCashApprovals.filter((a) => a.id !== id);
+          const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+          seenSet.add(`cash_approval_${id}`);
+          saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
+
+          return {
+            pendingCashApprovals: filtered,
+            pendingCashApprovalsCount: filtered.length,
+            unreadBadgeCount: Math.max(0, state.unreadBadgeCount - 1),
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to reject cash transaction:', err);
+    }
   },
 
   markIncidentRead: async (id: string) => {
@@ -571,6 +705,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
       // 3. Mark all seen
       const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+      state.pendingCashApprovals.forEach((a) => seenSet.add(`cash_approval_${a.id}`));
       state.unreadIncidents.forEach((i) => seenSet.add(`incident_${i.id}`));
       state.stockAlertProducts.forEach((p) => seenSet.add(`stock_${p.id}`));
       state.expiringMembers.forEach((m) => seenSet.add(`member_${m.id}`));
@@ -597,7 +732,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       let updatedState: Partial<NotificationState> = {};
       const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
 
-      if (type === 'incident') {
+      if (type === 'cash') {
+        seenSet.add(`cash_approval_${id}`);
+        const filtered = state.pendingCashApprovals.filter((a) => a.id !== id);
+        updatedState = {
+          pendingCashApprovals: filtered,
+          pendingCashApprovalsCount: filtered.length,
+        };
+      } else if (type === 'incident') {
         seenSet.add(`incident_${id}`);
         const filtered = state.unreadIncidents.filter((i) => i.id !== id);
         updatedState = {
@@ -687,6 +829,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cash_transactions' },
+        triggerDebouncedFetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_sessions' },
         triggerDebouncedFetch
       )
       .subscribe((status) => {

@@ -1,4 +1,3 @@
-// src/lib/supabase/cashService.ts
 import { supabase } from './client';
 import { logAudit } from './audit';
 import { getServerNow, getServerISOString } from '../serverTime';
@@ -291,6 +290,11 @@ export async function approveCashTransaction(params: {
 }): Promise<void> {
   assertOnline();
 
+  const shortTxId =
+    params.transactionId.length > 8
+      ? params.transactionId.slice(0, 8).toUpperCase()
+      : params.transactionId;
+
   // Try RPC first
   try {
     const { error: rpcError } = await supabase.rpc('approve_cash_transaction', {
@@ -302,7 +306,7 @@ export async function approveCashTransaction(params: {
     if (!rpcError) {
       await logAudit(
         'CASH_OUT_APPROVED',
-        `Approved Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}.`,
+        `Approved Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}.`,
         params.transactionId
       );
       return;
@@ -328,7 +332,7 @@ export async function approveCashTransaction(params: {
 
   await logAudit(
     'CASH_OUT_APPROVED',
-    `Approved Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}.`,
+    `Approved Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}.`,
     params.transactionId
   );
 }
@@ -344,6 +348,11 @@ export async function rejectCashTransaction(params: {
 }): Promise<void> {
   assertOnline();
 
+  const shortTxId =
+    params.transactionId.length > 8
+      ? params.transactionId.slice(0, 8).toUpperCase()
+      : params.transactionId;
+
   // Try RPC first
   try {
     const { error: rpcError } = await supabase.rpc('reject_cash_transaction', {
@@ -356,7 +365,7 @@ export async function rejectCashTransaction(params: {
     if (!rpcError) {
       await logAudit(
         'CASH_OUT_REJECTED',
-        `Rejected Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
+        `Rejected Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
         params.transactionId
       );
       return;
@@ -383,7 +392,7 @@ export async function rejectCashTransaction(params: {
 
   await logAudit(
     'CASH_OUT_REJECTED',
-    `Rejected Cash Out transaction #${params.transactionId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
+    `Rejected Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
     params.transactionId
   );
 }
@@ -396,12 +405,50 @@ export async function voidCashTransaction(params: {
   reason: string;
   adminId?: string | null;
   adminName?: string;
+  activityDescription?: string;
+  amount?: number;
+  type?: string;
 }): Promise<void> {
   assertOnline();
 
   if (!params.reason || params.reason.trim().length < 5) {
     throw new Error('Please provide a specific reason of at least 5 characters for voiding.');
   }
+
+  let activityDesc = params.activityDescription?.trim();
+  let txAmount = params.amount;
+  let txType = params.type;
+
+  // If activity description was not provided, look it up from database
+  if (!activityDesc) {
+    try {
+      const { data: txData } = await supabase
+        .from('cash_transactions')
+        .select('reason, amount, type')
+        .eq('id', params.transactionId)
+        .maybeSingle();
+
+      if (txData) {
+        activityDesc = txData.reason;
+        if (txAmount === undefined) txAmount = Number(txData.amount);
+        if (!txType) txType = txData.type;
+      }
+    } catch (_) {}
+  }
+
+  const shortTxId =
+    params.transactionId.length > 8
+      ? params.transactionId.slice(0, 8).toUpperCase()
+      : params.transactionId;
+
+  const activityPart = activityDesc ? ` • Activity: "${activityDesc}"` : '';
+  const amountPart =
+    txAmount !== undefined && !isNaN(txAmount)
+      ? ` (₱${Number(txAmount).toFixed(2)})`
+      : '';
+  const logDetails = `Voided cash transaction #${shortTxId} by ${
+    params.adminName || 'Admin'
+  }${activityPart}${amountPart} — Reason: ${params.reason.trim()}`;
 
   // Try RPC first
   try {
@@ -415,7 +462,7 @@ export async function voidCashTransaction(params: {
     if (!rpcError) {
       await logAudit(
         'CASH_TRANSACTION_VOIDED',
-        `Voided cash transaction #${params.transactionId} by ${params.adminName || 'Admin'}. Reason: ${params.reason.trim()}`,
+        logDetails,
         params.transactionId
       );
       return;
@@ -442,7 +489,7 @@ export async function voidCashTransaction(params: {
 
   await logAudit(
     'CASH_TRANSACTION_VOIDED',
-    `Voided cash transaction #${params.transactionId} by ${params.adminName || 'Admin'}. Reason: ${params.reason.trim()}`,
+    logDetails,
     params.transactionId
   );
 }

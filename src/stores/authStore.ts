@@ -175,12 +175,38 @@ const isTemporaryAuthFlowRoute = (): boolean => {
 let activeAvatarObjectUrl: string | null = null;
 let activeProfileChannel: any = null;
 let activeProfileUserId: string | null = null; // Track currently subscribed User ID to prevent duplicate binds
+let globalPresenceChannel: any = null;
 let isClaimingSession = false;
 let isForcingLogout = false;
 let isLoginInProgress = false;
 let checkSessionPromise: Promise<void> | null = null;
 let lastValidateSessionTime = 0;
 let inMemoryProfileCache: { profile: UserProfile; timestamp: number } | null = null;
+
+const syncGlobalStaffPresence = (userId: string | null | undefined) => {
+  if (!userId) {
+    if (globalPresenceChannel) {
+      supabase.removeChannel(globalPresenceChannel);
+      globalPresenceChannel = null;
+    }
+    return;
+  }
+
+  if (globalPresenceChannel) return;
+
+  globalPresenceChannel = supabase.channel('gym-staff-presence', {
+    config: { presence: { key: userId } },
+  });
+
+  globalPresenceChannel.subscribe(async (status: string) => {
+    if (status === 'SUBSCRIBED' && userId) {
+      await globalPresenceChannel.track({
+        userId,
+        onlineAt: new Date().toISOString(),
+      });
+    }
+  });
+};
 
 const getCachedProfile = (): UserProfile | null => {
   if (typeof window === 'undefined') return null;
@@ -261,6 +287,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const currentUserId = get().user?.id;
       clearLocalActiveSessionId(currentUserId);
+      syncGlobalStaffPresence(null);
 
       try {
         // Use scope: 'local' so the invalidated device only clears its own local tokens
@@ -382,149 +409,350 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           error: sessionError,
         } = await supabase.auth.getSession();
 
-      if (sessionError) throw sessionError;
+        if (sessionError) throw sessionError;
 
-      // If initial getSession() returned empty but there is a stored auth token in storage,
-      // wait for Supabase to hydrate or refresh rather than prematurely rejecting the session
-      if (!session && hasStoredAuthSession()) {
-        try {
-          const { data: refreshedData } = await supabase.auth.refreshSession();
-          if (refreshedData?.session) {
-            session = refreshedData.session;
+        // If initial getSession() returned empty but there is a stored auth token in storage,
+        // wait for Supabase to hydrate or refresh rather than prematurely rejecting the session
+        if (!session && hasStoredAuthSession()) {
+          try {
+            const { data: refreshedData } = await supabase.auth.refreshSession();
+            if (refreshedData?.session) {
+              session = refreshedData.session;
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 200));
+            const retry = await supabase.auth.getSession();
+            session = retry.data?.session || null;
           }
-        } catch {
-          await new Promise((r) => setTimeout(r, 200));
-          const retry = await supabase.auth.getSession();
-          session = retry.data?.session || null;
         }
-      }
 
-      if (session?.user) {
-        let activeUser = session.user;
+        if (session?.user) {
+          let activeUser = session.user;
 
-        // Enforce single active session per user (skip on temporary recovery/invite routes)
-        if (!isTemporaryAuthFlowRoute()) {
-          const isNewOAuthLogin = consumePendingNewLogin();
+          // Enforce single active session per user (skip on temporary recovery/invite routes)
+          if (!isTemporaryAuthFlowRoute()) {
+            const isNewOAuthLogin = consumePendingNewLogin();
 
-          if (isNewOAuthLogin) {
-            await get().claimActiveSession(activeUser.id);
-          } else if (
-            !isClaimingSession &&
-            !isLoginInProgress &&
-            (typeof navigator === 'undefined' || navigator.onLine)
-          ) {
-            const {
-              data: { user: verifiedUser },
-              error: verifyError,
-            } = await supabase.auth.getUser();
+            if (isNewOAuthLogin) {
+              await get().claimActiveSession(activeUser.id);
+            } else if (
+              !isClaimingSession &&
+              !isLoginInProgress &&
+              (typeof navigator === 'undefined' || navigator.onLine)
+            ) {
+              const {
+                data: { user: verifiedUser },
+                error: verifyError,
+              } = await supabase.auth.getUser();
 
-            if (verifyError) {
-              if (!isTransientNetworkError(verifyError)) {
+              if (verifyError) {
+                if (!isTransientNetworkError(verifyError)) {
+                  await get().forceSessionLogout(
+                    'Your session is no longer valid because your account was signed in on another device.'
+                  );
+                  return;
+                }
+              } else if (!verifiedUser) {
                 await get().forceSessionLogout(
                   'Your session is no longer valid because your account was signed in on another device.'
                 );
                 return;
-              }
-            } else if (!verifiedUser) {
-              await get().forceSessionLogout(
-                'Your session is no longer valid because your account was signed in on another device.'
-              );
-              return;
-            } else {
-              activeUser = verifiedUser;
-              const remoteSessionId =
-                verifiedUser.user_metadata?.active_session_id;
-              const localSessionId = getLocalActiveSessionId(verifiedUser.id);
+              } else {
+                activeUser = verifiedUser;
+                const remoteSessionId =
+                  verifiedUser.user_metadata?.active_session_id;
+                const localSessionId = getLocalActiveSessionId(verifiedUser.id);
 
-              if (!remoteSessionId) {
-                // First time initializing single-session token for this session
-                await get().claimActiveSession(verifiedUser.id);
-              } else if (!localSessionId) {
-                // Same client session rehydrating after page reload: retain session ID
-                setLocalActiveSessionId(verifiedUser.id, remoteSessionId);
-              } else if (remoteSessionId !== localSessionId) {
-                await get().forceSessionLogout(
-                  'Your account was signed in on another device or browser. You have been logged out.'
-                );
-                return;
-              }
-            }
-          }
-        }
-
-        // Evaluate using the centralized case-insensitive helper
-        const isSuperAdminUser = isSuperAdmin(activeUser.email);
-        let dbProfile: any = null;
-
-        // 1. Validation: Fetch or fallback profile from public.profiles
-        const cachedFallbackProfile = getCachedProfile();
-        const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-
-        if (
-          inMemoryProfileCache &&
-          inMemoryProfileCache.profile.id === activeUser.id &&
-          Date.now() - inMemoryProfileCache.timestamp < 60000
-        ) {
-          dbProfile = inMemoryProfileCache.profile;
-        } else if (isOffline && cachedFallbackProfile) {
-          dbProfile = cachedFallbackProfile;
-        } else {
-          try {
-            const { data, error: dbError } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', activeUser.id)
-              .maybeSingle();
-
-            if (!dbError && data) {
-              dbProfile = data;
-            } else if (cachedFallbackProfile) {
-              dbProfile = cachedFallbackProfile;
-            } else if (!data && !dbError && !isSuperAdminUser) {
-              // Auto-create missing profile row if user was registered via auth directly
-              try {
-                const autoRole = (
-                  activeUser.app_metadata?.role ||
-                  activeUser.user_metadata?.role ||
-                  'admin'
-                ).toLowerCase();
-                const { data: createdProfile } = await supabase
-                  .from('profiles')
-                  .insert({
-                    id: activeUser.id,
-                    username:
-                      activeUser.user_metadata?.full_name ||
-                      activeUser.user_metadata?.username ||
-                      activeUser.email?.split('@')[0] ||
-                      'User',
-                    role: autoRole === 'staff' ? 'staff' : 'admin',
-                    status: 'active',
-                  })
-                  .select()
-                  .maybeSingle();
-
-                if (createdProfile) {
-                  dbProfile = createdProfile;
+                if (!remoteSessionId) {
+                  // First time initializing single-session token for this session
+                  await get().claimActiveSession(verifiedUser.id);
+                } else if (!localSessionId) {
+                  // Same client session rehydrating after page reload: retain session ID
+                  setLocalActiveSessionId(verifiedUser.id, remoteSessionId);
+                } else if (remoteSessionId !== localSessionId) {
+                  await get().forceSessionLogout(
+                    'Your account was signed in on another device or browser. You have been logged out.'
+                  );
+                  return;
                 }
-              } catch {
-                // Ignore background insertion error, proceed with auth metadata fallback
               }
             }
-          } catch (fetchErr) {
+          }
+
+          // Evaluate using the centralized case-insensitive helper
+          const isSuperAdminUser = isSuperAdmin(activeUser.email);
+          let dbProfile: any = null;
+
+          // 1. Validation: Fetch or fallback profile from public.profiles
+          const cachedFallbackProfile = getCachedProfile();
+          const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+          if (
+            inMemoryProfileCache &&
+            inMemoryProfileCache.profile.id === activeUser.id &&
+            Date.now() - inMemoryProfileCache.timestamp < 60000
+          ) {
+            dbProfile = inMemoryProfileCache.profile;
+          } else if (isOffline && cachedFallbackProfile) {
             dbProfile = cachedFallbackProfile;
-            if (!isOffline) {
-              console.warn(
-                'Could not load profile from database, falling back to cached profile:',
-                fetchErr
-              );
+          } else {
+            try {
+              const { data, error: dbError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', activeUser.id)
+                .maybeSingle();
+
+              if (!dbError && data) {
+                dbProfile = data;
+              } else if (cachedFallbackProfile) {
+                dbProfile = cachedFallbackProfile;
+              } else if (!data && !dbError && !isSuperAdminUser) {
+                // Auto-create missing profile row if user was registered via auth directly (e.g. Google OAuth)
+                try {
+                  await supabase.rpc('activate_own_profile');
+                  const { data: recheckedProfile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', activeUser.id)
+                    .maybeSingle();
+
+                  if (recheckedProfile) {
+                    dbProfile = recheckedProfile;
+                  } else {
+                    const autoRole = (
+                      activeUser.app_metadata?.role ||
+                      activeUser.user_metadata?.role ||
+                      'staff'
+                    ).toLowerCase();
+                    const { data: createdProfile } = await supabase
+                      .from('profiles')
+                      .insert({
+                        id: activeUser.id,
+                        username:
+                          activeUser.user_metadata?.full_name ||
+                          activeUser.user_metadata?.username ||
+                          activeUser.email?.split('@')[0] ||
+                          'User',
+                        role: autoRole === 'admin' ? 'admin' : 'staff',
+                        status: 'active',
+                      })
+                      .select()
+                      .maybeSingle();
+
+                    if (createdProfile) {
+                      dbProfile = createdProfile;
+                    }
+                  }
+                } catch {
+                  // Ignore background insertion error, proceed with auth metadata fallback
+                }
+              }
+            } catch (fetchErr) {
+              dbProfile = cachedFallbackProfile;
+              if (!isOffline) {
+                console.warn(
+                  'Could not load profile from database, falling back to cached profile:',
+                  fetchErr
+                );
+              }
             }
           }
-        }
 
-        // If explicitly deactivated or disabled in DB profile, sign out
-        if (dbProfile?.status === 'inactive' || dbProfile?.status === 'disabled') {
-          clearLocalActiveSessionId(activeUser.id);
-          await supabase.auth.signOut({ scope: 'local' });
+          // If explicitly deactivated or disabled in DB profile, sign out
+          if (dbProfile?.status === 'inactive' || dbProfile?.status === 'disabled') {
+            clearLocalActiveSessionId(activeUser.id);
+            syncGlobalStaffPresence(null);
+            await supabase.auth.signOut({ scope: 'local' });
+            if (activeAvatarObjectUrl) {
+              URL.revokeObjectURL(activeAvatarObjectUrl);
+              activeAvatarObjectUrl = null;
+            }
+            if (activeProfileChannel) {
+              supabase.removeChannel(activeProfileChannel);
+              activeProfileChannel = null;
+            }
+            activeProfileUserId = null;
+            await clearSensitiveAppData();
+            set({
+              user: null,
+              profile: null,
+              loading: false,
+              initialized: true,
+              error: 'Account disabled. Please contact an administrator to re-enable your account.',
+            });
+            return;
+          }
+
+          // 2. Resolve account attributes with Superadmin taking absolute priority
+          const rawRole = (
+            dbProfile?.role ||
+            activeUser.app_metadata?.role ||
+            activeUser.user_metadata?.role ||
+            'admin'
+          ).toLowerCase();
+          const userRole = isSuperAdminUser
+            ? 'admin'
+            : rawRole === 'admin'
+              ? 'admin'
+              : 'staff';
+
+          // Superadmin status always resolves to active; other accounts default to active unless specified
+          const userStatus = isSuperAdminUser
+            ? 'active'
+            : dbProfile?.status || activeUser.user_metadata?.status || 'active';
+
+          const metadataAvatarPath =
+            dbProfile?.avatar_url || activeUser.user_metadata?.avatar_url || '';
+          let localAvatarBlobUrl = '';
+
+          // Dynamically resolve private file storage as local blob URLs
+          if (metadataAvatarPath) {
+            if (!metadataAvatarPath.startsWith('http')) {
+              try {
+                const { data: imageBlob, error: downloadError } =
+                  await supabase.storage
+                    .from('avatars')
+                    .download(metadataAvatarPath);
+
+                if (!downloadError && imageBlob) {
+                  // Revoke old reference to prevent browser memory leaks
+                  if (activeAvatarObjectUrl) {
+                    URL.revokeObjectURL(activeAvatarObjectUrl);
+                  }
+                  localAvatarBlobUrl = URL.createObjectURL(imageBlob);
+                  activeAvatarObjectUrl = localAvatarBlobUrl;
+                }
+              } catch (err) {
+                console.error('Failed to download secure avatar file:', err);
+              }
+            } else {
+              localAvatarBlobUrl = metadataAvatarPath;
+            }
+          }
+
+          // Only establish Realtime subscription if not superadmin
+          if (!isSuperAdminUser && activeProfileUserId !== activeUser.id) {
+            if (activeProfileChannel) {
+              supabase.removeChannel(activeProfileChannel);
+            }
+
+            activeProfileUserId = activeUser.id;
+            activeProfileChannel = supabase
+              .channel(`profile-sync-${activeUser.id}`)
+              .on(
+                'postgres_changes',
+                {
+                  event: 'UPDATE',
+                  schema: 'public',
+                  table: 'profiles',
+                  filter: `id=eq.${activeUser.id}`,
+                },
+                async (payload: any) => {
+                  const rawAvatar = payload.new.avatar_url || '';
+                  let resolvedBlobUrl = '';
+
+                  if (rawAvatar && !rawAvatar.startsWith('http')) {
+                    try {
+                      const { data: imageBlob } = await supabase.storage
+                        .from('avatars')
+                        .download(rawAvatar);
+                      if (imageBlob) {
+                        resolvedBlobUrl = URL.createObjectURL(imageBlob);
+                      }
+                    } catch (err) {
+                      console.error(
+                        'Failed to resolve raw avatar inside realtime event:',
+                        err
+                      );
+                    }
+                  } else {
+                    resolvedBlobUrl = rawAvatar;
+                  }
+
+                  // Instantly update the state when status, role, username, or photo is modified in real-time
+                  set((state) => ({
+                    profile: state.profile
+                      ? {
+                          ...state.profile,
+                          username: payload.new.username,
+                          role: payload.new.role,
+                          status: payload.new.status,
+                          avatar_url: resolvedBlobUrl,
+                          email_verification_enabled:
+                            payload.new.email_verification_enabled ??
+                            state.profile.email_verification_enabled,
+                        }
+                      : null,
+                  }));
+                }
+              )
+              .subscribe();
+          }
+
+          // 3. Client-Side Account Activation Trigger (Non-blocking RPC)
+          let effectiveStatus = userStatus;
+          if (userStatus === 'pending' && typeof navigator !== 'undefined' && navigator.onLine) {
+            effectiveStatus = 'active';
+            (async () => {
+              try {
+                const { error: rpcErr } = await supabase.rpc('activate_own_profile');
+                if (rpcErr) {
+                  const { error: updateErr } = await supabase
+                    .from('profiles')
+                    .update({ status: 'active' })
+                    .eq('id', activeUser.id);
+                  if (updateErr) {
+                    console.warn('Failed to auto-activate pending profile:', updateErr);
+                  }
+                }
+              } catch (err) {
+                console.warn('Error activating own profile:', err);
+              }
+            })();
+          }
+
+          // 4. Attach session to global presence tracking
+          syncGlobalStaffPresence(activeUser.id);
+
+          const resolvedProfile: UserProfile = {
+            id: activeUser.id,
+            username: isSuperAdminUser
+              ? 'SUPERADMIN'
+              : dbProfile?.username ||
+                cachedFallbackProfile?.username ||
+                activeUser.user_metadata?.full_name ||
+                activeUser.user_metadata?.username ||
+                activeUser.email?.split('@')[0] ||
+                'User',
+            role: userRole as 'admin' | 'staff',
+            status: effectiveStatus as 'active' | 'pending' | 'inactive',
+            avatar_url: localAvatarBlobUrl || cachedFallbackProfile?.avatar_url || '',
+            email_verification_enabled:
+              dbProfile?.email_verification_enabled !== undefined &&
+              dbProfile?.email_verification_enabled !== null
+                ? Boolean(dbProfile.email_verification_enabled)
+                : activeUser.user_metadata?.email_verification_enabled !== undefined &&
+                  activeUser.user_metadata?.email_verification_enabled !== null
+                  ? Boolean(activeUser.user_metadata.email_verification_enabled)
+                  : Boolean(cachedFallbackProfile?.email_verification_enabled ?? false),
+          };
+
+          inMemoryProfileCache = { profile: resolvedProfile, timestamp: Date.now() };
+
+          try {
+            localStorage.setItem('palomar_cached_profile', JSON.stringify(resolvedProfile));
+          } catch {}
+
+          set({
+            user: activeUser,
+            profile: resolvedProfile,
+            loading: false,
+            initialized: true,
+          });
+        } else {
+          // Clean up memory and subscriptions on logout
+          syncGlobalStaffPresence(null);
           if (activeAvatarObjectUrl) {
             URL.revokeObjectURL(activeAvatarObjectUrl);
             activeAvatarObjectUrl = null;
@@ -534,205 +762,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             activeProfileChannel = null;
           }
           activeProfileUserId = null;
+          inMemoryProfileCache = null;
           await clearSensitiveAppData();
-          set({
-            user: null,
-            profile: null,
-            loading: false,
-            initialized: true,
-            error: 'Account disabled. Please contact an administrator to re-enable your account.',
-          });
-          return;
+          set({ user: null, profile: null, loading: false, initialized: true });
         }
-
-        // 2. Resolve account attributes with Superadmin taking absolute priority
-        const rawRole = (
-          dbProfile?.role ||
-          activeUser.app_metadata?.role ||
-          activeUser.user_metadata?.role ||
-          'admin'
-        ).toLowerCase();
-        const userRole = isSuperAdminUser
-          ? 'admin'
-          : rawRole === 'admin'
-            ? 'admin'
-            : 'staff';
-
-        // Superadmin status always resolves to active; other accounts default to active unless specified
-        const userStatus = isSuperAdminUser
-          ? 'active'
-          : dbProfile?.status || activeUser.user_metadata?.status || 'active';
-
-        const metadataAvatarPath =
-          dbProfile?.avatar_url || activeUser.user_metadata?.avatar_url || '';
-        let localAvatarBlobUrl = '';
-
-        // Dynamically resolve private file storage as local blob URLs
-        if (metadataAvatarPath) {
-          if (!metadataAvatarPath.startsWith('http')) {
-            try {
-              const { data: imageBlob, error: downloadError } =
-                await supabase.storage
-                  .from('avatars')
-                  .download(metadataAvatarPath);
-
-              if (!downloadError && imageBlob) {
-                // Revoke old reference to prevent browser memory leaks
-                if (activeAvatarObjectUrl) {
-                  URL.revokeObjectURL(activeAvatarObjectUrl);
-                }
-                localAvatarBlobUrl = URL.createObjectURL(imageBlob);
-                activeAvatarObjectUrl = localAvatarBlobUrl;
-              }
-            } catch (err) {
-              console.error('Failed to download secure avatar file:', err);
-            }
-          } else {
-            localAvatarBlobUrl = metadataAvatarPath;
-          }
+      } catch (err: any) {
+        const isOfflineNetwork = typeof navigator !== 'undefined' && !navigator.onLine;
+        if (!isOfflineNetwork) {
+          console.error('Session check failed:', err.message);
+          await clearSensitiveAppData();
         }
-
-        // Only establish Realtime subscription if not superadmin
-        if (!isSuperAdminUser && activeProfileUserId !== activeUser.id) {
-          if (activeProfileChannel) {
-            supabase.removeChannel(activeProfileChannel);
-          }
-
-          activeProfileUserId = activeUser.id;
-          activeProfileChannel = supabase
-            .channel(`profile-sync-${activeUser.id}`)
-            .on(
-              'postgres_changes',
-              {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles',
-                filter: `id=eq.${activeUser.id}`,
-              },
-              async (payload: any) => {
-                const rawAvatar = payload.new.avatar_url || '';
-                let resolvedBlobUrl = '';
-
-                if (rawAvatar && !rawAvatar.startsWith('http')) {
-                  try {
-                    const { data: imageBlob } = await supabase.storage
-                      .from('avatars')
-                      .download(rawAvatar);
-                    if (imageBlob) {
-                      resolvedBlobUrl = URL.createObjectURL(imageBlob);
-                    }
-                  } catch (err) {
-                    console.error(
-                      'Failed to resolve raw avatar inside realtime event:',
-                      err
-                    );
-                  }
-                } else {
-                  resolvedBlobUrl = rawAvatar;
-                }
-
-                // Instantly update the state when status, role, username, or photo is modified in real-time
-                set((state) => ({
-                  profile: state.profile
-                    ? {
-                        ...state.profile,
-                        username: payload.new.username,
-                        role: payload.new.role,
-                        status: payload.new.status,
-                        avatar_url: resolvedBlobUrl,
-                        email_verification_enabled:
-                          payload.new.email_verification_enabled ??
-                          state.profile.email_verification_enabled,
-                      }
-                    : null,
-                }));
-              }
-            )
-            .subscribe();
-        }
-
-        // 3. Client-Side Account Activation Trigger (Non-blocking)
-        let effectiveStatus = userStatus;
-        if (userStatus === 'pending' && typeof navigator !== 'undefined' && navigator.onLine) {
-          effectiveStatus = 'active';
-          supabase
-            .from('profiles')
-            .update({ status: 'active' })
-            .eq('id', activeUser.id)
-            .then(({ error }) => {
-              if (error && typeof navigator !== 'undefined' && navigator.onLine) {
-                console.warn('Failed to auto-activate pending profile:', error);
-              }
-            });
-        }
-
-        const resolvedProfile: UserProfile = {
-          id: activeUser.id,
-          username: isSuperAdminUser
-            ? 'SUPERADMIN'
-            : dbProfile?.username ||
-              cachedFallbackProfile?.username ||
-              activeUser.user_metadata?.full_name ||
-              activeUser.user_metadata?.username ||
-              activeUser.email?.split('@')[0] ||
-              'User',
-          role: userRole as 'admin' | 'staff',
-          status: effectiveStatus as 'active' | 'pending' | 'inactive',
-          avatar_url: localAvatarBlobUrl || cachedFallbackProfile?.avatar_url || '',
-          email_verification_enabled:
-            dbProfile?.email_verification_enabled !== undefined &&
-            dbProfile?.email_verification_enabled !== null
-              ? Boolean(dbProfile.email_verification_enabled)
-              : activeUser.user_metadata?.email_verification_enabled !== undefined &&
-                activeUser.user_metadata?.email_verification_enabled !== null
-                ? Boolean(activeUser.user_metadata.email_verification_enabled)
-                : Boolean(cachedFallbackProfile?.email_verification_enabled ?? false),
-        };
-
-        inMemoryProfileCache = { profile: resolvedProfile, timestamp: Date.now() };
-
-        try {
-          localStorage.setItem('palomar_cached_profile', JSON.stringify(resolvedProfile));
-        } catch {}
-
         set({
-          user: activeUser,
-          profile: resolvedProfile,
+          user: null,
+          profile: isOfflineNetwork ? getCachedProfile() : null,
           loading: false,
           initialized: true,
+          error: isOfflineNetwork ? null : err.message,
         });
-      } else {
-        // Clean up memory and subscriptions on logout
-        if (activeAvatarObjectUrl) {
-          URL.revokeObjectURL(activeAvatarObjectUrl);
-          activeAvatarObjectUrl = null;
-        }
-        if (activeProfileChannel) {
-          supabase.removeChannel(activeProfileChannel);
-          activeProfileChannel = null;
-        }
-        activeProfileUserId = null;
-        inMemoryProfileCache = null;
-        await clearSensitiveAppData();
-        set({ user: null, profile: null, loading: false, initialized: true });
+      } finally {
+        checkSessionPromise = null;
       }
-    } catch (err: any) {
-      const isOfflineNetwork = typeof navigator !== 'undefined' && !navigator.onLine;
-      if (!isOfflineNetwork) {
-        console.error('Session check failed:', err.message);
-        await clearSensitiveAppData();
-      }
-      set({
-        user: null,
-        profile: isOfflineNetwork ? getCachedProfile() : null,
-        loading: false,
-        initialized: true,
-        error: isOfflineNetwork ? null : err.message,
-      });
-    } finally {
-      checkSessionPromise = null;
-    }
-  })();
+    })();
 
     return checkSessionPromise;
   },
@@ -774,6 +824,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentUserId = get().user?.id;
     set({ loading: true });
     clearLocalActiveSessionId(currentUserId);
+    syncGlobalStaffPresence(null);
     await supabase.auth.signOut({ scope: 'local' });
     if (activeAvatarObjectUrl) {
       URL.revokeObjectURL(activeAvatarObjectUrl);
@@ -813,6 +864,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     });
   } else if (event === 'SIGNED_OUT') {
     clearSensitiveAppData();
+    syncGlobalStaffPresence(null);
     // Clear cached session parameters
     useAuthStore.setState({
       user: null,
@@ -865,6 +917,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       }
     } else if (event === 'INITIAL_SESSION' && !hasStoredAuthSession()) {
       clearSensitiveAppData();
+      syncGlobalStaffPresence(null);
       useAuthStore.setState({ loading: false, initialized: true });
     }
   }

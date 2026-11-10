@@ -161,9 +161,7 @@ export const UserManagement: React.FC = () => {
 
     if (user?.id && profile?.status === 'pending') {
       supabase
-        .from('profiles')
-        .update({ status: 'active' })
-        .eq('id', user.id)
+        .rpc('activate_own_profile')
         .then(() => {
           useAuthStore.setState((state) => ({
             profile: state.profile
@@ -191,8 +189,8 @@ export const UserManagement: React.FC = () => {
       )
       .subscribe();
 
-    // Live staff presence tracking
-    const presenceChannel = supabase.channel(`gym-staff-presence-${channelId}`, {
+    // Live staff presence tracking on shared global channel
+    const presenceChannel = supabase.channel('gym-staff-presence', {
       config: { presence: { key: user?.id || 'staff' } },
     });
 
@@ -200,7 +198,15 @@ export const UserManagement: React.FC = () => {
       .on('presence', { event: 'sync' }, () => {
         const state = presenceChannel.presenceState();
         const onlineSet = new Set<string>();
-        Object.keys(state).forEach((k) => onlineSet.add(k));
+        Object.keys(state).forEach((k) => {
+          onlineSet.add(k);
+          const presences = (state as any)[k];
+          if (Array.isArray(presences)) {
+            presences.forEach((p: any) => {
+              if (p?.userId) onlineSet.add(p.userId);
+            });
+          }
+        });
         if (user?.id) onlineSet.add(user.id);
         setOnlineUserIds(onlineSet);
 
@@ -232,7 +238,6 @@ export const UserManagement: React.FC = () => {
     return () => {
       if (directoryDebounceTimer) clearTimeout(directoryDebounceTimer);
       supabase.removeChannel(directoryChannel);
-      supabase.removeChannel(presenceChannel);
     };
   }, [isAdmin, user?.id]);
 

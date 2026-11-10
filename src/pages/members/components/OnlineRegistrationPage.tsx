@@ -523,6 +523,7 @@ export const OnlineRegistrationPage: React.FC = () => {
   const [agreementDocument, setAgreementDocument] =
     useState<AgreementDocument | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     return (
       typeof document !== 'undefined' &&
@@ -912,12 +913,9 @@ export const OnlineRegistrationPage: React.FC = () => {
     setIsSyncing(true);
     try {
       const ticketIds = localTickets.map((t) => t.registrationId);
-      const { data: serverRows, error } = await supabase
-        .from('online_registrations')
-        .select('id, status, is_archived, deleted_at')
-        .in('id', ticketIds);
+      const serverRows = await registrationService.checkStatus(ticketIds);
 
-      if (error || !Array.isArray(serverRows)) {
+      if (!Array.isArray(serverRows)) {
         setIsSyncing(false);
         return;
       }
@@ -1115,6 +1113,11 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const onSubmit = async (data: RegistrationFormData) => {
+    if (honeypotRef.current?.value) {
+      toast.success('Pre-registration submitted successfully!');
+      return;
+    }
+
     if (!rates || ratesError) {
       toast.error(
         'Online registration is temporarily unavailable. Please visit the front desk or try again later.'
@@ -1131,6 +1134,16 @@ export const OnlineRegistrationPage: React.FC = () => {
 
     if (step4Countdown > 0) {
       toast.info(`Please take ${step4Countdown}s to review gym rules.`);
+      return;
+    }
+
+    if (data.applicant_signature && data.applicant_signature.length > 200000) {
+      toast.error('Applicant signature is too large. Please sign again.');
+      return;
+    }
+
+    if (data.parent_signature && data.parent_signature.length > 200000) {
+      toast.error('Parent signature is too large. Please sign again.');
       return;
     }
 
@@ -1719,6 +1732,17 @@ export const OnlineRegistrationPage: React.FC = () => {
             onSubmit={handleSubmit(onSubmit)}
             className="space-y-6 text-left"
           >
+            {/* Invisible Honeypot Anti-Bot Field */}
+            <input
+              ref={honeypotRef}
+              type="text"
+              name="hp_website_verification"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="hidden opacity-0 absolute -z-50 pointer-events-none"
+            />
+
             {/* Limit Banner Alert */}
             {isTicketLimitReached && (
               <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-start gap-3 shadow-xs">
@@ -1943,7 +1967,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Gender */}
+                  {/* Sex */}
                   <div className="space-y-1">
                     <div className="flex justify-between items-center">
                       <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">

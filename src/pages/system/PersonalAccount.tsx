@@ -24,10 +24,13 @@ import {
   Unlink,
   Copy,
   Check,
+  CheckCircle2,
+  XCircle,
+  Sparkles,
 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-
+  
 // Exported to be reused across other user settings components
 export const AvatarImage: React.FC<{
   src: string | null | undefined;
@@ -173,11 +176,57 @@ export const compressImage = (
   });
 };
 
+export const validateUsernameFormat = (
+  val: string
+): { valid: boolean; reason?: string } => {
+  const trimmed = val.trim();
+  if (!trimmed) {
+    return { valid: false, reason: 'Username cannot be empty.' };
+  }
+  if (trimmed.length < 3) {
+    return {
+      valid: false,
+      reason: 'Username must be at least 3 characters long.',
+    };
+  }
+  if (trimmed.length > 24) {
+    return {
+      valid: false,
+      reason: 'Username must not exceed 24 characters.',
+    };
+  }
+  if (/^[^a-zA-Z0-9]/.test(trimmed) || /[^a-zA-Z0-9]$/.test(trimmed)) {
+    return {
+      valid: false,
+      reason: 'Username cannot start or end with a symbol.',
+    };
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+    return {
+      valid: false,
+      reason:
+        'Only letters, numbers, dots, hyphens, and underscores are allowed.',
+    };
+  }
+  if (/[._-]{2,}/.test(trimmed)) {
+    return {
+      valid: false,
+      reason: 'Special characters cannot appear consecutively.',
+    };
+  }
+  return { valid: true };
+};
+
 export const PersonalAccount: React.FC = () => {
   const { user, profile, checkSession } = useAuthStore();
   const [username, setUsername] = useState(profile?.username || '');
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<
+    'idle' | 'checking' | 'available' | 'taken' | 'invalid' | 'same'
+  >('idle');
+  const [usernameFeedback, setUsernameFeedback] = useState<string | null>(null);
+  const [suggestedUsernames, setSuggestedUsernames] = useState<string[]>([]);
 
   // Detect whether this account already has an assigned password (e.g. email/password vs Google OAuth)
   const isInitialNoPassword = React.useMemo(() => {
@@ -352,6 +401,91 @@ export const PersonalAccount: React.FC = () => {
       setUsername(profile.username);
     }
   }, [profile?.username]);
+
+  // Real-time debounced validation & smart uniqueness verification
+  useEffect(() => {
+    const clean = username.trim();
+    const currentClean = (profile?.username || '').trim();
+
+    if (!clean) {
+      setUsernameStatus('idle');
+      setUsernameFeedback(null);
+      setSuggestedUsernames([]);
+      return;
+    }
+
+    if (clean.toLowerCase() === currentClean.toLowerCase()) {
+      setUsernameStatus('same');
+      setUsernameFeedback(null);
+      setSuggestedUsernames([]);
+      return;
+    }
+
+    const validation = validateUsernameFormat(clean);
+    if (!validation.valid) {
+      setUsernameStatus('invalid');
+      setUsernameFeedback(validation.reason || 'Invalid username format.');
+      setSuggestedUsernames([]);
+      return;
+    }
+
+    setUsernameStatus('checking');
+    setUsernameFeedback('Checking username availability...');
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data: existingUser, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .ilike('username', clean)
+          .neq('id', user?.id || '')
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (existingUser) {
+          setUsernameStatus('taken');
+          setUsernameFeedback(`"${clean}" is already taken.`);
+
+          // Generate smart alternative suggestions
+          const currentYear = new Date().getFullYear();
+          const baseAlphanumeric = clean.replace(/[^a-zA-Z0-9]/g, '');
+          const candidates = [
+            `${clean}_gym`,
+            `${clean}${Math.floor(10 + Math.random() * 90)}`,
+            `${baseAlphanumeric || clean}_${String(currentYear).slice(-2)}`,
+          ].filter((candidate) => candidate.length <= 24);
+
+          try {
+            const { data: takenRows } = await supabase
+              .from('profiles')
+              .select('username')
+              .in('username', candidates);
+
+            const takenSet = new Set(
+              (takenRows || []).map((r: any) => r.username.toLowerCase())
+            );
+            const availableSuggestions = candidates.filter(
+              (candidate) => !takenSet.has(candidate.toLowerCase())
+            );
+            setSuggestedUsernames(availableSuggestions);
+          } catch {
+            setSuggestedUsernames(candidates);
+          }
+        } else {
+          setUsernameStatus('available');
+          setUsernameFeedback(`"${clean}" is available!`);
+          setSuggestedUsernames([]);
+        }
+      } catch (err: any) {
+        console.warn('Error checking username uniqueness:', err);
+        setUsernameStatus('idle');
+        setUsernameFeedback(null);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [username, profile?.username, user?.id]);
 
   const current2FAState = Boolean(
     profile?.email_verification_enabled ??
@@ -640,6 +774,12 @@ export const PersonalAccount: React.FC = () => {
       return;
     }
 
+    const validation = validateUsernameFormat(cleanUsername);
+    if (!validation.valid) {
+      toast.error(validation.reason || 'Invalid username format.');
+      return;
+    }
+
     try {
       setIsCheckingUsername(true);
 
@@ -653,8 +793,10 @@ export const PersonalAccount: React.FC = () => {
       if (checkError) throw checkError;
 
       if (existingUser) {
+        setUsernameStatus('taken');
+        setUsernameFeedback(`"${cleanUsername}" is already taken.`);
         toast.error(
-          `The username "${cleanUsername}" is already taken. Please choose another.`
+          `The username "${cleanUsername}" is already taken. Please choose an available username.`
         );
         return;
       }
@@ -680,6 +822,12 @@ export const PersonalAccount: React.FC = () => {
       return;
     }
 
+    const validation = validateUsernameFormat(cleanUsername);
+    if (!validation.valid) {
+      toast.error(validation.reason || 'Invalid username format.');
+      return;
+    }
+
     try {
       setIsUpdatingProfile(true);
 
@@ -702,6 +850,8 @@ export const PersonalAccount: React.FC = () => {
         toast.error(
           `The username "${cleanUsername}" is already taken. Please choose another.`
         );
+        setUsernameStatus('taken');
+        setUsernameFeedback(`"${cleanUsername}" is already taken.`);
         setIsConfirmModalOpen(false);
         return;
       }
@@ -1153,22 +1303,114 @@ export const PersonalAccount: React.FC = () => {
                   >
                     Display Username
                   </label>
-                  {isSuperAdmin(user?.email) && (
+                  {isSuperAdmin(user?.email) ? (
                     <span className="text-[10px] text-amber-500 font-medium">
                       Locked
                     </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-400">
+                      3-24 chars, unique
+                    </span>
                   )}
                 </div>
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={isSuperAdmin(user?.email) || isCheckingUsername}
-                  className="w-full px-3 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all disabled:opacity-60 disabled:cursor-not-allowed font-medium"
-                  placeholder="Enter username"
-                  required
-                />
+
+                <div className="relative">
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={isSuperAdmin(user?.email) || isCheckingUsername}
+                    className={`w-full pl-3 pr-10 py-2.5 border rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed ${
+                      usernameStatus === 'available'
+                        ? 'border-emerald-500/60 focus:ring-1 focus:ring-emerald-500'
+                        : usernameStatus === 'taken' || usernameStatus === 'invalid'
+                          ? 'border-rose-500/60 focus:ring-1 focus:ring-rose-500'
+                          : 'border-(--border-color) focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary)'
+                    }`}
+                    placeholder="Enter unique username"
+                    autoComplete="username"
+                    required
+                  />
+
+                  {!isSuperAdmin(user?.email) && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                      {usernameStatus === 'checking' && (
+                        <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                      )}
+                      {usernameStatus === 'available' && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-fade-in" />
+                      )}
+                      {(usernameStatus === 'taken' || usernameStatus === 'invalid') && (
+                        <XCircle className="w-4 h-4 text-rose-500 animate-fade-in" />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Validation and Uniqueness Status Feedback */}
+                {!isSuperAdmin(user?.email) && (
+                  <div className="space-y-1.5 pt-0.5">
+                    {usernameStatus === 'checking' && (
+                      <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                        Checking username availability...
+                      </p>
+                    )}
+
+                    {usernameStatus === 'available' && (
+                      <p className="text-[11px] text-emerald-500 font-semibold flex items-center gap-1 animate-fade-in">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        {usernameFeedback}
+                      </p>
+                    )}
+
+                    {usernameStatus === 'taken' && (
+                      <div className="space-y-2 animate-fade-in">
+                        <p className="text-[11px] text-rose-500 font-semibold flex items-center gap-1">
+                          <XCircle className="w-3 h-3 shrink-0" />
+                          {usernameFeedback}
+                        </p>
+
+                        {/* Smart Username Suggestions */}
+                        {suggestedUsernames.length > 0 && (
+                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Available suggestions:</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {suggestedUsernames.map((suggestion) => (
+                                <button
+                                  type="button"
+                                  key={suggestion}
+                                  onClick={() => setUsername(suggestion)}
+                                  className="px-2 py-1 rounded bg-(--bg-card) border border-amber-500/30 text-xs font-mono font-bold text-(--color-text) hover:border-(--color-primary) hover:text-(--color-primary) transition-colors cursor-pointer shadow-2xs"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {usernameStatus === 'invalid' && (
+                      <p className="text-[11px] text-amber-500 font-medium flex items-center gap-1 animate-fade-in">
+                        <ShieldAlert className="w-3 h-3 shrink-0" />
+                        {usernameFeedback}
+                      </p>
+                    )}
+
+                    {usernameStatus === 'same' && (
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        Current display username.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {isSuperAdmin(user?.email) && (
                   <p className="text-[11px] text-slate-400 font-medium mt-0.5">
                     Superadmin username is permanently locked and cannot be
@@ -1176,14 +1418,14 @@ export const PersonalAccount: React.FC = () => {
                   </p>
                 )}
               </div>
+
               {!isSuperAdmin(user?.email) && (
                 <button
                   type="submit"
                   disabled={
                     isCheckingUsername ||
                     isUpdatingProfile ||
-                    !username.trim() ||
-                    username.trim() === profile?.username
+                    usernameStatus !== 'available'
                   }
                   className="w-full flex items-center justify-center px-4 py-2.5 bg-(--color-primary) hover:opacity-95 text-white rounded-lg text-xs font-heading tracking-widest uppercase transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer border border-(--color-primary)"
                 >

@@ -7,7 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Award,
@@ -44,6 +44,8 @@ import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
+import { Database } from 'lucide-react';
 import {
   memberService,
   subscriptionService,
@@ -2448,9 +2450,31 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               {/* ACTION TILES: EXISTING VS NEW (ADMIN ONLY, HIDDEN IF PERSON IS LOADED) */}
               {!isStaff && !hasLoadedPerson && (
                 <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
-                    Select Intake Mode
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
+                      Select Intake Mode
+                    </span>
+                    {isSuperAdmin(user?.email) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isSessionOpen) {
+                            toast.warning(
+                              'Cannot perform legacy migration: Cash drawer session is currently open. Please close the session in Cash Management first.',
+                              { toastId: 'migration-session-open-block' }
+                            );
+                            return;
+                          }
+                          handleModalClose();
+                          window.dispatchEvent(new Event('trigger-member-migration'));
+                        }}
+                        className="inline-flex items-center gap-1.5 text-[10px] font-heading font-black text-amber-600 dark:text-amber-400 hover:text-amber-500 uppercase tracking-wider cursor-pointer transition-colors"
+                      >
+                        <Database className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Legacy Data Migration</span>
+                      </button>
+                    )}
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* EXISTING MEMBER */}
@@ -2964,11 +2988,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         )}
                       </div>
 
-                      {/* Gender */}
+                      {/* Sex */}
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5">
                           <Users className="w-3.5 h-3.5 text-(--color-primary)" />
-                          <span>Gender *</span>
+                          <span>Sex *</span>
                         </label>
                         <select
                           value={gender}
@@ -3462,22 +3486,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               )}
 
               {/* Member Summary Header */}
-              <div className="flex justify-between items-center border-b border-(--border-color) pb-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-(--color-text)/50">
+              <div className="flex justify-between items-start gap-3 border-b border-(--border-color) pb-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-(--color-text)/50 block">
                     Client Profile
                   </span>
-                  <h4 className="font-black text-sm uppercase text-(--color-text) mt-0.5">
+                  <h4 className="font-black text-sm uppercase text-(--color-text) mt-0.5 truncate" title={getCombinedFullName()}>
                     {getCombinedFullName()}
                   </h4>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono bg-(--color-primary)/15 text-(--color-primary-light) border border-(--color-primary)/30 px-2.5 py-1 rounded-full font-bold">
+                <div className="text-right shrink-0">
+                  <span className="inline-flex items-center whitespace-nowrap text-[9px] font-mono bg-(--color-primary)/15 text-(--color-primary-light) border border-(--color-primary)/30 px-2.5 py-1 rounded-full font-bold">
                     {isMinor
                       ? `MINOR (${calculatedAge} YRS)`
                       : `ADULT (${calculatedAge} YRS)`}
                   </span>
-                  <span className="text-xs font-mono font-bold block mt-1 text-(--color-text)/60">
+                  <span className="text-xs font-mono font-bold block mt-1 text-(--color-text)/60 whitespace-nowrap">
                     {phone || 'No Phone'}
                   </span>
                 </div>
@@ -3987,6 +4011,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   onOnboardingSuccess,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { profile } = useAuthStore();
   const isStaff = profile?.role === 'staff';
@@ -4016,6 +4041,31 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
     step?: number;
     prefillData?: OnlineRegistration;
   }>({ isOpen: false, mode: null, plan: null });
+
+  useEffect(() => {
+    const state = location.state as any;
+    if (state?.openWizard) {
+      const rawPlan = state.prefillData?.preferred_plan;
+      let initialPlan:
+        | 'Monthly Membership'
+        | 'Yearly Membership'
+        | 'No Subscription' = state.initialPlan || 'Monthly Membership';
+      if (rawPlan) {
+        const isYearly = String(rawPlan).toLowerCase().includes('yearly');
+        initialPlan = isYearly ? 'Yearly Membership' : 'Monthly Membership';
+      }
+
+      setModalConfig({
+        isOpen: true,
+        mode: state.initialIntakeMode || 'Manual',
+        plan: initialPlan,
+        step: state.initialStep !== undefined ? state.initialStep : 2,
+        prefillData: state.prefillData,
+      });
+
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   // 1. SETTINGS MUST BE DECLARED FIRST
   const [settings, setSettings] =

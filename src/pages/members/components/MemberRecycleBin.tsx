@@ -320,8 +320,8 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-2000 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
-      <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+    <div className="fixed inset-0 z-2000 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
+      <div className="relative bg-(--bg-card) border border-(--border-color) rounded-3xl w-full max-w-md shadow-2xl p-4 sm:p-6 space-y-4 max-h-[88vh] overflow-y-auto">
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
           <h3 className="font-heading tracking-widest uppercase">
             Member Recycle Bin
@@ -336,12 +336,12 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
         </div>
 
         <div className="space-y-4 pt-2">
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-600 dark:text-rose-400 font-semibold">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300 font-semibold">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
             <span>
-              <strong>Caution:</strong> Restorable profiles are kept for up to
-              30 days. Accounts here are locked and will be permanently deleted
-              at 12:00 AM Manila Time.
+              <strong>Notice:</strong> Restorable profiles are safely retained for up to
+              30 days. Archived accounts here will only be permanently purged
+              at 12:00 AM Manila Time once their 30-day retention expires.
             </span>
           </div>
 
@@ -396,7 +396,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-4.5 h-4.5 bg-slate-200 dark:bg-zinc-800 rounded shrink-0" />
-                      <div className="w-10 h-10 bg-slate-200 dark:bg-zinc-800 rounded-lg shrink-0" />
+                      <div className="hidden min-[400px]:block w-10 h-10 bg-slate-200 dark:bg-zinc-800 rounded-lg shrink-0" />
                       <div className="min-w-0 flex-1 space-y-2 text-left">
                         <div className="h-3.5 bg-slate-200 dark:bg-zinc-800 rounded w-1/2" />
                         <div className="h-2.5 bg-slate-200 dark:bg-zinc-800 rounded w-1/3" />
@@ -454,22 +454,22 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                               : 'hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                           }`}
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                             <input
                               type="checkbox"
                               checked={stackSelected}
                               onChange={() => {}}
-                              className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                              className="w-4 h-4 rounded text-blue-600 cursor-pointer accent-(--color-primary) shrink-0"
                             />
-                            <div className="min-w-0 text-left flex items-center gap-3 flex-1">
+                            <div className="min-w-0 text-left flex items-center gap-2.5 sm:gap-3 flex-1">
                               {stack.avatar_url ? (
                                 <img
                                   src={stack.avatar_url}
                                   alt={stack.full_name}
-                                  className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
+                                  className="hidden min-[400px]:block w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
+                                <div className="hidden min-[400px]:flex w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
                                   {(stack.full_name || 'M')[0]}
                                 </div>
                               )}
@@ -483,7 +483,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                     <span>×{stack.items.length} records</span>
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
                                   {stack.member_id} • {stack.phone || 'No phone'}
                                 </div>
                               </div>
@@ -491,11 +491,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                           </div>
 
                           <div
-                            className="flex items-center gap-2 shrink-0"
+                            className="flex items-center gap-1.5 sm:gap-2 shrink-0"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {daysRemaining && (
-                              <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
+                              <span className="text-[9px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md whitespace-nowrap">
                                 {daysRemaining}
                               </span>
                             )}
@@ -503,14 +503,14 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                               type="button"
                               disabled={loading}
                               onClick={() => handleBulkRestore(stack.items)}
-                              className="py-1.5 px-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
+                              className="py-1.5 px-2 sm:px-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
                             >
                               Restore All ({stack.items.length})
                             </button>
                             <button
                               type="button"
                               onClick={() => toggleStackExpansion(stack.key)}
-                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
+                              className="p-1 sm:p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800 cursor-pointer"
                             >
                               {isExpanded ? (
                                 <ChevronUp className="w-4 h-4" />
@@ -534,7 +534,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                   onClick={() =>
                                     !loading && handleRowSelect(subItem.id)
                                   }
-                                  className={`p-2.5 pl-8 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
+                                  className={`p-2.5 pl-6 sm:pl-8 flex items-center justify-between gap-3 cursor-pointer text-[10px] transition-colors ${
                                     isSubSelected
                                       ? 'bg-blue-500/10'
                                       : 'hover:bg-slate-50 dark:hover:bg-zinc-900/50'
@@ -548,7 +548,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                       onChange={() =>
                                         handleRowSelect(subItem.id)
                                       }
-                                      className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary)"
+                                      className="w-3.5 h-3.5 rounded text-blue-600 cursor-pointer accent-(--color-primary) shrink-0"
                                     />
                                     <div className="min-w-0 text-left font-mono">
                                       <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
@@ -564,7 +564,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                       e.stopPropagation();
                                       handleBulkRestore([subItem]);
                                     }}
-                                    className="py-1 px-2 bg-emerald-500/80 hover:bg-emerald-600 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50"
+                                    className="py-1 px-2 bg-emerald-500/80 hover:bg-emerald-600 text-white rounded font-heading text-[8px] tracking-wider uppercase font-bold cursor-pointer disabled:opacity-50 shrink-0"
                                   >
                                     Restore
                                   </button>
@@ -583,13 +583,13 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                         return (
                           <div
                             onClick={() => !loading && handleRowSelect(item.id)}
-                            className={`p-3 border rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                            className={`p-3 border rounded-xl flex items-center justify-between gap-2.5 sm:gap-3 cursor-pointer transition-all ${
                               isSelected
                                 ? 'bg-blue-500/10 border-blue-500'
                                 : 'bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 border-(--border-color)'
                             } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
                           >
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                               <div
                                 className="shrink-0"
                                 onClick={(e) => e.stopPropagation()}
@@ -602,23 +602,23 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                   className="w-4.5 h-4.5 rounded border-slate-300 dark:border-white/10 text-blue-600 cursor-pointer accent-(--color-primary)"
                                 />
                               </div>
-                              <div className="min-w-0 text-left flex items-center gap-3">
+                              <div className="min-w-0 text-left flex items-center gap-2.5 sm:gap-3 flex-1">
                                 {item.avatar_url ? (
                                   <img
                                     src={item.avatar_url}
                                     alt={item.full_name}
-                                    className="w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
+                                    className="hidden min-[400px]:block w-10 h-10 rounded-lg object-cover border border-(--border-color) shrink-0 grayscale opacity-70"
                                   />
                                 ) : (
-                                  <div className="w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) flex items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
+                                  <div className="hidden min-[400px]:flex w-10 h-10 rounded-lg bg-(--bg-page) border border-(--border-color) items-center justify-center text-slate-455 font-bold text-xs shrink-0 select-none uppercase">
                                     {(item.full_name || 'M')[0]}
                                   </div>
                                 )}
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <span className="font-bold block text-[11px] text-(--color-text) truncate">
                                     {item.full_name}
                                   </span>
-                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none">
+                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5 block leading-none truncate">
                                     {item.member_id} • {item.phone || 'No phone'}
                                   </span>
                                 </div>
@@ -626,11 +626,11 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                             </div>
 
                             <div
-                              className="flex items-center gap-2 shrink-0"
+                              className="flex items-center gap-1.5 sm:gap-2 shrink-0"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {daysRemaining && (
-                                <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-md whitespace-nowrap">
+                                <span className="text-[9px] font-mono font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md whitespace-nowrap">
                                   {daysRemaining}
                                 </span>
                               )}
@@ -638,7 +638,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                                 type="button"
                                 disabled={loading}
                                 onClick={() => handleBulkRestore([item])}
-                                className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
+                                className="py-1.5 px-2.5 sm:px-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-heading text-[8px] tracking-wider uppercase cursor-pointer font-bold shrink-0 shadow-sm border-none"
                               >
                                 Restore
                               </button>

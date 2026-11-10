@@ -73,7 +73,7 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
   // Full-width search state
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 3. Batch delivery options: 'global' (one global note, hides individual inputs) vs 'individual' (per-item notes)
+  // 3. Supplier Name options: 'global' (one global note, hides individual inputs) vs 'individual' (per-item notes)
   const [supplierMode, setSupplierMode] = useState<'global' | 'individual'>('global');
   const [globalSupplierNote, setGlobalSupplierNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -321,11 +321,11 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
           </div>
         </div>
 
-        {/* 3. BATCH DELIVERY / PO NOTE SECTION */}
+        {/* 3. Supplier Name / PO NOTE SECTION */}
         <div className="p-3 sm:px-6 bg-slate-50 dark:bg-[#151922] border-b border-(--border-color) shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[11px] sm:text-xs font-heading font-extrabold tracking-wider uppercase text-slate-600 dark:text-slate-400">
-              Batch Delivery / PO Note
+              Supplier Name / PO Note
             </span>
 
             {/* Mode selection: Global Note vs Individual Notes */}

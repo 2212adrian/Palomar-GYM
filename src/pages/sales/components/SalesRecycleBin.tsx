@@ -727,7 +727,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
               Daily Recycle Bin
             </h3>
             {countdown && (
-              <span className="text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+              <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
                 Shift Active
               </span>
             )}
@@ -744,13 +744,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
         {/* Scrollable Content Body */}
         <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-3 min-h-0">
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-700 dark:text-rose-300 font-medium">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
             <span>
-              <strong>Please note:</strong> Sales removed during this shift can
-              be restored here while the cash drawer is still open. Once the
-              cash session is ended and closed, all removed items will be
-              permanently cleared.
+              <strong className="font-bold">Notice:</strong> Items in the Recycle Bin are only retained during the active cash session. After this period, they will be permanently deleted and cannot be restored.
             </span>
           </div>
 

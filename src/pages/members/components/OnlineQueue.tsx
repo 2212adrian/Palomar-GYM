@@ -31,6 +31,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -89,6 +90,38 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     useState<boolean>(false);
   const [mobileSearchQuery, setMobileSearchQuery] = useState<string>('');
   const [mobilePage, setMobilePage] = useState<number>(1);
+  const [countdown, setCountdown] = useState<string>('');
+
+  // Real-time calculation of countdown remaining until 12:00 AM Manila Time (GMT+8)
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date();
+      const manilaOffsetMs = 8 * 60 * 60 * 1000;
+      const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+      const manilaLocalTime = new Date(utcTime + manilaOffsetMs);
+
+      const manilaMidnightLocal = new Date(manilaLocalTime);
+      manilaMidnightLocal.setHours(24, 0, 0, 0);
+
+      const diffMs = manilaMidnightLocal.getTime() - manilaLocalTime.getTime();
+
+      if (diffMs <= 0) {
+        setCountdown('00h 00m 00s');
+        return;
+      }
+
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+      const pad = (num: number) => String(num).padStart(2, '0');
+      setCountdown(`${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Consolidated Multi-Stacked Rejection State
   const [stagedRejections, setStagedRejections] = useState<
@@ -740,6 +773,22 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         </div>
       )}
 
+      {/* 12:00 AM Manila Time Daily Deletion Notice */}
+      <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs select-none shadow-2xs animate-fade-in">
+        <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0 text-amber-500" />
+          <span className="leading-relaxed font-medium">
+            <strong>Daily Retention Notice:</strong> Pending pre-registration tickets are kept for the current day only and will be permanently deleted at <strong>12:00 AM Manila Time</strong>. Click <strong>Archive</strong> on any ticket to exempt it from the daily purge.
+          </span>
+        </div>
+        {countdown && (
+          <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap">
+            <Clock className="w-3 h-3 text-amber-500" />
+            <span>Purge in: {countdown}</span>
+          </div>
+        )}
+      </div>
+
       {/* Queue Header & Actions (Desktop / Tablet Header) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none">
         <div>
@@ -768,20 +817,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           >
             <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Open Form
           </button>
-
-          <button
-            onClick={handleCopyRegistrationLink}
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-            title="Copy Public Pre-Registration URL"
-          >
-            {copiedLink ? (
-              <Check className="w-3.5 h-3.5 text-emerald-500" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 text-slate-500" />
-            )}
-            {copiedLink ? 'Copied' : 'Copy Link'}
-          </button>
-
           <button
             onClick={handlePrintPoster}
             className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
@@ -1189,8 +1224,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               </div>
 
               {/* Caution Banner */}
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-2.5 text-xs text-amber-600 dark:text-amber-400 font-medium">
-                <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0" />
+              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center gap-2.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
+                <ShieldAlert className="w-4 h-4 text-blue-500 shrink-0" />
                 <span>
                   Archived tickets are permanently exempt from the daily 12:00
                   AM Manila Time automated purges.

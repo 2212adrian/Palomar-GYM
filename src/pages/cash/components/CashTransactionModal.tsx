@@ -58,13 +58,6 @@ const TYPE_CONFIG = {
   },
 };
 
-const CASH_IN_CATEGORIES = [
-  'Change Fund Replenishment (Sukli)',
-  'Petty Cash Change Return (Kasukli ng Gastos)',
-  'Owner / Float Injection',
-  'Other Drawer Inflow',
-];
-
 const BYPASS_KEYWORDS = ['membership', 'walk-in', 'walkin', 'pass', 'entrance', 'gym fee', 'plan'];
 
 export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
@@ -83,7 +76,6 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
   const Icon = config.icon;
 
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState(CASH_IN_CATEGORIES[0]);
   const [referenceNumber, setReferenceNumber] = useState('');
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,7 +83,6 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setAmount('');
-      setCategory(CASH_IN_CATEGORIES[0]);
       setReferenceNumber('');
       setReason('');
     }
@@ -158,10 +149,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
         user?.email ||
         'Staff';
 
-      const fullReason =
-        isCashIn && category
-          ? `[${category}] ${reason.trim()}`.slice(0, 300)
-          : reason.trim().slice(0, 300);
+      const fullReason = reason.trim().slice(0, 300);
 
       // Handle pending transactions for staff manual drawer movements
       if (willRequireApproval) {
@@ -252,26 +240,6 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Category selector for Cash In */}
-        {isCashIn && (
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-              Cash In Category *
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-            >
-              {CASH_IN_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
