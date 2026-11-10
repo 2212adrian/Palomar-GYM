@@ -409,20 +409,20 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             <div className="flex items-center gap-2 w-full pt-1 pb-0.5">
               {/* Search input field */}
               <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/20 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400"
+                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] dark:focus:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 focus:border-[#123c73]/40 dark:focus:border-red-500/50 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/20 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => onSearchQueryChange('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer"
                     title="Clear search"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -442,7 +442,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                       MozAppearance: 'none',
                       appearance: 'none',
                     }}
-                    className="bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-white/20 transition-all shadow-xs"
+                    className="bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] dark:hover:bg-[#252b37] border border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[10px] sm:text-xs font-heading font-bold uppercase tracking-wider py-2 pl-2.5 pr-7 rounded-xl outline-none cursor-pointer hover:border-slate-300 dark:hover:border-white/20 transition-all shadow-xs"
                   >
                     {filterOptions.map((opt) => (
                       <option
