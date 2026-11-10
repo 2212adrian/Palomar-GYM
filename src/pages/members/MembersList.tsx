@@ -30,6 +30,7 @@ import {
   Check,
   Lock,
   RefreshCw,
+  ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
@@ -83,15 +84,36 @@ interface MembersListProps {
   hideHeaderActions?: boolean;
 }
 
+const getMemberAge = (birthday?: string | null): number | null => {
+  if (!birthday) return null;
+  const birthDate = new Date(birthday);
+  if (isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+};
+
+const isMemberMinor = (birthday?: string | null): boolean => {
+  const age = getMemberAge(birthday);
+  return age !== null && age >= 12 && age <= 17;
+};
+
 type FilterChip =
   | 'all'
-  | 'suspended'
+  | 'recent_sub'
   | 'with_sub'
   | 'expiring'
   | 'expired'
-  | 'has_card'
+  | 'no_sub'
   | 'unclaimed_card'
-  | 'no_card';
+  | 'has_card'
+  | 'no_card'
+  | 'minor'
+  | 'suspended';
 
 export const MembersList: React.FC<MembersListProps> = ({
   hideHeaderActions = false,
@@ -872,49 +894,88 @@ export const MembersList: React.FC<MembersListProps> = ({
     );
   }, [stats]);
 
-  const chipCounts = useMemo(() => {
+const chipCounts = useMemo(() => {
     const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
 
-    return {
-      all: members.length,
-      suspended: members.filter((m) => m.status === 'Suspended').length,
-      with_sub: members.filter((m) => !!getActiveSubscription(m.member_id))
-        .length,
-      expiring: members.filter((m) => {
-        const sub = getActiveSubscription(m.member_id);
-        if (!sub) return false;
+    let allCount = members.length;
+    let recentSubCount = 0;
+    let withSubCount = 0;
+    let expiringCount = 0;
+    let expiredCount = 0;
+    let noSubCount = 0;
+    let hasCardCount = 0;
+    let unclaimedCardCount = 0;
+    let noCardCount = 0;
+    let minorCount = 0;
+    let suspendedCount = 0;
+
+    members.forEach((m) => {
+      if (m.status === 'Suspended') suspendedCount++;
+      if (isMemberMinor(m.birthday)) minorCount++;
+
+      const sub = getActiveSubscription(m.member_id);
+      if (sub) {
+        withSubCount++;
         const diffDays = Math.ceil(
           (new Date(sub.end_date).getTime() - now) / (1000 * 60 * 60 * 24)
         );
-        return diffDays >= 0 && diffDays <= 7;
-      }).length,
-      expired: members.filter((m) => {
-        const activeSub = getActiveSubscription(m.member_id);
-        if (activeSub) return false;
+        if (diffDays >= 0 && diffDays <= 7) expiringCount++;
+      } else {
         const latestSub = getLatestSubscriptionRecord(m.member_id);
-        if (!latestSub) return false;
-        const endMs = new Date(latestSub.end_date).getTime();
-        if (isNaN(endMs) || endMs >= now) return false;
-        const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
-        return daysExpired <= 7;
-      }).length,
-      has_card: members.filter((m) => {
-        const card = getActiveCard(m.member_id);
-        return card && card.card_type !== 'None';
-      }).length,
-      unclaimed_card: members.filter((m) => {
-        const card = getActiveCard(m.member_id);
-        return (
-          card && card.card_type !== 'None' && card.claim_status === 'UNCLAIMED'
-        );
-      }).length,
-      no_card: members.filter((m) => {
-        const card = getActiveCard(m.member_id);
-        return !card || card.card_type === 'None';
-      }).length,
+        if (latestSub) {
+          const endMs = new Date(latestSub.end_date).getTime();
+          if (!isNaN(endMs) && endMs < now) {
+            const daysExpired = Math.floor(
+              (now - endMs) / (1000 * 60 * 60 * 24)
+            );
+            if (daysExpired <= 7) expiredCount++;
+            else noSubCount++;
+          } else {
+            noSubCount++;
+          }
+        } else {
+          noSubCount++;
+        }
+      }
+
+      const isRecent = subscriptions.some((s) => {
+        if (s.member_id !== m.member_id || s.status === 'Voided') return false;
+        const subTime = new Date(s.created_at || s.start_date).getTime();
+        return !isNaN(subTime) && subTime >= sevenDaysAgo;
+      });
+      if (isRecent) recentSubCount++;
+
+      const card = getActiveCard(m.member_id);
+      if (card && card.card_type !== 'None') {
+        hasCardCount++;
+        if (
+          card.payment_status === 'PAID' &&
+          card.claim_status === 'UNCLAIMED'
+        ) {
+          unclaimedCardCount++;
+        }
+      } else {
+        noCardCount++;
+      }
+    });
+
+    return {
+      all: allCount,
+      recent_sub: recentSubCount,
+      with_sub: withSubCount,
+      expiring: expiringCount,
+      expired: expiredCount,
+      no_sub: noSubCount,
+      unclaimed_card: unclaimedCardCount,
+      has_card: hasCardCount,
+      no_card: noCardCount,
+      minor: minorCount,
+      suspended: suspendedCount,
     };
   }, [
     members,
+    subscriptions,
     getActiveSubscription,
     getLatestSubscriptionRecord,
     getActiveCard,
@@ -940,8 +1001,15 @@ export const MembersList: React.FC<MembersListProps> = ({
       if (!matchesSearch) return false;
 
       switch (activeChip) {
-        case 'suspended':
-          return m.status === 'Suspended';
+        case 'recent_sub': {
+          const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+          return subscriptions.some((s) => {
+            if (s.member_id !== m.member_id || s.status === 'Voided')
+              return false;
+            const subTime = new Date(s.created_at || s.start_date).getTime();
+            return !isNaN(subTime) && subTime >= sevenDaysAgo;
+          });
+        }
         case 'with_sub':
           return !!getActiveSubscription(m.member_id);
         case 'expiring': {
@@ -962,10 +1030,8 @@ export const MembersList: React.FC<MembersListProps> = ({
           const daysExpired = Math.floor((now - endMs) / (1000 * 60 * 60 * 24));
           return daysExpired <= 7;
         }
-        case 'has_card': {
-          const card = getActiveCard(m.member_id);
-          return card && card.card_type !== 'None';
-        }
+        case 'no_sub':
+          return !getActiveSubscription(m.member_id);
         case 'unclaimed_card': {
           const card = getActiveCard(m.member_id);
           return (
@@ -974,10 +1040,18 @@ export const MembersList: React.FC<MembersListProps> = ({
             card.claim_status === 'UNCLAIMED'
           );
         }
+        case 'has_card': {
+          const card = getActiveCard(m.member_id);
+          return card && card.card_type !== 'None';
+        }
         case 'no_card': {
           const card = getActiveCard(m.member_id);
           return !card || card.card_type === 'None';
         }
+        case 'minor':
+          return isMemberMinor(m.birthday);
+        case 'suspended':
+          return m.status === 'Suspended';
         case 'all':
         default:
           return true;
@@ -985,6 +1059,16 @@ export const MembersList: React.FC<MembersListProps> = ({
     });
 
     return matched.sort((a, b) => {
+      if (activeChip === 'recent_sub') {
+        const getLatestTime = (mId: string) => {
+          const sub = subscriptions.find(
+            (s) => s.member_id === mId && s.status !== 'Voided'
+          );
+          return sub ? new Date(sub.created_at || sub.start_date).getTime() : 0;
+        };
+        return getLatestTime(b.member_id) - getLatestTime(a.member_id);
+      }
+
       const activeA = getActiveSubscription(a.member_id);
       const activeB = getActiveSubscription(b.member_id);
 
@@ -1129,33 +1213,43 @@ export const MembersList: React.FC<MembersListProps> = ({
       key: 'full_name',
       header: 'Member / ID',
       sortable: true,
-      render: (item) => (
-        <div className="flex items-center gap-2.5 py-0.5 text-left">
-          <MemberAvatar
-            src={item.image_url || item.avatar_url}
-            name={item.full_name}
-            size={38}
-            roundedClassName="rounded-xl"
-            className="shadow-xs border border-black/10 dark:border-white/10 shrink-0"
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight uppercase">
-                {item.full_name}
-              </span>
-              {item.status === 'Suspended' && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  SUSPENDED
+      render: (item) => {
+        const age = getMemberAge(item.birthday);
+        const isMinor = age !== null && age >= 12 && age <= 17;
+
+        return (
+          <div className="flex items-center gap-2.5 py-0.5 text-left">
+            <MemberAvatar
+              src={item.image_url || item.avatar_url}
+              name={item.full_name}
+              size={38}
+              roundedClassName="rounded-xl"
+              className="shadow-xs border border-black/10 dark:border-white/10 shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 truncate leading-tight uppercase">
+                  {item.full_name}
                 </span>
-              )}
+                {isMinor && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">
+                    Minor ({age} yrs)
+                  </span>
+                )}
+                {item.status === 'Suspended' && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    SUSPENDED
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium block mt-0.5 leading-none truncate uppercase">
+                {item.member_id} • {item.phone}
+              </span>
             </div>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium block mt-0.5 leading-none truncate uppercase">
-              {item.member_id} • {item.phone}
-            </span>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: 'subscription',
@@ -1603,41 +1697,101 @@ export const MembersList: React.FC<MembersListProps> = ({
                   isSelectionActive ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
                 }`}
               >
-                {/* SEARCH & STREAMLINED CHIP FILTERS TOOLBAR */}
+                {/* SEARCH & REWORKED RESPONSIVE CATEGORY TOOLBAR */}
                 <div className="space-y-2.5 bg-(--bg-card) p-3 md:p-3.5 rounded-2xl border border-(--border-color) shadow-xs">
-                  <div className="relative w-full">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search profiles by Name, ID, Phone, or Email..."
-                      className="w-full pl-10 pr-10 py-2 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-bold text-xs md:text-sm text-(--color-text) focus:border-blue-500 transition-all"
-                    />
-
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
-                        title="Clear search query"
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    {/* Category Selector Dropdown */}
+                    <div className="relative shrink-0 sm:w-60">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                        <Filter className="w-3.5 h-3.5" />
+                      </div>
+                      <select
+                        value={activeChip}
+                        onChange={(e) =>
+                          setActiveChip(e.target.value as FilterChip)
+                        }
+                        className="w-full pl-9 pr-8 py-2 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs font-heading font-extrabold uppercase tracking-wider text-(--color-text) outline-none cursor-pointer focus:border-blue-500 transition-all appearance-none"
                       >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
+                        <option value="all">All Members ({chipCounts.all})</option>
+                        <optgroup label="── Subscriptions ──">
+                          <option value="recent_sub">
+                            Recently Subscribed ({chipCounts.recent_sub})
+                          </option>
+                          <option value="with_sub">
+                            Active Subscriptions ({chipCounts.with_sub})
+                          </option>
+                          <option value="expiring">
+                            Expiring (≤ 7d) ({chipCounts.expiring})
+                          </option>
+                          <option value="expired">
+                            Expired (≤ 7d) ({chipCounts.expired})
+                          </option>
+                          <option value="no_sub">
+                            No Subscription ({chipCounts.no_sub})
+                          </option>
+                        </optgroup>
+                        <optgroup label="── Member Cards ──">
+                          <option value="unclaimed_card">
+                            Unclaimed Cards ({chipCounts.unclaimed_card})
+                          </option>
+                          <option value="has_card">
+                            Has Card ({chipCounts.has_card})
+                          </option>
+                          <option value="no_card">
+                            No Card ({chipCounts.no_card})
+                          </option>
+                        </optgroup>
+                        <optgroup label="── Demographics & Status ──">
+                          <option value="minor">
+                            Minors (12–17 yrs) ({chipCounts.minor})
+                          </option>
+                          <option value="suspended">
+                            Suspended ({chipCounts.suspended})
+                          </option>
+                        </optgroup>
+                      </select>
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+
+                    {/* Search Input */}
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search profiles by Name, ID, Phone, or Email..."
+                        className="w-full pl-10 pr-10 py-2 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-bold text-xs md:text-sm text-(--color-text) focus:border-blue-500 transition-all"
+                      />
+
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-(--color-text) cursor-pointer"
+                          title="Clear search query"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none pb-0.5 select-none">
-                    <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0 pr-1">
-                      <Filter className="w-3 h-3" /> Filters:
-                    </span>
-
+                  {/* High-Frequency Quick Chips */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none pb-0.5 select-none pt-0.5">
                     {[
                       { id: 'all', label: 'All', count: chipCounts.all },
                       {
+                        id: 'recent_sub',
+                        label: 'Recent Sub',
+                        count: chipCounts.recent_sub,
+                      },
+                      {
                         id: 'with_sub',
-                        label: 'Subscription',
+                        label: 'Active Sub',
                         count: chipCounts.with_sub,
                       },
                       {
@@ -1646,29 +1800,14 @@ export const MembersList: React.FC<MembersListProps> = ({
                         count: chipCounts.expiring,
                       },
                       {
-                        id: 'expired',
-                        label: 'Expired',
-                        count: chipCounts.expired,
-                      },
-                      {
                         id: 'unclaimed_card',
                         label: 'Unclaimed Cards',
                         count: chipCounts.unclaimed_card,
                       },
                       {
-                        id: 'has_card',
-                        label: 'Has Card',
-                        count: chipCounts.has_card,
-                      },
-                      {
-                        id: 'no_card',
-                        label: 'No Card',
-                        count: chipCounts.no_card,
-                      },
-                      {
-                        id: 'suspended',
-                        label: 'Suspended',
-                        count: chipCounts.suspended,
+                        id: 'minor',
+                        label: 'Minors (12–17)',
+                        count: chipCounts.minor,
                       },
                     ].map((chip) => (
                       <button
@@ -1693,6 +1832,41 @@ export const MembersList: React.FC<MembersListProps> = ({
                         </span>
                       </button>
                     ))}
+
+                    {/* Secondary active category pill if selected via dropdown */}
+                    {![
+                      'all',
+                      'recent_sub',
+                      'with_sub',
+                      'expiring',
+                      'unclaimed_card',
+                      'minor',
+                    ].includes(activeChip) && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveChip('all')}
+                        className="px-3 py-1.5 rounded-xl text-[11px] font-heading font-extrabold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-1.5 shrink-0 bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs"
+                      >
+                        <span>
+                          {activeChip === 'expired'
+                            ? 'Expired'
+                            : activeChip === 'no_sub'
+                              ? 'No Subscription'
+                              : activeChip === 'has_card'
+                                ? 'Has Card'
+                                : activeChip === 'no_card'
+                                  ? 'No Card'
+                                  : activeChip === 'suspended'
+                                    ? 'Suspended'
+                                    : activeChip}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded-full font-mono text-[10px] font-bold bg-white/20 text-white">
+                          {chipCounts[activeChip as keyof typeof chipCounts] ??
+                            0}
+                        </span>
+                        <X className="w-3 h-3 ml-0.5 opacity-80 hover:opacity-100" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2008,6 +2182,21 @@ export const MembersList: React.FC<MembersListProps> = ({
                                     <h3 className="font-heading font-extrabold text-sm text-(--color-text) truncate leading-tight uppercase">
                                       {member.full_name}
                                     </h3>
+                                    {(() => {
+                                      const age = getMemberAge(member.birthday);
+                                      if (
+                                        age !== null &&
+                                        age >= 12 &&
+                                        age <= 17
+                                      ) {
+                                        return (
+                                          <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">
+                                            Minor ({age} yrs)
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                     {isSuspended && (
                                       <span className="px-1.5 py-0.2 rounded text-[8px] font-mono font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 shrink-0">
                                         SUSPENDED

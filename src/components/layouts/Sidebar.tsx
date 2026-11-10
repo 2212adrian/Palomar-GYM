@@ -15,6 +15,8 @@ import {
   Wallet,
   Bell,
   HelpCircle,
+  CheckCircle2,
+  CloudDownload,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
@@ -28,7 +30,11 @@ import { useGuideStore } from '../../stores/useGuideStore';
 import { SIDEBAR_NAV_STRUCTURE } from '../../constants/navigation';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import { getInstalledAppVersion } from '../../lib/appUpdateService';
+import {
+  getInstalledAppVersion,
+  fetchLatestRelease,
+  isNewerVersion,
+} from '../../lib/appUpdateService';
 
 // Package version retrieval matching Login.tsx reference
 import pkg from '../../../package.json';
@@ -153,26 +159,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = isSuperAdmin(user?.email) || profile?.role === 'admin';
   const { openGuide } = useGuideStore();
   const [appVersion, setAppVersion] = useState<string>(pkg.version || '0.25.3');
+  const [hasUpdate, setHasUpdate] = useState<boolean>(false);
+  const [latestRemoteVersion, setLatestRemoteVersion] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    const resolveVersion = async () => {
+    const resolveVersionAndCheckUpdates = async () => {
       try {
         const info = await getInstalledAppVersion(pkg.version || '0.25.3');
-        if (isMounted && info?.version) {
-          setAppVersion(info.version);
+        const currentVersion = info?.version || pkg.version || '0.25.3';
+        if (isMounted) {
+          setAppVersion(currentVersion);
         }
-      } catch {}
+
+        const release = await fetchLatestRelease(currentVersion, 'android');
+        if (isMounted && release) {
+          setLatestRemoteVersion(release.version);
+          if (isNewerVersion(release.version, currentVersion)) {
+            setHasUpdate(true);
+          } else {
+            setHasUpdate(false);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setHasUpdate(false);
+        }
+      }
     };
 
-    resolveVersion();
+    resolveVersionAndCheckUpdates();
+
+    // Subscribe to realtime app release changes
+    const releasesChannel = supabase
+      .channel('sidebar_app_releases_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'app_releases' },
+        () => {
+          resolveVersionAndCheckUpdates();
+        }
+      )
+      .subscribe();
 
     let stateListener: any;
     if (Capacitor.isNativePlatform()) {
       CapApp.addListener('appStateChange', (state) => {
         if (state.isActive) {
-          resolveVersion();
+          resolveVersionAndCheckUpdates();
         }
       }).then((handle) => {
         stateListener = handle;
@@ -181,6 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return () => {
       isMounted = false;
+      supabase.removeChannel(releasesChannel);
       if (stateListener) {
         stateListener.remove();
       }
@@ -500,7 +536,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div className="relative z-10 space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
                     <img
@@ -509,13 +545,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className="w-full h-full object-contain"
                     />
                   </div>
-                  <div className="flex flex-col whitespace-nowrap overflow-hidden">
-                    <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight truncate">
                       WOLF PALOMAR GYM
                     </span>
-                    <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                      v{appVersion}
-                    </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider shrink-0">
+                        v{appVersion}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/settings/system-updates');
+                        }}
+                        title={
+                          hasUpdate
+                            ? `New update available: v${latestRemoteVersion || ''} (Installed: v${appVersion}). Click to open System Information.`
+                            : `System is up to date (v${appVersion}). Click to view system info.`
+                        }
+                        aria-label={
+                          hasUpdate
+                            ? 'New update available. Click to open System Information.'
+                            : 'System is up to date. Click to open System Information.'
+                        }
+                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-heading font-black tracking-wider uppercase transition-all cursor-pointer shadow-xs active:scale-95 border shrink-0 ${
+                          hasUpdate
+                            ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/30 animate-pulse'
+                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                        }`}
+                      >
+                        {hasUpdate ? (
+                          <>
+                            <CloudDownload className="w-2.5 h-2.5 text-amber-500 shrink-0 animate-bounce" />
+                            <span>Update</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                            <span>Latest</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -548,9 +620,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* DESKTOP HEADER (COLLAPSED STATE) */}
         <div
-          className={`flex flex-col items-center gap-4 border-b border-slate-200/80 dark:border-white/5 relative z-10 shrink-0 transition-all duration-300 ease-in-out ${
+          className={`flex flex-col items-center gap-3 border-b border-slate-200/80 dark:border-white/5 relative z-10 shrink-0 transition-all duration-300 ease-in-out ${
             collapsed
-              ? 'p-4 max-h-36 opacity-100'
+              ? 'p-3 max-h-44 opacity-100'
               : 'max-h-0 opacity-0 p-0 border-none pointer-events-none overflow-hidden'
           }`}
         >
@@ -570,6 +642,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
               isMini={true}
             />
           </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/settings/system-updates');
+            }}
+            title={
+              hasUpdate
+                ? `New update available: v${latestRemoteVersion || ''} (Installed: v${appVersion}). Click to open System Information.`
+                : `System is up to date (v${appVersion}). Click to check releases.`
+            }
+            aria-label={
+              hasUpdate
+                ? 'New update available. Click to open System Information.'
+                : 'System is up to date. Click to open System Information.'
+            }
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95 border ${
+              hasUpdate
+                ? 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-500 border-amber-500/40 hover:bg-amber-500/30 animate-pulse'
+                : 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-500 border-emerald-500/25 hover:bg-emerald-500/20'
+            }`}
+          >
+            {hasUpdate ? (
+              <CloudDownload className="w-3.5 h-3.5" />
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
 
         {/* ACCORDION NAVIGATION BUTTONS */}
@@ -1038,9 +1139,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <span className="font-heading text-xs font-black tracking-wider uppercase text-slate-900 dark:text-white leading-tight">
                         WOLF PALOMAR GYM
                       </span>
-                      <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                        v{appVersion}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                          v{appVersion}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMobileOpen(false);
+                            navigate('/settings/system-updates');
+                          }}
+                          title={
+                            hasUpdate
+                              ? `New update available: v${latestRemoteVersion || ''} (Installed: v${appVersion}). Tap to open System Information.`
+                              : `System is up to date (v${appVersion}). Tap to check releases.`
+                          }
+                          aria-label={
+                            hasUpdate
+                              ? 'New update available. Tap to open System Information.'
+                              : 'System is up to date. Tap to open System Information.'
+                          }
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-heading font-black tracking-wider uppercase transition-all cursor-pointer shadow-xs active:scale-95 border ${
+                            hasUpdate
+                              ? 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/30 animate-pulse'
+                              : 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                          }`}
+                        >
+                          {hasUpdate ? (
+                            <>
+                              <CloudDownload className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                              <span>Update</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                              <span>Latest</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 

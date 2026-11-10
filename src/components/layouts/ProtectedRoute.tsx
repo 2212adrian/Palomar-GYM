@@ -1,4 +1,3 @@
-// src/components/layouts/ProtectedRoute.tsx
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore, hasStoredAuthSession } from '../../stores/authStore';
@@ -72,7 +71,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (allowedRoles) {
     if (!effectiveRole || !allowedRoles.includes(effectiveRole)) {
       const targetFallback =
-        effectiveRole === 'staff' ? '/sales' : '/dashboard';
+        effectiveRole === 'staff' ? '/cash-management' : '/dashboard';
       return <Navigate to={targetFallback} replace />;
     }
   }

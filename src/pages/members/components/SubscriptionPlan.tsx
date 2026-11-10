@@ -14,7 +14,6 @@ import {
   Smartphone,
   CheckCircle,
   X,
-  Eye,
   Check,
   Lock,
   FileSignature,
@@ -225,8 +224,6 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   };
 
   if (readOnly) {
-    const [showImage, setShowImage] = useState(false);
-
     return (
       <div className="space-y-1 select-none text-left">
         <div className="flex justify-between items-center">
@@ -239,26 +236,15 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
           </span>
         </div>
 
-        <div className="relative rounded-xl overflow-hidden border border-(--border-color) bg-(--bg-card) p-2 h-20 flex items-center justify-center">
+        <div className="relative rounded-xl overflow-hidden border border-slate-300 dark:border-white/20 bg-white p-2 h-20 sm:h-24 w-full flex items-center justify-center shadow-inner">
           {value ? (
-            showImage ? (
-              <img
-                src={value}
-                alt={label}
-                className="max-h-full max-w-full object-contain pointer-events-none"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowImage(true)}
-                className="px-3 py-1.5 bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <Eye className="w-3.5 h-3.5 text-(--color-primary)" />
-                <span>Show Signature</span>
-              </button>
-            )
+            <img
+              src={value}
+              alt={label}
+              className="max-h-full max-w-full object-contain pointer-events-none select-none"
+            />
           ) : (
-            <span className="text-[10px] text-(--color-text)/40 font-mono italic">
+            <span className="text-[10px] text-slate-400 font-mono italic">
               No signature on file
             </span>
           )}
@@ -614,6 +600,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     activeMember.emergency_contact_phone.toLowerCase() !== 'no phone'
   );
 
+  const isParentNameLocked = Boolean(
+    activeMember && parentName.trim()
+  );
+  const isParentRelationshipLocked = Boolean(
+    activeMember && parentRelationship.trim()
+  );
+  const isParentPhoneLocked = Boolean(
+    activeMember && parentPhone.trim()
+  );
+  const isSignaturesLocked = Boolean(
+    activeMember &&
+      (applicantSig ||
+        parentSig ||
+        (activeMember as any).consent_date ||
+        consentDate)
+  );
+
   const isMissing = (val: string) =>
     Boolean(activeMember) &&
     (!val || !val.trim() || val.trim().toLowerCase() === 'no phone');
@@ -736,7 +739,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }
   };
 
-  const handleSelectExistingMember = (m: Member) => {
+  const hydrateExistingMemberDetails = async (m: Member) => {
     setSelectedExistingMember(m);
     setEnrollmentType('existing');
     parseAndSetFullNameFields(m.full_name);
@@ -748,15 +751,75 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setEmergencyName(m.emergency_contact_name || m.full_name);
     setRelationship(m.relationship || 'Guardian / Family');
     setEmergencyPhone(m.emergency_contact_phone || m.phone || '');
-    setParentName(m.parent_name || '');
-    setParentRelationship(m.parent_relationship || 'Father');
-    setParentPhone(m.parent_phone || '');
-    setParentEmail(m.parent_email || '');
-    setApplicantSig(m.applicant_signature || null);
-    setParentSig(m.parent_signature || null);
-    setConsentDate(m.consent_date || null);
-    setWaiverAgreed(false);
+
+    let pName = m.parent_name || '';
+    let pRel = m.parent_relationship || 'Father';
+    let pPhone = m.parent_phone || '';
+    let pEmail = m.parent_email || '';
+    let appSig = m.applicant_signature || null;
+    let parSig = m.parent_signature || null;
+    let cDate = m.consent_date || null;
+
+    // Check localStorage signature cache
+    try {
+      const raw = localStorage.getItem('palomar_member_signatures_cache_v1');
+      if (raw) {
+        const cache = JSON.parse(raw);
+        const cached = cache[m.member_id] || cache[m.id];
+        if (cached) {
+          if (!appSig && cached.applicant) appSig = cached.applicant;
+          if (!parSig && cached.parent) parSig = cached.parent;
+        }
+      }
+    } catch {}
+
+    setParentName(pName);
+    setParentRelationship(pRel);
+    setParentPhone(pPhone);
+    setParentEmail(pEmail);
+    setApplicantSig(appSig);
+    setParentSig(parSig);
+    setConsentDate(cDate);
+
+    if (appSig || parSig || pName) {
+      setWaiverAgreed(true);
+    }
     setErrors({});
+
+    // Fetch full minor parent & signature details from database if needed
+    try {
+      const { data } = await supabase
+        .from('members')
+        .select(
+          'parent_name, parent_relationship, parent_phone, parent_email, applicant_signature, parent_signature, consent_date, address, emergency_contact_name, emergency_contact_phone, relationship'
+        )
+        .or(`id.eq.${m.id},member_id.eq.${m.member_id}`)
+        .maybeSingle();
+
+      if (data) {
+        if (data.parent_name) setParentName(data.parent_name);
+        if (data.parent_relationship)
+          setParentRelationship(data.parent_relationship);
+        if (data.parent_phone) setParentPhone(data.parent_phone);
+        if (data.parent_email) setParentEmail(data.parent_email);
+        if (data.applicant_signature) setApplicantSig(data.applicant_signature);
+        if (data.parent_signature) setParentSig(data.parent_signature);
+        if (data.consent_date) setConsentDate(data.consent_date);
+        if (
+          data.applicant_signature ||
+          data.parent_signature ||
+          data.parent_name
+        ) {
+          setWaiverAgreed(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch complete member parent/signature record:', err);
+    }
+  };
+
+  const handleSelectExistingMember = (m: Member) => {
+    hydrateExistingMemberDetails(m);
   };
 
   const handleClearSelectedExistingMember = () => {
@@ -807,6 +870,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       isStaff ||
       prefillData ||
       prefillMember ||
+      importedQueueReg ||
       intakeMode === 'Import'
     )
       return;
@@ -903,7 +967,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       step === 3 ||
       intakeMode !== 'Manual' ||
       prefillData ||
-      prefillMember
+      prefillMember ||
+      importedQueueReg
     )
       return;
 
@@ -1361,6 +1426,34 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const populateRegistrationData = (reg: OnlineRegistration) => {
     setImportedQueueReg(reg);
+
+    // Auto-detect if this pre-registered applicant already exists in member records
+    const cleanPhone = reg.phone?.trim();
+    const cleanFullName = reg.full_name?.trim().toLowerCase();
+    const existingMatch = allMembers.find((m: Member) => {
+      if (
+        cleanPhone &&
+        m.phone &&
+        m.phone.trim() === cleanPhone &&
+        cleanPhone.toLowerCase() !== 'no phone'
+      ) {
+        return true;
+      }
+      return (
+        cleanFullName &&
+        m.full_name &&
+        m.full_name.trim().toLowerCase() === cleanFullName
+      );
+    });
+
+    if (existingMatch) {
+      setSelectedExistingMember(existingMatch);
+      setEnrollmentType('existing');
+    } else {
+      setSelectedExistingMember(null);
+      setEnrollmentType('new');
+    }
+
     parseAndSetFullNameFields(reg.full_name);
     setEmail(reg.email || '');
     setPhone(reg.phone);
@@ -1649,7 +1742,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   ]);
 
   const validateStep1 = () => {
-    if (enrollmentType === 'existing' && !selectedExistingMember) {
+    const isImportedTicket = Boolean(importedQueueReg || prefillData);
+    if (
+      !isImportedTicket &&
+      enrollmentType === 'existing' &&
+      !selectedExistingMember
+    ) {
       toast.error('Please search and select an existing member profile first.');
       return false;
     }
@@ -1690,9 +1788,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         newErrors.parentRelationship = 'Relationship to minor is required.';
       if (!parentPhone.trim())
         newErrors.parentPhone = 'Parent contact phone is required.';
-      if (!applicantSig)
+      if (!applicantSig && !isSignaturesLocked)
         newErrors.applicantSig = 'Applicant digital signature is required.';
-      if (!parentSig)
+      if (!parentSig && !isSignaturesLocked)
         newErrors.parentSig =
           'Parent / Guardian digital signature is required.';
 
@@ -3023,22 +3121,37 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   ) : (
                     /* MINOR GUARDIAN DETAILS & DUAL SIGNATURE PADS */
                     <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-3.5">
-                      <div className="flex items-center gap-2 text-amber-500">
-                        <ShieldAlert className="w-4 h-4 shrink-0" />
-                        <span className="text-[10px] font-black uppercase tracking-widest block">
-                          Parent / Legal Guardian & Consent (Minor 12–17)
-                        </span>
+                      <div className="flex items-center justify-between text-amber-500">
+                        <div className="flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 shrink-0" />
+                          <span className="text-[10px] font-black uppercase tracking-widest block">
+                            Parent / Legal Guardian & Consent (Minor 12–17)
+                          </span>
+                        </div>
+                        {activeMember && (parentName || applicantSig || parentSig) && (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            <Lock className="w-2.5 h-2.5" /> E-Consent on File (Locked)
+                          </span>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="md:col-span-2 space-y-1">
-                          <label className="text-xs font-bold text-(--color-text)/80 block">
-                            Parent / Legal Guardian Name{' '}
-                            <span className="text-rose-500">*</span>
+                          <label className="text-xs font-bold text-(--color-text)/80 flex items-center justify-between">
+                            <span>
+                              Parent / Legal Guardian Name{' '}
+                              <span className="text-rose-500">*</span>
+                            </span>
+                            {isParentNameLocked && (
+                              <span className="text-[9px] font-mono text-(--color-text)/50 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" /> Locked
+                              </span>
+                            )}
                           </label>
                           <input
                             type="text"
                             value={parentName}
+                            disabled={isParentNameLocked}
                             onChange={(e) => {
                               setParentName(e.target.value);
                               if (sameAsParent)
@@ -3050,21 +3163,31 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 }));
                             }}
                             className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold outline-none transition-all ${
-                              errors.parentName
-                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
-                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
+                              isParentNameLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : errors.parentName
+                                  ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                                  : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                             }`}
                             placeholder="Parent or legal guardian's full name"
                           />
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-xs font-bold text-(--color-text)/80 block">
-                            Relationship to Minor{' '}
-                            <span className="text-rose-500">*</span>
+                          <label className="text-xs font-bold text-(--color-text)/80 flex items-center justify-between">
+                            <span>
+                              Relationship to Minor{' '}
+                              <span className="text-rose-500">*</span>
+                            </span>
+                            {isParentRelationshipLocked && (
+                              <span className="text-[9px] font-mono text-(--color-text)/50 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" /> Locked
+                              </span>
+                            )}
                           </label>
                           <select
                             value={parentRelationship}
+                            disabled={isParentRelationshipLocked}
                             onChange={(e) => {
                               setParentRelationship(e.target.value);
                               if (sameAsParent) setRelationship(e.target.value);
@@ -3074,7 +3197,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentRelationship: '',
                                 }));
                             }}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) cursor-pointer"
+                            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold text-(--color-text) outline-none ${
+                              isParentRelationshipLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : 'border-(--border-color) bg-(--bg-card) cursor-pointer'
+                            }`}
                           >
                             <option value="Father">Father</option>
                             <option value="Mother">Mother</option>
@@ -3086,14 +3213,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-xs font-bold text-(--color-text)/80 block">
-                            Parent Phone Number{' '}
-                            <span className="text-rose-500">*</span>
+                          <label className="text-xs font-bold text-(--color-text)/80 flex items-center justify-between">
+                            <span>
+                              Parent Phone Number{' '}
+                              <span className="text-rose-500">*</span>
+                            </span>
+                            {isParentPhoneLocked && (
+                              <span className="text-[9px] font-mono text-(--color-text)/50 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" /> Locked
+                              </span>
+                            )}
                           </label>
                           <input
                             type="text"
                             maxLength={11}
                             value={parentPhone}
+                            disabled={isParentPhoneLocked}
                             onChange={(e) => {
                               const val = e.target.value.replace(/\D/g, '');
                               setParentPhone(val);
@@ -3105,19 +3240,28 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 }));
                             }}
                             className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold outline-none transition-all ${
-                              errors.parentPhone
-                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
-                                : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
+                              isParentPhoneLocked
+                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                                : errors.parentPhone
+                                  ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
+                                  : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                             }`}
                             placeholder="0918XXXXXXX"
                           />
                         </div>
 
                         <div className="md:col-span-2 p-2.5 bg-(--bg-card) rounded-xl border border-(--border-color) flex items-center justify-between">
-                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-(--color-text) select-none">
+                          <label
+                            className={`flex items-center gap-2 text-xs font-bold text-(--color-text) select-none ${
+                              isParentNameLocked
+                                ? 'opacity-80 cursor-default'
+                                : 'cursor-pointer'
+                            }`}
+                          >
                             <input
                               type="checkbox"
                               checked={sameAsParent}
+                              disabled={isParentNameLocked}
                               onChange={(e) => {
                                 setSameAsParent(e.target.checked);
                                 if (e.target.checked) {
@@ -3139,6 +3283,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           <SignaturePad
                             label="Applicant Signature *"
                             value={applicantSig}
+                            readOnly={isSignaturesLocked}
                             onChange={(sig) => {
                               setApplicantSig(sig);
                               if (errors.applicantSig)
@@ -3152,6 +3297,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           <SignaturePad
                             label="Parent / Guardian Signature *"
                             value={parentSig}
+                            readOnly={isSignaturesLocked}
                             onChange={(sig) => {
                               setParentSig(sig);
                               if (errors.parentSig)
@@ -4076,11 +4222,10 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               ) : null}
             </div>
             <h4 className="font-heading text-base text-slate-900 dark:text-white uppercase leading-none font-bold">
-              use camera to scan qr code
+              Use Camera or Pre-Registered Code
             </h4>
             <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-tight">
-              Scan the lobby QR code to quickly import pre-registered member
-              data.
+              Scan a pre-registered QR code or manually enter the pre-registration code to auto-fill member details and proceed with subscription enrollment.
             </p>
           </div>
         </div>

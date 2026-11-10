@@ -1,3 +1,4 @@
+// src/lib/supabase/cashService.ts
 import { supabase } from './client';
 import { logAudit } from './audit';
 import { getServerNow, getServerISOString } from '../serverTime';

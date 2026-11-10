@@ -585,7 +585,7 @@ export const Login: React.FC = () => {
         sessionStorage.getItem('palomar_greeting_shown') === 'true';
 
       if (isGreetingShown) {
-        const defaultTarget = !isAdmin ? '/sales' : '/dashboard';
+        const defaultTarget = !isAdmin ? '/cash-management' : '/dashboard';
         const target = safeFrom !== '/dashboard' ? safeFrom : defaultTarget;
         navigate(target, { replace: true });
       }
@@ -758,7 +758,7 @@ export const Login: React.FC = () => {
       const fromPath = (location.state as any)?.from?.pathname || '/dashboard';
       const safeFromPath = fromPath === '/login' ? '/dashboard' : fromPath;
       const targetRoute =
-        userProfile?.role === 'staff' ? '/sales' : safeFromPath;
+        userProfile?.role === 'staff' ? '/cash-management' : safeFromPath;
 
       const alreadyGreeted =
         sessionStorage.getItem('palomar_greeting_shown') === 'true';
@@ -1185,7 +1185,7 @@ export const Login: React.FC = () => {
         await supabase.auth.signOut();
 
         const calculatedRoute =
-          dbProfile?.role === 'staff' ? '/sales' : safeFrom;
+          dbProfile?.role === 'staff' ? '/cash-management' : safeFrom;
         const expiresAt = Date.now() + 10 * 60 * 1000;
         const cooldownUntil = Date.now() + 60 * 1000;
 
@@ -1246,7 +1246,8 @@ export const Login: React.FC = () => {
         loggedInUser?.id ?? undefined
       );
 
-      const calculatedRoute = dbProfile?.role === 'staff' ? '/sales' : safeFrom;
+      const calculatedRoute =
+        dbProfile?.role === 'staff' ? '/cash-management' : safeFrom;
 
       // ── TRIGGER SLANTED DIVIDER EXPANSION & GREETINGS MODAL ──
       dismissVirtualKeyboard();

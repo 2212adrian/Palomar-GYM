@@ -1031,8 +1031,8 @@ export const Sales: React.FC = () => {
     const sessionId = activeSession?.id || useCashSessionStore.getState().getLastKnownSessionId();
 
     const currentProcessor =
-      user?.email ||
       profile?.username ||
+      user?.email ||
       'SUPERADMIN';
 
     if (!isOnline) {

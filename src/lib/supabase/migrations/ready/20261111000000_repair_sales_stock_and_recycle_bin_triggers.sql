@@ -1,4 +1,4 @@
--- Migration: Repair Sales Stock Triggers, Recycle Bin Restoration, and Centralized Conflicts Table
+-- Migration: Repair Sales Stock Triggers, Recycle Bin Restoration, Centralized Conflicts Table, and Open Session RLS
 -- Timestamp: 20261111000000_repair_sales_stock_and_recycle_bin_triggers.sql
 
 BEGIN;
@@ -171,7 +171,7 @@ BEGIN
         s.total_amount,
         s.gcash_fee_applied,
         s.reference_number::TEXT,
-        COALESCE(s.deleted_by::TEXT, 'System') AS processed_by
+        COALESCE(s.processed_by::TEXT, 'System') AS processed_by
     FROM public.sales s
     WHERE s.deleted_at IS NULL
       AND (s.is_quarantined IS NULL OR s.is_quarantined = false)
@@ -236,5 +236,28 @@ BEGIN
         END IF;
     END IF;
 END $$;
+
+-- 9. Update Sales SELECT Policy to allow Staff to view sales in any open cash session
+DROP POLICY IF EXISTS "Allow authenticated users to view sales" ON public.sales;
+
+CREATE POLICY "Allow authenticated users to view sales" ON public.sales
+    FOR SELECT
+    TO authenticated
+    USING (
+        public.is_admin_or_superadmin()
+        OR (
+            deleted_at IS NULL 
+            AND (
+                (created_at AT TIME ZONE 'Asia/Manila')::date = (now() AT TIME ZONE 'Asia/Manila')::date
+                OR (
+                    cash_session_id IS NOT NULL 
+                    AND EXISTS (
+                        SELECT 1 FROM public.cash_sessions cs 
+                        WHERE cs.id = sales.cash_session_id AND cs.status = 'open'
+                    )
+                )
+            )
+        )
+    );
 
 COMMIT;

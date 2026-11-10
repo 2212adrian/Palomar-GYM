@@ -421,6 +421,8 @@ const getCachedRatesConfig = (): RatesConfig => {
   };
 };
 
+const profileUsernameCache = new Map<string, string>();
+
 const loadQrImage = (url: string): Promise<HTMLImageElement | null> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -483,15 +485,35 @@ export const OfficialReceipt = forwardRef<
     const [actualReceiptNo, setActualReceiptNo] = useState<string>(
       data.receiptNo || 'RCPT-PREVIEW-001'
     );
-    const [resolvedProcessor, setResolvedProcessor] = useState<string>(
-      data.processedBy && !isGenericStaff(data.processedBy) ? data.processedBy : ''
-    );
+    const [resolvedProcessor, setResolvedProcessor] = useState<string>(() => {
+      if (data.processedBy && !isGenericStaff(data.processedBy)) {
+        const trimmed = data.processedBy.trim();
+        return (
+          profileUsernameCache.get(trimmed.toLowerCase()) ||
+          profileUsernameCache.get(trimmed) ||
+          trimmed
+        );
+      }
+      return '';
+    });
 
-    const [, setIsResolvingProcessor] = useState<boolean>(false);
+    const [isResolvingProcessor, setIsResolvingProcessor] = useState<boolean>(false);
 
     useEffect(() => {
       setActualReceiptNo(data.receiptNo || 'RCPT-PREVIEW-001');
     }, [data.receiptNo]);
+
+    useEffect(() => {
+      if (data.processedBy && !isGenericStaff(data.processedBy)) {
+        const trimmed = data.processedBy.trim();
+        const cached =
+          profileUsernameCache.get(trimmed.toLowerCase()) ||
+          profileUsernameCache.get(trimmed);
+        setResolvedProcessor(cached || trimmed);
+      } else {
+        setResolvedProcessor('');
+      }
+    }, [data.processedBy]);
 
     const receiptType = useMemo(() => {
       const cType = (data.customerType || '').toLowerCase();
@@ -770,8 +792,21 @@ const itemsSubtotal = useMemo(() => {
       let isMounted = true;
 
       const resolveProcessorUser = async () => {
+        setIsResolvingProcessor(true);
+
         if (data.processedBy && !isGenericStaff(data.processedBy)) {
           const trimmed = data.processedBy.trim();
+
+          const cached =
+            profileUsernameCache.get(trimmed.toLowerCase()) ||
+            profileUsernameCache.get(trimmed);
+          if (cached) {
+            if (isMounted) {
+              setResolvedProcessor(cached);
+              setIsResolvingProcessor(false);
+            }
+            return;
+          }
 
           if (isUuid(trimmed)) {
             try {
@@ -781,17 +816,41 @@ const itemsSubtotal = useMemo(() => {
                 .eq('id', trimmed)
                 .maybeSingle();
 
-              if (isMounted) {
-                setResolvedProcessor(prof?.email || prof?.username || trimmed);
+              if (prof?.username) {
+                profileUsernameCache.set(trimmed, prof.username);
+                if (isMounted) {
+                  setResolvedProcessor(prof.username);
+                  setIsResolvingProcessor(false);
+                }
                 return;
               }
             } catch (err) {
               console.warn('Failed to resolve UUID to profile:', err);
             }
+          } else if (trimmed.includes('@')) {
+            try {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('username, email, role')
+                .ilike('email', trimmed)
+                .maybeSingle();
+
+              if (prof?.username) {
+                profileUsernameCache.set(trimmed.toLowerCase(), prof.username);
+                if (isMounted) {
+                  setResolvedProcessor(prof.username);
+                  setIsResolvingProcessor(false);
+                }
+                return;
+              }
+            } catch (err) {
+              console.warn('Failed to resolve email to profile:', err);
+            }
           }
 
           if (isMounted) {
             setResolvedProcessor(trimmed);
+            setIsResolvingProcessor(false);
           }
           return;
         }
@@ -939,6 +998,17 @@ const itemsSubtotal = useMemo(() => {
             if (processorIdentifier) {
               const targetId = String(processorIdentifier).trim();
 
+              const cached =
+                profileUsernameCache.get(targetId.toLowerCase()) ||
+                profileUsernameCache.get(targetId);
+              if (cached) {
+                if (isMounted) {
+                  setResolvedProcessor(cached);
+                  setIsResolvingProcessor(false);
+                }
+                return;
+              }
+
               if (isUuid(targetId)) {
                 const { data: prof } = await supabase
                   .from('profiles')
@@ -946,19 +1016,39 @@ const itemsSubtotal = useMemo(() => {
                   .eq('id', targetId)
                   .maybeSingle();
 
-                if (isMounted && prof?.username) {
-                  setResolvedProcessor(
-                    prof.role ? `${prof.username} (${prof.role})` : prof.username
-                  );
-                  setIsResolvingProcessor(false);
+                if (prof?.username) {
+                  profileUsernameCache.set(targetId, prof.username);
+                  if (isMounted) {
+                    setResolvedProcessor(
+                      prof.role ? `${prof.username} (${prof.role})` : prof.username
+                    );
+                    setIsResolvingProcessor(false);
+                  }
+                  return;
+                }
+              } else if (targetId.includes('@')) {
+                const { data: prof } = await supabase
+                  .from('profiles')
+                  .select('username, role')
+                  .ilike('email', targetId)
+                  .maybeSingle();
+
+                if (prof?.username) {
+                  profileUsernameCache.set(targetId.toLowerCase(), prof.username);
+                  if (isMounted) {
+                    setResolvedProcessor(
+                      prof.role ? `${prof.username} (${prof.role})` : prof.username
+                    );
+                    setIsResolvingProcessor(false);
+                  }
                   return;
                 }
               } else if (!isGenericStaff(targetId)) {
                 if (isMounted) {
                   setResolvedProcessor(targetId);
                   setIsResolvingProcessor(false);
-                  return;
                 }
+                return;
               }
             }
           } catch (err) {
@@ -993,9 +1083,12 @@ const itemsSubtotal = useMemo(() => {
       authUser,
     ]);
 
-   const processedBy = useMemo(() => {
+    const processedBy = useMemo(() => {
       const formatUsername = (val: string) => {
+        if (!val) return 'Staff';
+        if (isUuid(val)) return 'Staff';
         if (!val.includes('@')) return val;
+
         const lower = val.toLowerCase();
         if (
           lower === 'wolf.palomar@gmail.com' ||
@@ -1003,34 +1096,58 @@ const itemsSubtotal = useMemo(() => {
         ) {
           return 'SUPERADMIN';
         }
-        if (authProfile?.username) {
+
+        // Only format to authProfile username if the email matches the active session user
+        if (
+          authUser?.email &&
+          lower === authUser.email.toLowerCase() &&
+          authProfile?.username
+        ) {
           return authProfile.username;
         }
-        return val.split('@')[0];
-      };
 
-      if (data.processedBy && !isGenericStaff(data.processedBy)) {
-        return formatUsername(data.processedBy);
-      }
+        // Format clean name from email prefix without defaulting to current user
+        const prefix = val.split('@')[0];
+        return prefix
+          .replace(/[._-]+/g, ' ')
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+      };
 
       if (resolvedProcessor && !isGenericStaff(resolvedProcessor)) {
         return formatUsername(resolvedProcessor);
       }
 
-      if (authProfile?.username) {
-        return authProfile.username;
+      if (data.processedBy && !isGenericStaff(data.processedBy)) {
+        return formatUsername(data.processedBy);
       }
 
-      if (authUser?.email) {
-        return authUser.email.toLowerCase().includes('wolf.palomar')
-          ? 'SUPERADMIN'
-          : authUser.email.split('@')[0];
+      // Check if this is a live preview of an unsaved transaction
+      const searchKey = data.paymentRef || actualReceiptNo || data.receiptNo;
+      const isPreview = !searchKey || searchKey.includes('PREVIEW');
+
+      if (isPreview) {
+        if (authProfile?.username) {
+          return authProfile.username;
+        }
+        if (authUser?.email) {
+          return authUser.email.toLowerCase().includes('wolf.palomar')
+            ? 'SUPERADMIN'
+            : authUser.email.split('@')[0];
+        }
       }
 
-      return 'SUPERADMIN';
+      if (isResolvingProcessor) {
+        return '...';
+      }
+
+      return 'Staff';
     }, [
-      data.processedBy,
       resolvedProcessor,
+      data.processedBy,
+      actualReceiptNo,
+      data.receiptNo,
+      data.paymentRef,
+      isResolvingProcessor,
       authProfile,
       authUser,
     ]);

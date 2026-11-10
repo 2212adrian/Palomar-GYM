@@ -22,6 +22,16 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
       'Cash drawer integrity overhaul, admin authorization workflow for staff manual movements, transaction void reversal, 13-digit digital payment validation on exports, official reports auditing enhancements, and multi-view display modes for Logbook and Sales registers.',
     sections: [
       {
+        type: 'Member Management & Staff Workflow',
+        items: [
+          'Staff Landing Page: Routed staff logins directly to Cash Management upon entering the system.',
+          'Minor Demographics Tag: Added visual "Minor (12–17 yrs)" badges across table and mobile card views.',
+          'Parent Consent & Signatures: Fixed intake wizard to display and lock existing parent details, rendering signatures read-only with high-contrast white backgrounds.',
+          'On-Demand Signature Caching: Enabled click-to-view minor signatures with local storage caching to prevent redundant database fetches.',
+          'Search & Category Toolbar: Replaced crowded filter buttons with an integrated category dropdown and added a "Recently Subscribed" filter.',
+        ],
+      },
+      {
         type: 'Cash Management & Approval Workflow',
         items: [
           'Anti-Structuring Admin Approval Guard: Required administrator authorization for all staff-initiated manual Cash In and Cash Out movements, eliminating loopholes where staff could split transactions to bypass oversight.',
@@ -58,6 +68,7 @@ export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
           'Redesigned Compact List View on mobile with a two-tier identity row to prevent name truncation and gesture-based swipe actions.',
           'Enabled a space-efficient 2-column mobile Grid View with unified identity headers and enlarged touch hitboxes.',
           'Distinguished subscription and renewal payments in the logbook with a dedicated "Paid" badge and removed redundant collection buttons.',
+          'Introduced an interactive live update notice badge beside the app version in the sidebar across desktop, mini-sidebar, and mobile views with instant one-tap redirection to System Information.',
         ],
       },
     ],

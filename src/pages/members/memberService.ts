@@ -257,7 +257,7 @@ export const memberService = {
       const queryPromise = supabase
         .from('members')
         .select(
-          'id, member_id, full_name, phone, email, gender, birthday, address, image_url, emergency_contact_name, relationship, emergency_contact_phone, status, notes, created_at, updated_at'
+          'id, member_id, full_name, phone, email, gender, birthday, address, image_url, emergency_contact_name, relationship, emergency_contact_phone, status, notes, parent_name, parent_relationship, parent_phone, parent_email, consent_date, created_at, updated_at'
         )
         .is('deleted_at', null)
         .order('created_at', { ascending: false });

@@ -1,4 +1,3 @@
-// src/routes/index.tsx
 import React, { useState, createContext, useMemo, useRef, useEffect } from 'react';
 import {
   createBrowserRouter,
@@ -63,7 +62,8 @@ export const isAppOrPWA = (): boolean => {
  *    If Supabase redirects to "/" instead of the specific path, this intercepts
  *    the hash and routes the user to the correct setup page.
  * 2. Waits for session verification to finish so logged-in users are not bounced to /login.
- * 3. Directs authenticated users to /dashboard, or unauthenticated users to /login.
+ * 3. Directs authenticated users to their landing page (/dashboard for admin, /cash-management for staff),
+ *    or unauthenticated users to /login.
  */
 const RootEntry: React.FC = () => {
   const { user, profile, initialized, loading } = useAuthStore();
@@ -104,7 +104,7 @@ const RootEntry: React.FC = () => {
   if (user) {
     const isSuperAdminUser = isSuperAdmin(user.email);
     const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
-    const target = effectiveRole === 'staff' ? '/sales' : '/dashboard';
+    const target = effectiveRole === 'staff' ? '/cash-management' : '/dashboard';
     return <Navigate to={target} replace />;
   }
 
@@ -144,7 +144,7 @@ const LoginRouteGuard: React.FC = () => {
       const isSuperAdminUser = isSuperAdmin(user.email);
       const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
       const fromPath = (location.state as any)?.from?.pathname;
-      const defaultTarget = effectiveRole === 'staff' ? '/sales' : '/dashboard';
+      const defaultTarget = effectiveRole === 'staff' ? '/cash-management' : '/dashboard';
       const target =
         fromPath && fromPath !== '/login' ? fromPath : defaultTarget;
       return <Navigate to={target} replace />;
@@ -253,7 +253,7 @@ const HeaderLayout: React.FC = () => {
   return (
     <HeaderActionsContext.Provider value={contextValue}>
       <div className="space-y-4 sm:space-y-6 min-h-full flex flex-col min-w-0 pt-1 md:pt-2 relative text-[var(--color-text,#0f172a)] dark:text-slate-100">
-{headerInfo && (
+        {headerInfo && (
           <div className="hidden md:flex flex-wrap items-center justify-between gap-4 px-6 pt-6 pb-2">
             {/* Left Column: Title & Breadcrumbs */}
             <div className="min-w-fit shrink-0">

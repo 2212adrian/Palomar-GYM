@@ -343,6 +343,54 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     member.emergency_contact_phone || ''
   );
   const [showSignatures, setShowSignatures] = useState(false);
+  const [signaturesData, setSignaturesData] = useState<{
+    applicant: string | null;
+    parent: string | null;
+  } | null>(null);
+  const [isLoadingSignatures, setIsLoadingSignatures] = useState<boolean>(false);
+
+  // Caching helpers for digital signatures
+  const getCachedSignatures = (
+    memberId: string
+  ): { applicant: string | null; parent: string | null } | null => {
+    if (!memberId) return null;
+    try {
+      const raw = localStorage.getItem('palomar_member_signatures_cache_v1');
+      if (!raw) return null;
+      const cache = JSON.parse(raw);
+      const entry = cache[memberId] || cache[memberId.toLowerCase()];
+      if (entry) {
+        return {
+          applicant: entry.applicant ?? null,
+          parent: entry.parent ?? null,
+        };
+      }
+    } catch {}
+    return null;
+  };
+
+  const setCachedSignatures = (
+    memberId: string,
+    applicant: string | null,
+    parent: string | null
+  ) => {
+    if (!memberId) return;
+    try {
+      const raw = localStorage.getItem('palomar_member_signatures_cache_v1');
+      const cache = raw ? JSON.parse(raw) : {};
+      cache[memberId] = {
+        applicant,
+        parent,
+        cached_at: new Date().toISOString(),
+      };
+      localStorage.setItem(
+        'palomar_member_signatures_cache_v1',
+        JSON.stringify(cache)
+      );
+    } catch (e) {
+      console.warn('Failed to cache member signatures:', e);
+    }
+  };
 
   // Supabase Async Collections State
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -376,6 +424,29 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
       setCards(cardData ? [cardData] : []);
       setReceipts((rcptsData || []) as Receipt[]);
       setAttendance((attData || []) as AttendanceRecord[]);
+
+      // Ensure parent info is populated if not yet loaded
+      if (!localMember.parent_name) {
+        const { data } = await supabase
+          .from('members')
+          .select(
+            'parent_name, parent_relationship, parent_phone, parent_email, consent_date'
+          )
+          .or(`id.eq.${localMember.id},member_id.eq.${localMember.member_id}`)
+          .maybeSingle();
+
+        if (data && (data.parent_name || data.parent_phone)) {
+          setLocalMember((prev: any) => ({
+            ...prev,
+            parent_name: prev.parent_name || data.parent_name,
+            parent_relationship:
+              prev.parent_relationship || data.parent_relationship,
+            parent_phone: prev.parent_phone || data.parent_phone,
+            parent_email: prev.parent_email || data.parent_email,
+            consent_date: prev.consent_date || data.consent_date,
+          }));
+        }
+      }
     } catch (err) {
       console.error('Error loading member profile details:', err);
     }
@@ -479,6 +550,15 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     setEditEmergencyPhone(member.emergency_contact_phone || '');
     setNotes(member.notes || '');
     setIsEditing(false);
+    setShowSignatures(false);
+    setSignaturesData(
+      member.applicant_signature || (member as any).parent_signature
+        ? {
+            applicant: member.applicant_signature || null,
+            parent: (member as any).parent_signature || null,
+          }
+        : getCachedSignatures(member.member_id || member.id)
+    );
   }, [member]);
 
   useEffect(() => {
@@ -799,6 +879,118 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
     () => calculatedAge >= 12 && calculatedAge < 18,
     [calculatedAge]
   );
+
+  const handleToggleSignatures = async () => {
+    if (showSignatures) {
+      setShowSignatures(false);
+      return;
+    }
+
+    // 1. Check if already loaded in component state
+    if (signaturesData) {
+      setShowSignatures(true);
+      return;
+    }
+
+    // 2. Check local storage cache
+    const cached = getCachedSignatures(
+      localMember.member_id || localMember.id
+    );
+    if (cached) {
+      setSignaturesData(cached);
+      setShowSignatures(true);
+      return;
+    }
+
+    // 3. If offline and no local cache exists
+    if (isOffline) {
+      toast.warning(
+        'Signatures are not cached locally and cannot be fetched while offline.',
+        { toastId: 'signatures-offline' }
+      );
+      return;
+    }
+
+    // 4. On-demand fetch from Supabase
+    setIsLoadingSignatures(true);
+    try {
+      const { data, error } = await supabase
+        .from('members')
+        .select(
+          'applicant_signature, parent_signature, parent_name, parent_relationship, parent_phone, parent_email, consent_date'
+        )
+        .or(`id.eq.${localMember.id},member_id.eq.${localMember.member_id}`)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      let applicant = data?.applicant_signature || null;
+      let parent = data?.parent_signature || null;
+
+      // Fallback: check online_registrations if member row lacked signatures
+      if (!applicant && !parent && localMember.phone) {
+        const { data: regData } = await supabase
+          .from('online_registrations')
+          .select(
+            'applicant_signature, parent_signature, parent_name, parent_relationship, parent_phone, parent_email, consent_date'
+          )
+          .eq('phone', localMember.phone)
+          .order('submitted_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (
+          regData &&
+          (regData.applicant_signature || regData.parent_signature)
+        ) {
+          applicant = regData.applicant_signature || null;
+          parent = regData.parent_signature || null;
+
+          await supabase
+            .from('members')
+            .update({
+              applicant_signature: applicant,
+              parent_signature: parent,
+              parent_name: localMember.parent_name || regData.parent_name,
+              parent_phone: localMember.parent_phone || regData.parent_phone,
+              parent_relationship:
+                localMember.parent_relationship || regData.parent_relationship,
+              parent_email: localMember.parent_email || regData.parent_email,
+              consent_date: localMember.consent_date || regData.consent_date,
+            })
+            .eq('id', localMember.id);
+        }
+      }
+
+      setSignaturesData({ applicant, parent });
+      setCachedSignatures(
+        localMember.member_id || localMember.id,
+        applicant,
+        parent
+      );
+
+      if (data) {
+        setLocalMember((prev: any) => ({
+          ...prev,
+          parent_name: prev.parent_name || data.parent_name,
+          parent_relationship:
+            prev.parent_relationship || data.parent_relationship,
+          parent_phone: prev.parent_phone || data.parent_phone,
+          parent_email: prev.parent_email || data.parent_email,
+          consent_date: prev.consent_date || data.consent_date,
+          applicant_signature: applicant,
+          parent_signature: parent,
+        }));
+      }
+
+      setShowSignatures(true);
+    } catch (err: any) {
+      console.error('Failed to load member signatures:', err);
+      toast.error('Failed to load signatures: ' + (err.message || 'Network error'));
+    } finally {
+      setIsLoadingSignatures(false);
+    }
+  };
 
   const handleUpdateNotes = async () => {
     try {
@@ -2023,77 +2215,93 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
                     )}
                   </div>
 
-                  {(extMember.applicant_signature ||
-                    extMember.parent_signature) && (
-                    <div className="pt-2 border-t border-(--border-color) space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400 font-bold">
-                          Digital Signatures
-                        </span>
-<button
-                          type="button"
-                          disabled={isOffline}
-                          onClick={() => setShowSignatures(!showSignatures)}
-                          className={`px-3 py-1.5 border rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
-                            isOffline
-                              ? 'bg-slate-500/5 text-slate-400 border-(--border-color) opacity-50 cursor-not-allowed'
-                              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20 cursor-pointer'
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>
-                            {showSignatures
-                              ? 'Hide Signatures'
-                              : 'View Signatures'}
-                          </span>
-                        </button>
-                      </div>
-
-                      {showSignatures && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fade-in">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                              <FileSignature className="w-3.5 h-3.5 text-blue-500" />{' '}
-                              Applicant Signature
+{/* Digital Signatures Indicator & On-Demand Loader */}
+                  <div className="pt-2 border-t border-(--border-color) space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-bold flex items-center gap-1.5">
+                        <FileSignature className="w-3.5 h-3.5 text-blue-500" />
+                        Digital Signatures
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isLoadingSignatures}
+                        onClick={handleToggleSignatures}
+                        className={`px-3 py-1.5 border rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors ${
+                          isLoadingSignatures
+                            ? 'bg-slate-500/10 text-slate-400 border-(--border-color) cursor-wait'
+                            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/20 cursor-pointer'
+                        }`}
+                      >
+                        {isLoadingSignatures ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Loading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>
+                              {showSignatures
+                                ? 'Hide Signatures'
+                                : 'View Signatures'}
                             </span>
-                            {extMember.applicant_signature ? (
-                              <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
-                                <img
-                                  src={extMember.applicant_signature}
-                                  alt="Applicant Signature"
-                                  className="max-h-full max-w-full object-contain"
-                                />
-                              </div>
-                            ) : (
-                              <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
-                                No e-signature attached
-                              </div>
-                            )}
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
-                              <FileSignature className="w-3.5 h-3.5 text-amber-500" />{' '}
-                              Parent Signature
-                            </span>
-                            {extMember.parent_signature ? (
-                              <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
-                                <img
-                                  src={extMember.parent_signature}
-                                  alt="Parent Signature"
-                                  className="max-h-full max-w-full object-contain"
-                                />
-                              </div>
-                            ) : (
-                              <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
-                                No e-signature attached
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </button>
                     </div>
-                  )}
+
+                    {showSignatures && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-fade-in">
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                            <FileSignature className="w-3.5 h-3.5 text-blue-500" />{' '}
+                            Applicant Signature
+                          </span>
+                          {signaturesData?.applicant ||
+                          extMember.applicant_signature ? (
+                            <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
+                              <img
+                                src={
+                                  signaturesData?.applicant ||
+                                  extMember.applicant_signature
+                                }
+                                alt="Applicant Signature"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
+                              No e-signature attached
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1 flex items-center gap-1">
+                            <FileSignature className="w-3.5 h-3.5 text-amber-500" />{' '}
+                            Parent Signature
+                          </span>
+                          {signaturesData?.parent ||
+                          extMember.parent_signature ? (
+                            <div className="p-2 bg-white rounded-xl border border-slate-300 h-20 flex items-center justify-center">
+                              <img
+                                src={
+                                  signaturesData?.parent ||
+                                  extMember.parent_signature
+                                }
+                                alt="Parent Signature"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-(--bg-card) rounded-xl border border-(--border-color) text-xs text-slate-400 italic text-center">
+                              No e-signature attached
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

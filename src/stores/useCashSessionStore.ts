@@ -668,6 +668,30 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
       let cashOutTotal = 0;
       let digitalInTotal = 0;
 
+      const resolveHandlerDisplayName = (raw: string | null | undefined): string => {
+        if (!raw) return 'Staff';
+        const trimmed = String(raw).trim();
+        if (trimmed.includes('@')) {
+          const emailLower = trimmed.toLowerCase();
+          const auth = useAuthStore.getState();
+          if (
+            auth.user?.email &&
+            auth.user.email.toLowerCase() === emailLower &&
+            auth.profile?.username
+          ) {
+            return auth.profile.username;
+          }
+          if (
+            emailLower === 'wolf.palomar@gmail.com' ||
+            emailLower === 'wolfpalomargym@gmail.com'
+          ) {
+            return 'SUPERADMIN';
+          }
+          return trimmed.split('@')[0];
+        }
+        return trimmed;
+      };
+
       const mappedManualTxs: UnifiedActivityItem[] = rawManualTxs.map((t: any) => {
         const amt = Number(t.amount || 0);
         const txType = String(t.type || '').trim().toLowerCase();
@@ -703,7 +727,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType,
           reason: t.reason || 'Drawer Movement',
           reference_number: t.reference_number || null,
-          performed_by_name: t.performed_by_name || 'Staff',
+          performed_by_name: resolveHandlerDisplayName(t.performed_by_name),
           amount: amt,
           created_at: t.created_at,
           status: txStatus as any,
@@ -754,7 +778,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             ? s.items.map((i: any) => `${i.productName || i.product_name} (${i.quantity || 1}x)`).join(', ')
             : s.product_name || 'Product Sale';
 
-        const handlerName =
+        const rawHandler =
           s.processed_by ||
           s.processedBy ||
           s.cashier ||
@@ -770,7 +794,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType: isCash ? 'POS SALE' : 'POS DIGITAL',
           reason: itemsDesc,
           reference_number: s.reference_number || (s.receipt_no ? `Receipt: ${s.receipt_no}` : null),
-          performed_by_name: handlerName,
+          performed_by_name: resolveHandlerDisplayName(rawHandler),
           amount: amt,
           created_at: s.created_at,
         };
@@ -826,7 +850,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType = isCash ? 'RENEWAL (CASH)' : 'RENEWAL (DIGITAL)';
         }
 
-        const handlerName =
+        const rawHandler =
           r.processed_by ||
           r.processedBy ||
           r.staff_name ||
@@ -841,7 +865,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
           displayType,
           reason: `${r.customer_name || 'Member'} - ${r.item_description || 'Subscription Plan'}`,
           reference_number: r.gcash_ref_no || null,
-          performed_by_name: handlerName,
+          performed_by_name: resolveHandlerDisplayName(rawHandler),
           amount: amt,
           created_at: r.created_at,
         };
@@ -907,26 +931,6 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             session.opened_by_name ||
             'Staff';
 
-          let handlerName = rawHandler;
-          if (rawHandler.includes('@')) {
-            const emailLower = rawHandler.toLowerCase();
-            const auth = useAuthStore.getState();
-            if (
-              auth.user?.email &&
-              auth.user.email.toLowerCase() === emailLower &&
-              auth.profile?.username
-            ) {
-              handlerName = auth.profile.username;
-            } else if (
-              emailLower === 'wolf.palomar@gmail.com' ||
-              emailLower === 'wolfpalomargym@gmail.com'
-            ) {
-              handlerName = 'SUPERADMIN';
-            } else {
-              handlerName = rawHandler.split('@')[0];
-            }
-          }
-
           mappedAttendanceTxs.push({
             id: String(a.id),
             source: 'logbook',
@@ -934,7 +938,7 @@ export const useCashSessionStore = create<CashSessionStoreState>((set, get) => (
             displayType: isCash ? 'CHECK-IN (CASH)' : 'CHECK-IN (GCASH)',
             reason: `${a.customer_name || 'Guest'} (${a.customer_type || 'Walk-In'} - ${a.plan_name || 'Pass'})`,
             reference_number: a.gcash_ref_no || a.receipt_number || null,
-            performed_by_name: handlerName,
+            performed_by_name: resolveHandlerDisplayName(rawHandler),
             amount: amt,
             created_at: a.check_in_time || a.created_at,
           });
