@@ -17,7 +17,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  ShieldAlert,
   ShieldCheck,
   CheckCircle2,
   Sun,
@@ -1848,7 +1847,7 @@ export const Login: React.FC = () => {
         <button
           type="submit"
           disabled={isSubmitting || isLoggingIn}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
             <span className="flex items-center gap-2">
@@ -1884,9 +1883,9 @@ export const Login: React.FC = () => {
       </form>
 
       <div className="space-y-3 pt-3 relative z-20 font-body">
-        <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left shadow-xs">
-          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
-            <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-red-500 shrink-0" />
+        <div className="p-3 bg-slate-50/90 dark:bg-[#161a22] border border-slate-200/80 dark:border-white/10 backdrop-blur-md rounded-xl text-left shadow-xs">
+          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-[#123c73] dark:text-white tracking-wider mb-1 uppercase select-none">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
             <span>ACCESS PROTOCOL</span>
           </div>
           <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
@@ -1901,7 +1900,7 @@ export const Login: React.FC = () => {
               setIsFlipped(true);
               resetRecovery();
             }}
-            className="hover:text-blue-600 dark:hover:text-red-500 hover:underline transition-colors cursor-pointer pointer-events-auto"
+            className="hover:text-blue-600 dark:hover:text-white hover:underline transition-colors cursor-pointer pointer-events-auto"
           >
             Forgot Password?
           </button>
@@ -1984,7 +1983,7 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isRecoverySubmitting}
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isRecoverySubmitting
                   ? 'DISPATCHING RECOVERY CODE...'
@@ -2102,7 +2101,7 @@ export const Login: React.FC = () => {
                   recoveryCode.join('').length !== 6 ||
                   !recoveryNewPassword
                 }
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
               >
                 {isVerifyingRecovery ? (
                   <>
@@ -2133,7 +2132,7 @@ export const Login: React.FC = () => {
                     }
                   }}
                   disabled={isRecoverySubmitting}
-                  className="font-semibold text-blue-600 dark:text-red-400 hover:underline cursor-pointer disabled:opacity-50"
+                  className="font-semibold text-blue-600 dark:text-white hover:underline cursor-pointer disabled:opacity-50"
                 >
                   Resend Code
                 </button>
@@ -2144,9 +2143,9 @@ export const Login: React.FC = () => {
       </div>
 
       <div className="space-y-4 font-body mt-4">
-        <div className="p-3 bg-blue-50/70 dark:bg-red-950/30 border border-blue-500/20 dark:border-red-600/30 backdrop-blur-md rounded-xl text-left transition-colors duration-500">
-          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-blue-600 dark:text-red-500 tracking-wider mb-1 uppercase select-none">
-            <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-red-500 shrink-0" />
+        <div className="p-3 bg-slate-50/90 dark:bg-[#161a22] border border-slate-200/80 dark:border-white/10 backdrop-blur-md rounded-xl text-left transition-colors duration-500">
+          <div className="flex items-center gap-1.5 text-[10px] font-heading font-bold text-[#123c73] dark:text-white tracking-wider mb-1 uppercase select-none">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
             <span>RECOVERY PROTOCOL</span>
           </div>
           <p className="text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
@@ -2161,7 +2160,7 @@ export const Login: React.FC = () => {
           className="w-full text-center text-xs text-slate-500 dark:text-slate-400 cursor-pointer font-body font-medium group transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99] hover:text-slate-800 dark:hover:text-slate-200 select-none pointer-events-auto"
         >
           Already have credentials?{' '}
-          <span className="text-blue-600 dark:text-red-400 font-bold underline decoration-transparent group-hover:decoration-blue-600 dark:group-hover:decoration-red-400 underline-offset-4 transition-all duration-300">
+          <span className="text-blue-600 dark:text-white font-bold underline decoration-transparent group-hover:decoration-blue-600 dark:group-hover:decoration-white underline-offset-4 transition-all duration-300">
             Back to Login
           </span>
         </button>
@@ -2211,7 +2210,7 @@ export const Login: React.FC = () => {
               type="button"
               onClick={handleResend2FACode}
               disabled={isResending2FA}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none"
+              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none"
             >
               {isResending2FA ? (
                 <>
@@ -2263,7 +2262,7 @@ export const Login: React.FC = () => {
                   onKeyDown={(e) => handleDigitKeyDown(idx, e)}
                   onPaste={idx === 0 ? handleDigitPaste : undefined}
                   disabled={isVerifying2FA}
-                  className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+                  className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-500/80 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
                   autoFocus={idx === 0}
                 />
               ))}
@@ -2284,7 +2283,7 @@ export const Login: React.FC = () => {
                 type="button"
                 onClick={handleResend2FACode}
                 disabled={twoFactorResendCooldown > 0 || isResending2FA}
-                className="flex items-center gap-1 font-semibold text-blue-600 dark:text-red-400 hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
+                className="flex items-center gap-1 font-semibold text-blue-600 dark:text-white hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
               >
                 <RefreshCw
                   className={`w-3 h-3 ${isResending2FA ? 'animate-spin' : ''}`}
@@ -2301,7 +2300,7 @@ export const Login: React.FC = () => {
               type="button"
               onClick={() => verify2FACode()}
               disabled={isVerifying2FA || twoFactorCode.join('').length !== 6}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/20 dark:hover:shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed select-none"
+              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none"
             >
               {isVerifying2FA ? (
                 <>
@@ -2833,7 +2832,7 @@ export const Login: React.FC = () => {
                   <button
                     type="button"
                     onClick={closeGreetingAndProceed}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg hover:shadow-blue-500/25 dark:hover:shadow-red-600/30 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
+                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500"
                   >
                     <span>ENTER SYSTEM</span>
                     <ArrowRight className="w-4 h-4" />

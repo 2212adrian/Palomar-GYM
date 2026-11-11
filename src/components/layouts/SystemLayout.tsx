@@ -154,28 +154,6 @@ export const SystemLayout: React.FC = () => {
     }
   }, [user?.id, profile?.status]);
 
-  // Global live staff presence tracking across all console pages
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const presenceChannel = supabase.channel('gym-staff-presence', {
-      config: { presence: { key: user.id } },
-    });
-
-    presenceChannel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED' && user?.id) {
-        await presenceChannel.track({
-          userId: user.id,
-          onlineAt: new Date().toISOString(),
-        });
-      }
-    });
-
-    return () => {
-      supabase.removeChannel(presenceChannel);
-    };
-  }, [user?.id]);
-
   useEffect(() => {
     loadActiveSession();
     if (isAdmin) {

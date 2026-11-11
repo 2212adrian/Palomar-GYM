@@ -23,6 +23,10 @@ import {
   TrendingUp,
   Wallet,
   X,
+  ChevronDown,
+  ChevronUp,
+  Banknote,
+  Coins,
 } from 'lucide-react';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { downloadExportFile } from '../../../utils/fileDownloader';
@@ -43,12 +47,18 @@ const formatPaymentWithRef = (
   paymentMethod: string | null | undefined,
   refNo: string | null | undefined
 ): string => {
-  const method = paymentMethod || 'Cash';
-  const isGcash = method.toLowerCase().includes('gcash');
-  if (isGcash && refNo && String(refNo).trim()) {
-    return `GCash (Ref: ${String(refNo).trim()})`;
+  const cleanRef = refNo ? String(refNo).trim() : '';
+  const method = (paymentMethod || '').trim();
+  const isGcash =
+    method.toLowerCase().includes('gcash') ||
+    Boolean(cleanRef && /^\d{10,15}$/.test(cleanRef));
+  if (cleanRef) {
+    return `GCash (Ref: ${cleanRef})`;
   }
-  return method;
+  if (isGcash) {
+    return 'GCash';
+  }
+  return method || 'Cash';
 };
 
 // Helper to format denomination counts into a clean readable string
@@ -124,6 +134,62 @@ const getSessionDenominations = (s: any): string => {
   return '-';
 };
 
+interface DenomItem {
+  label: string;
+  count: number;
+  subtotal: number;
+  isCoin: boolean;
+}
+
+const parseDenominationItems = (breakdown: any): DenomItem[] => {
+  if (!breakdown) return [];
+  let data = breakdown;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  if (!data || typeof data !== 'object') return [];
+
+  const items: DenomItem[] = [];
+
+  if (Array.isArray(data)) {
+    data.forEach((it: any) => {
+      const denom = Number(it.denomination ?? it.denom ?? it.value ?? it.bill);
+      const count = Number((it.count ?? it.qty ?? it.quantity) || 0);
+      if (!isNaN(denom) && count > 0) {
+        items.push({
+          label: `₱${denom.toLocaleString('en-US')}`,
+          count,
+          subtotal: denom * count,
+          isCoin: denom < 20 || Boolean(it.isCoin),
+        });
+      }
+    });
+  } else {
+    Object.entries(data).forEach(([key, val]) => {
+      const numericVal = parseFloat(key.replace(/[^0-9.]/g, ''));
+      const count = Number(val || 0);
+      if (!isNaN(numericVal) && count > 0) {
+        items.push({
+          label: `₱${numericVal.toLocaleString('en-US')}`,
+          count,
+          subtotal: numericVal * count,
+          isCoin: numericVal < 20 || key.toLowerCase().includes('coin'),
+        });
+      }
+    });
+  }
+
+  return items.sort((a, b) => {
+    const numA = parseFloat(a.label.replace(/[^0-9.]/g, ''));
+    const numB = parseFloat(b.label.replace(/[^0-9.]/g, ''));
+    return numB - numA;
+  });
+};
+
 export type ReportCategoryType =
   | 'bir'
   | 'sales'
@@ -180,6 +246,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   );
   const [isExporting, setIsExporting] = useState(false);
   const [isLoadingLive, setIsLoadingLive] = useState(false);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   // VAT configuration from system rates
   const [vatPercentage, setVatPercentage] = useState<number>(12);
@@ -751,6 +818,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             if (ref) {
               entry.gcash_ref_no = ref;
             }
+          } else if (ref && !entry.gcash_ref_no) {
+            entry.gcash_ref_no = ref;
+            if (a.payment_method) entry.payment_method = a.payment_method;
           }
           if (
             a.customer_type === 'Existing Member' ||
@@ -1119,11 +1189,15 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   };
 
   // Safe string sanitizer for PDF StandardFonts (WinAnsi encoding)
-  // Replaces Philippine Peso symbol ₱ with PHP and strips non-WinAnsi characters
+  // Replaces Philippine Peso symbol ₱ (\u20B1) with PHP and strips non-WinAnsi characters
   const safePdfText = (val: string | number | null | undefined): string => {
     if (val === null || val === undefined) return '';
     return String(val)
-      .replace(/₱/g, 'PHP ')
+      .replace(/[\u20B1₱]/g, 'PHP ')
+      .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, '-')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
       .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
       .trim();
   };
@@ -1782,7 +1856,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
 
       // Footer
       page.drawText(
-        'Palomar Gym System 2.0 • Official Compliance & Audit Export',
+        safePdfText('Palomar Gym System 2.0 - Official Compliance & Audit Export'),
         {
           x: 300,
           y: 15,
@@ -1995,6 +2069,8 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                     {/* CASH REGISTER SESSIONS PREVIEW (NEW) */}
                     {reportType === 'cash' &&
                       liveCashData.slice(0, 5).map((row, idx) => {
+                        const rowKey = row.session_number || row.id || `cash-${idx}`;
+                        const isExpanded = expandedSessionId === rowKey;
                         const isClosed = row.status === 'closed' || Boolean(row.closed_at);
                         const disc =
                           row.discrepancy !== null && row.discrepancy !== undefined
@@ -2023,58 +2099,155 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                             ? `₱${Number(row.closing_actual_cash).toFixed(2)}`
                             : '-';
 
-                        const denoms = getSessionDenominations(row);
+                        const closingBreakdown =
+                          row.closing_breakdown ??
+                          row.closing_denominations ??
+                          row.counted_breakdown ??
+                          row.denominations_breakdown ??
+                          row.denominations ??
+                          row.cash_breakdown;
+                        const openingBreakdown =
+                          row.opening_breakdown ??
+                          row.opening_denominations ??
+                          row.float_breakdown;
+
+                        const denomItems = parseDenominationItems(closingBreakdown);
+                        const floatItems = parseDenominationItems(openingBreakdown);
+
                         return (
-                          <tr
-                            key={idx}
-                            className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
-                          >
-                            <td className="p-2.5 font-mono text-xs font-bold text-[#123c73] dark:text-blue-400">
-                              {row.session_number}
-                            </td>
-                            <td className="p-2.5 whitespace-nowrap text-slate-500">
-                              {String(row.opened_at || '').slice(0, 16)}
-                            </td>
-                            <td className="p-2.5 whitespace-nowrap text-slate-500">
-                              {row.closed_at
-                                ? String(row.closed_at).slice(0, 16)
-                                : 'In Progress'}
-                            </td>
-                            <td className="p-2.5 font-medium">
-                              {row.opened_by_name || '-'}
-                            </td>
-                            <td className="p-2.5 font-medium">
-                              {row.closed_by_name || '-'}
-                            </td>
-                            <td className="p-2.5 font-mono">
-                              ₱{Number(row.opening_float || 0).toFixed(2)}
-                            </td>
-                            <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300">
-                              ₱{expectedVal}
-                            </td>
-                            <td className="p-2.5 font-bold">
-                              {countedVal}
-                            </td>
-                            <td
-                              className={`p-2.5 font-bold ${
-                                !isClosed
-                                  ? 'text-slate-500 dark:text-slate-400'
-                                  : disc === 0
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : disc !== null && disc > 0
-                                      ? 'text-amber-600 dark:text-amber-400'
-                                      : 'text-rose-600 dark:text-rose-400'
+                          <React.Fragment key={rowKey}>
+                            <tr
+                              className={`hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors ${
+                                isExpanded ? 'bg-slate-50/80 dark:bg-zinc-900/80' : ''
                               }`}
                             >
-                              {discLabel}
-                            </td>
-                            <td
-                              className="p-2.5 font-mono text-[10px] text-slate-600 dark:text-slate-400 max-w-[200px] truncate"
-                              title={denoms}
-                            >
-                              {denoms}
-                            </td>
-                          </tr>
+                              <td className="p-2.5 font-mono text-xs font-bold text-[#123c73] dark:text-blue-400">
+                                {row.session_number}
+                              </td>
+                              <td className="p-2.5 whitespace-nowrap text-slate-500">
+                                {String(row.opened_at || '').slice(0, 16)}
+                              </td>
+                              <td className="p-2.5 whitespace-nowrap text-slate-500">
+                                {row.closed_at
+                                  ? String(row.closed_at).slice(0, 16)
+                                  : 'In Progress'}
+                              </td>
+                              <td className="p-2.5 font-medium">
+                                {row.opened_by_name || '-'}
+                              </td>
+                              <td className="p-2.5 font-medium">
+                                {row.closed_by_name || '-'}
+                              </td>
+                              <td className="p-2.5 font-mono">
+                                ₱{Number(row.opening_float || 0).toFixed(2)}
+                              </td>
+                              <td className="p-2.5 font-mono text-slate-600 dark:text-slate-300">
+                                ₱{expectedVal}
+                              </td>
+                              <td className="p-2.5 font-bold">
+                                {countedVal}
+                              </td>
+                              <td
+                                className={`p-2.5 font-bold ${
+                                  !isClosed
+                                    ? 'text-slate-500 dark:text-slate-400'
+                                    : disc === 0
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : disc !== null && disc > 0
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                              >
+                                {discLabel}
+                              </td>
+                              <td className="p-2.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedSessionId(isExpanded ? null : rowKey)
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-zinc-700 transition-all cursor-pointer shadow-2xs active:scale-95"
+                                  title="Toggle physical denomination breakdown drawer"
+                                >
+                                  <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span>{denomItems.length > 0 ? `${denomItems.length} Denoms` : 'Details'}</span>
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-3 h-3 text-slate-400" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="bg-slate-50/95 dark:bg-zinc-900/95 border-b border-slate-200 dark:border-zinc-800 animate-fadeIn">
+                                <td colSpan={10} className="p-3 text-left">
+                                  <div className="bg-white dark:bg-zinc-950 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 space-y-2.5 shadow-xs">
+                                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-2 flex-wrap gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+                                        <span className="font-heading font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                                          Drawer Denomination Breakdown • Session {row.session_number}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                                        Counted: {countedVal}
+                                      </span>
+                                    </div>
+
+                                    {denomItems.length > 0 ? (
+                                      <div>
+                                        <span className="text-[9px] uppercase font-heading font-bold text-slate-400 dark:text-slate-500 tracking-wider block mb-1.5">
+                                          Counted Banknotes & Coins:
+                                        </span>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {denomItems.map((item, dIdx) => (
+                                            <div
+                                              key={dIdx}
+                                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[10px] font-mono shadow-2xs"
+                                            >
+                                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                {item.label}
+                                              </span>
+                                              <span className="text-slate-400">×</span>
+                                              <span className="font-extrabold text-blue-600 dark:text-blue-400">
+                                                {item.count}
+                                              </span>
+                                              <span className="text-slate-400 text-[9px]">
+                                                (₱{item.subtotal.toFixed(2)})
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10px] text-slate-500 italic py-1">
+                                        No itemized physical cash denomination breakdown recorded for this session.
+                                      </p>
+                                    )}
+
+                                    {floatItems.length > 0 && (
+                                      <div className="pt-2 border-t border-slate-100 dark:border-zinc-800">
+                                        <span className="text-[9px] uppercase font-heading font-bold text-slate-400 dark:text-slate-500 tracking-wider block mb-1">
+                                          Opening Float Breakdown:
+                                        </span>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {floatItems.map((item, fIdx) => (
+                                            <div
+                                              key={fIdx}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-[9.5px] font-mono text-slate-600 dark:text-slate-300"
+                                            >
+                                              <span>{item.label} × {item.count}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
 

@@ -265,9 +265,9 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
                 onClick={() => setIsFlipped(true)}
                 aria-label="Flip to Revenue Goals"
                 title="View Revenue Goals Card"
-                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#123c73] dark:bg-neutral-800 dark:hover:bg-[#bf0202] text-slate-700 hover:text-white dark:text-slate-200 dark:hover:text-white border border-slate-200/80 dark:border-white/10 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95 group shrink-0"
+                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#123c73] dark:bg-[#161a22] dark:hover:bg-[#1f2430] text-slate-700 hover:text-white dark:text-white border border-slate-200/80 dark:border-red-600/80 dark:hover:border-red-500 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95 group shrink-0"
               >
-                <Target className="w-3.5 h-3.5 text-[#123c73] group-hover:text-white dark:text-red-400 transition-transform group-hover:rotate-45" />
+                <Target className="w-3.5 h-3.5 text-[#123c73] group-hover:text-white dark:text-white transition-transform group-hover:rotate-45" />
                 <span className="text-[10px] font-sans font-black tracking-wider uppercase">
                   GOALS
                 </span>
