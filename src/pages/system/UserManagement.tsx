@@ -122,7 +122,7 @@ export const UserManagement: React.FC = () => {
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
   // Online presence and quick filter state
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [onlineUserIds, ] = useState<Set<string>>(new Set());
   const [activeFilter, setActiveFilter] = useState<
     'all' | 'admin' | 'staff' | 'online' | 'offline' | 'pending' | 'disabled'
   >('all');
