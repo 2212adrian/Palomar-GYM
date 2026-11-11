@@ -73,6 +73,8 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard } from '../../components/ui/TimelineCard';
 import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { SideNavTab } from '../../components/ui/SideNavTab';
+import { useBeyondTheDay } from '../../hooks/useBeyondTheDay';
+import { BeyondTheDayIndicator } from '../../components/ui/BeyondTheDayIndicator';
 
 // ─── DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT ───
 const DynamicBanknoteIcon: React.FC<{
@@ -370,6 +372,15 @@ export const Sales: React.FC = () => {
     () => format(selectedDate, 'yyyy-MM-dd'),
     [selectedDate]
   );
+
+  const beyondTheDay = useBeyondTheDay({
+    currentWeekStart,
+    selectedDayIndex,
+    onWeekStartChange: setCurrentWeekStart,
+    onDayIndexChange: setSelectedDayIndex,
+    role,
+    enabled: activeView === 'register',
+  });
 
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'All' | 'Cash' | 'GCash'>(
@@ -1697,6 +1708,9 @@ export const Sales: React.FC = () => {
         >
           {/* STAFF & ADMIN INDICATION GUIDE */}
           <IndicationGuideBanner topicId="sales" />
+
+          {/* BEYOND THE DAY SCROLL CONTROLLER & INDICATOR */}
+          <BeyondTheDayIndicator {...beyondTheDay} />
 
           <TimelineBar
             currentWeekStart={currentWeekStart}

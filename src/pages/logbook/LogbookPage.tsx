@@ -69,6 +69,8 @@ import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
 import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { MembersList } from '../members/MembersList';
+import { useBeyondTheDay } from '../../hooks/useBeyondTheDay';
+import { BeyondTheDayIndicator } from '../../components/ui/BeyondTheDayIndicator';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import {
@@ -606,6 +608,19 @@ export const LogbookPage: React.FC = () => {
     [selectedDate]
   );
 
+  const activePage = useMemo<'logbook' | 'members'>(() => {
+    return location.pathname.startsWith('/members') ? 'members' : 'logbook';
+  }, [location.pathname]);
+
+  const beyondTheDay = useBeyondTheDay({
+    currentWeekStart,
+    selectedDayIndex,
+    onWeekStartChange: setCurrentWeekStart,
+    onDayIndexChange: setSelectedDayIndex,
+    role,
+    enabled: activePage === 'logbook',
+  });
+  
   // Animation & Consolidated Multi-Stacked Pending Delete states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
@@ -615,10 +630,6 @@ export const LogbookPage: React.FC = () => {
 
   // Pre-fill state passed from Scanner overlay
   const [initialSearchVal, setInitialSearchVal] = useState<string>('');
-
-  const activePage = useMemo<'logbook' | 'members'>(() => {
-    return location.pathname.startsWith('/members') ? 'members' : 'logbook';
-  }, [location.pathname]);
 
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState<
@@ -2732,6 +2743,9 @@ export const LogbookPage: React.FC = () => {
         >
           {/* STAFF & ADMIN INDICATION GUIDE */}
           <IndicationGuideBanner topicId="logbook" />
+
+          {/* BEYOND THE DAY SCROLL CONTROLLER & INDICATOR */}
+          <BeyondTheDayIndicator {...beyondTheDay} />
 
           <TimelineBar
             currentWeekStart={currentWeekStart}
