@@ -24,6 +24,7 @@ interface AuthState {
   loading: boolean;
   initialized: boolean;
   error: string | null;
+  onlineUserIds: Set<string>;
   checkSession: () => Promise<void>;
   claimActiveSession: (userIdOverride?: string) => Promise<string | null>;
   validateSession: () => Promise<boolean>;
@@ -176,6 +177,7 @@ let activeAvatarObjectUrl: string | null = null;
 let activeProfileChannel: any = null;
 let activeProfileUserId: string | null = null; // Track currently subscribed User ID to prevent duplicate binds
 let globalPresenceChannel: any = null;
+let currentPresenceUserId: string | null = null;
 let isClaimingSession = false;
 let isForcingLogout = false;
 let isLoginInProgress = false;
@@ -189,23 +191,53 @@ const syncGlobalStaffPresence = (userId: string | null | undefined) => {
       supabase.removeChannel(globalPresenceChannel);
       globalPresenceChannel = null;
     }
+    currentPresenceUserId = null;
+    useAuthStore.setState({ onlineUserIds: new Set<string>() });
     return;
   }
 
-  if (globalPresenceChannel) return;
+  if (globalPresenceChannel && currentPresenceUserId === userId) return;
+
+  if (globalPresenceChannel) {
+    supabase.removeChannel(globalPresenceChannel);
+    globalPresenceChannel = null;
+  }
+
+  currentPresenceUserId = userId;
 
   globalPresenceChannel = supabase.channel('gym-staff-presence', {
     config: { presence: { key: userId } },
   });
 
-  globalPresenceChannel.subscribe(async (status: string) => {
-    if (status === 'SUBSCRIBED' && userId) {
-      await globalPresenceChannel.track({
-        userId,
-        onlineAt: new Date().toISOString(),
-      });
-    }
-  });
+  const updateOnlineSet = () => {
+    if (!globalPresenceChannel) return;
+    const state = globalPresenceChannel.presenceState();
+    const onlineSet = new Set<string>();
+    Object.keys(state).forEach((k) => {
+      onlineSet.add(k);
+      const presences = (state as any)[k];
+      if (Array.isArray(presences)) {
+        presences.forEach((p: any) => {
+          if (p?.userId) onlineSet.add(p.userId);
+        });
+      }
+    });
+    if (userId) onlineSet.add(userId);
+    useAuthStore.setState({ onlineUserIds: onlineSet });
+  };
+
+  globalPresenceChannel
+    .on('presence', { event: 'sync' }, updateOnlineSet)
+    .on('presence', { event: 'join' }, updateOnlineSet)
+    .on('presence', { event: 'leave' }, updateOnlineSet)
+    .subscribe(async (status: string) => {
+      if (status === 'SUBSCRIBED' && userId) {
+        await globalPresenceChannel.track({
+          userId,
+          onlineAt: new Date().toISOString(),
+        });
+      }
+    });
 };
 
 const getCachedProfile = (): UserProfile | null => {
@@ -224,6 +256,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
   initialized: false,
   error: null,
+  onlineUserIds: new Set<string>(),
 
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
@@ -312,6 +345,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         user: null,
         profile: null,
+        onlineUserIds: new Set<string>(),
         loading: false,
         initialized: true,
         error: reasonMessage,
@@ -577,6 +611,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             set({
               user: null,
               profile: null,
+              onlineUserIds: new Set<string>(),
               loading: false,
               initialized: true,
               error: 'Account disabled. Please contact an administrator to re-enable your account.',
@@ -764,7 +799,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           activeProfileUserId = null;
           inMemoryProfileCache = null;
           await clearSensitiveAppData();
-          set({ user: null, profile: null, loading: false, initialized: true });
+          set({
+            user: null,
+            profile: null,
+            onlineUserIds: new Set<string>(),
+            loading: false,
+            initialized: true,
+          });
         }
       } catch (err: any) {
         const isOfflineNetwork = typeof navigator !== 'undefined' && !navigator.onLine;
@@ -775,6 +816,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           user: null,
           profile: isOfflineNetwork ? getCachedProfile() : null,
+          onlineUserIds: new Set<string>(),
           loading: false,
           initialized: true,
           error: isOfflineNetwork ? null : err.message,
@@ -836,7 +878,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     activeProfileUserId = null;
     await clearSensitiveAppData();
-    set({ user: null, profile: null, loading: false, error: null });
+    set({
+      user: null,
+      profile: null,
+      onlineUserIds: new Set<string>(),
+      loading: false,
+      error: null,
+    });
   },
 }));
 
