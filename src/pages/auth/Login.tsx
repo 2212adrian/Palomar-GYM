@@ -1813,7 +1813,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('agreement');
                 }}
-                className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
               >
                 User Agreement
               </button>
@@ -1824,7 +1824,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('terms');
                 }}
-                className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
               >
                 Terms &amp; Conditions
               </button>{' '}
@@ -1835,7 +1835,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('privacy');
                 }}
-                className="text-blue-600 dark:text-red-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
               >
                 Privacy Policy
               </button>
@@ -1847,7 +1847,7 @@ export const Login: React.FC = () => {
         <button
           type="submit"
           disabled={isSubmitting || isLoggingIn}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
             <span className="flex items-center gap-2">
@@ -1983,7 +1983,7 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isRecoverySubmitting}
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isRecoverySubmitting
                   ? 'DISPATCHING RECOVERY CODE...'
@@ -2832,7 +2832,7 @@ export const Login: React.FC = () => {
                   <button
                     type="button"
                     onClick={closeGreetingAndProceed}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500"
+                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400"
                   >
                     <span>ENTER SYSTEM</span>
                     <ArrowRight className="w-4 h-4" />
