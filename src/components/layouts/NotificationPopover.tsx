@@ -239,7 +239,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
             {/* TOP HEADER */}
             <div className="p-3 sm:p-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/90 dark:bg-zinc-900/80 backdrop-blur-md shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-blue-600/10 dark:bg-red-500/10 text-blue-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-blue-600/10 dark:bg-white/10 text-blue-600 dark:text-white flex items-center justify-center shrink-0">
                   <Bell className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
@@ -266,7 +266,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                   <button
                     type="button"
                     onClick={() => markAllAsRead()}
-                    className="text-[9.5px] font-heading font-bold text-blue-600 dark:text-red-400 uppercase hover:underline cursor-pointer px-1.5 py-1 rounded transition-colors"
+                    className="text-[9.5px] font-heading font-bold text-blue-600 dark:text-white uppercase hover:underline cursor-pointer px-1.5 py-1 rounded transition-colors"
                   >
                     Clear All
                   </button>
@@ -717,7 +717,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                 <button
                   type="button"
                   onClick={() => requestBrowserPermission()}
-                  className="text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider flex items-center gap-1.5 hover:underline cursor-pointer"
+                  className="text-blue-600 dark:text-white font-bold uppercase tracking-wider flex items-center gap-1.5 hover:underline cursor-pointer"
                 >
                   <BellRing className="w-3.5 h-3.5" />
                   <span>Enable Push</span>

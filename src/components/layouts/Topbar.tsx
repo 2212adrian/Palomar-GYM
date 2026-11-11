@@ -1296,9 +1296,9 @@ export const Topbar: React.FC<TopbarProps> = ({
               aria-label="Toggle notifications"
               className={`relative h-9 w-9 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer shadow-xs active:scale-95 ${
                 isNotificationOpen
-                  ? 'bg-blue-600/10 border-blue-500 text-blue-600 dark:bg-red-500/20 dark:border-red-500 dark:text-red-400'
+                  ? 'bg-blue-600/10 border-blue-500 text-blue-600 dark:bg-white/10 dark:border-white/20 dark:text-white'
                   : unreadBadgeCount > 0
-                    ? 'bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-red-400 border-red-500/30'
+                    ? 'bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-white border-red-500/30'
                     : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-700/80'
               }`}
             >

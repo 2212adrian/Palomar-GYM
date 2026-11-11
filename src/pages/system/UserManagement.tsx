@@ -121,8 +121,8 @@ export const UserManagement: React.FC = () => {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Online presence from centralized authStore
-  const onlineUserIds = useAuthStore((state) => state.onlineUserIds);
+  // Online presence and quick filter state
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [activeFilter, setActiveFilter] = useState<
     'all' | 'admin' | 'staff' | 'online' | 'offline' | 'pending' | 'disabled'
   >('all');
@@ -189,27 +189,57 @@ export const UserManagement: React.FC = () => {
       )
       .subscribe();
 
+    // Live staff presence tracking on shared global channel
+    const presenceChannel = supabase.channel('gym-staff-presence', {
+      config: { presence: { key: user?.id || 'staff' } },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const onlineSet = new Set<string>();
+        Object.keys(state).forEach((k) => {
+          onlineSet.add(k);
+          const presences = (state as any)[k];
+          if (Array.isArray(presences)) {
+            presences.forEach((p: any) => {
+              if (p?.userId) onlineSet.add(p.userId);
+            });
+          }
+        });
+        if (user?.id) onlineSet.add(user.id);
+        setOnlineUserIds(onlineSet);
+
+        // Auto-heal: If any users in the directory are currently online and still marked 'pending', activate them in DB
+        setUsersList((prevUsers) => {
+          const pendingOnlineIds = prevUsers
+            .filter((u) => u.status === 'pending' && onlineSet.has(u.id))
+            .map((u) => u.id);
+
+          if (pendingOnlineIds.length > 0) {
+            supabase
+              .from('profiles')
+              .update({ status: 'active' })
+              .in('id', pendingOnlineIds)
+              .then(() => fetchUsers());
+          }
+          return prevUsers;
+        });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && user?.id) {
+          await presenceChannel.track({
+            userId: user.id,
+            onlineAt: new Date().toISOString(),
+          });
+        }
+      });
+
     return () => {
       if (directoryDebounceTimer) clearTimeout(directoryDebounceTimer);
       supabase.removeChannel(directoryChannel);
     };
   }, [isAdmin, user?.id]);
-
-  // Auto-heal: If any users in the directory are currently online and still marked 'pending', activate them in DB
-  useEffect(() => {
-    if (!onlineUserIds || onlineUserIds.size === 0 || usersList.length === 0) return;
-    const pendingOnlineIds = usersList
-      .filter((u) => u.status === 'pending' && onlineUserIds.has(u.id))
-      .map((u) => u.id);
-
-    if (pendingOnlineIds.length > 0) {
-      supabase
-        .from('profiles')
-        .update({ status: 'active' })
-        .in('id', pendingOnlineIds)
-        .then(() => fetchUsers());
-    }
-  }, [onlineUserIds, usersList]);
 
   const isDirty = Object.keys(drafts).length > 0;
 

@@ -191,8 +191,6 @@ const syncGlobalStaffPresence = (userId: string | null | undefined) => {
       supabase.removeChannel(globalPresenceChannel);
       globalPresenceChannel = null;
     }
-    currentPresenceUserId = null;
-    useAuthStore.setState({ onlineUserIds: new Set<string>() });
     return;
   }
 
@@ -209,35 +207,14 @@ const syncGlobalStaffPresence = (userId: string | null | undefined) => {
     config: { presence: { key: userId } },
   });
 
-  const updateOnlineSet = () => {
-    if (!globalPresenceChannel) return;
-    const state = globalPresenceChannel.presenceState();
-    const onlineSet = new Set<string>();
-    Object.keys(state).forEach((k) => {
-      onlineSet.add(k);
-      const presences = (state as any)[k];
-      if (Array.isArray(presences)) {
-        presences.forEach((p: any) => {
-          if (p?.userId) onlineSet.add(p.userId);
-        });
-      }
-    });
-    if (userId) onlineSet.add(userId);
-    useAuthStore.setState({ onlineUserIds: onlineSet });
-  };
-
-  globalPresenceChannel
-    .on('presence', { event: 'sync' }, updateOnlineSet)
-    .on('presence', { event: 'join' }, updateOnlineSet)
-    .on('presence', { event: 'leave' }, updateOnlineSet)
-    .subscribe(async (status: string) => {
-      if (status === 'SUBSCRIBED' && userId) {
-        await globalPresenceChannel.track({
-          userId,
-          onlineAt: new Date().toISOString(),
-        });
-      }
-    });
+  globalPresenceChannel.subscribe(async (status: string) => {
+    if (status === 'SUBSCRIBED' && userId) {
+      await globalPresenceChannel.track({
+        userId,
+        onlineAt: new Date().toISOString(),
+      });
+    }
+  });
 };
 
 const getCachedProfile = (): UserProfile | null => {

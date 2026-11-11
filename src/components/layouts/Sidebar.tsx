@@ -894,7 +894,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         )}
 
                                       {child.badge && (
-                                        <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                        <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-white border border-red-500/20 rounded-md shrink-0">
                                           {child.badge}
                                         </span>
                                       )}
@@ -1065,9 +1065,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   <button
                     onClick={triggerDesktopConfirm}
-                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-[#161a22] text-red-600 dark:text-white border border-red-500/20 dark:border-red-600/80 hover:bg-red-500/20 dark:hover:bg-[#1f2430] dark:hover:border-red-500 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4 shrink-0" />
+                    <LogOut className="w-4 h-4 shrink-0 text-red-500 dark:text-red-400" />
                     <span>LOGOUT</span>
                   </button>
                 </div>
@@ -1397,7 +1397,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                           )}
 
                                         {child.badge && (
-                                          <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-red-400 border border-red-500/20 rounded-md shrink-0">
+                                          <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-white border border-red-500/20 rounded-md shrink-0">
                                             {child.badge}
                                           </span>
                                         )}
@@ -1490,9 +1490,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   <button
                     onClick={triggerMobileConfirm}
-                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 hover:bg-red-500/20 dark:hover:bg-red-500/25 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-[#161a22] text-red-600 dark:text-white border border-red-500/20 dark:border-red-600/80 hover:bg-red-500/20 dark:hover:bg-[#1f2430] dark:hover:border-red-500 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
                     <span>LOGOUT</span>
                   </button>
                 </div>

@@ -257,13 +257,13 @@ const HeaderLayout: React.FC = () => {
           <div className="hidden md:flex flex-wrap items-center justify-between gap-4 px-6 pt-6 pb-2">
             {/* Left Column: Title & Breadcrumbs */}
             <div className="min-w-fit shrink-0">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-500">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {headerInfo.subtitle}
               </span>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white uppercase mt-0.5">
+              <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text,#0b1a30)] dark:text-white uppercase mt-0.5">
                 {headerInfo.title}
               </h1>
-              <p className={actions ? 'hidden 2xl:block text-xs text-zinc-600 dark:text-zinc-400 mt-1 max-w-xl' : 'text-xs text-zinc-600 dark:text-zinc-400 mt-1 max-w-xl'}>
+              <p className={actions ? 'hidden 2xl:block text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl' : 'text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl'}>
                 {headerInfo.description}
               </p>
             </div>

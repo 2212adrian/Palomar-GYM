@@ -399,7 +399,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   {gymConfig.gymName}
                 </span>
               )}
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400 shrink-0">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-white/10 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-white shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 v{displayVersion}
                 {latestCloudVersion &&
@@ -421,11 +421,11 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               type="button"
               onClick={() => setIsFooterExpanded((prev) => !prev)}
               aria-expanded={isFooterExpanded}
-              className="sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-[10px] font-heading font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 transition-all cursor-pointer shrink-0"
+              className="sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#161a22] hover:bg-blue-600/10 dark:hover:bg-white/10 border border-slate-200/80 dark:border-white/10 text-[10px] font-heading font-black uppercase tracking-wider text-slate-800 dark:text-white transition-all cursor-pointer shrink-0"
             >
               <span>{isFooterExpanded ? 'Collapse' : 'Details'}</span>
               <ChevronDown
-                className={`w-3.5 h-3.5 text-blue-600 dark:text-red-400 transition-transform duration-200 ${
+                className={`w-3.5 h-3.5 text-blue-600 dark:text-white transition-transform duration-200 ${
                   isFooterExpanded ? 'rotate-180' : ''
                 }`}
               />
@@ -440,7 +440,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   <button
                     type="button"
                     onClick={() => setAgreementDoc('agreement')}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-[10px] font-bold text-blue-700 dark:text-red-300 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600/10 dark:bg-[#161a22] hover:bg-blue-600/20 dark:hover:bg-[#1f2430] border border-blue-500/30 dark:border-white/10 text-[10px] font-bold text-blue-700 dark:text-white transition-colors cursor-pointer"
                   >
                     <FileText className="w-3 h-3 shrink-0" />
                     <span>User Agreement</span>
@@ -469,13 +469,13 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               type="button"
               onClick={() => setIsFooterExpanded((prev) => !prev)}
               aria-expanded={isFooterExpanded}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-[10px] font-heading font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 transition-all cursor-pointer shrink-0"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#161a22] hover:bg-blue-600/10 dark:hover:bg-white/10 border border-slate-200/80 dark:border-white/10 text-[10px] font-heading font-black uppercase tracking-wider text-slate-800 dark:text-white transition-all cursor-pointer shrink-0"
             >
               <span>
                 {isFooterExpanded ? 'Hide Footer' : 'Show Full Footer'}
               </span>
               <ChevronDown
-                className={`w-3.5 h-3.5 text-blue-600 dark:text-red-400 transition-transform duration-200 ${
+                className={`w-3.5 h-3.5 text-blue-600 dark:text-white transition-transform duration-200 ${
                   isFooterExpanded ? 'rotate-180' : ''
                 }`}
               />
@@ -492,7 +492,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 1: Facility Information (Register: No contact numbers & No address) */}
               <div className="space-y-3 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                  <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Facility Information
                   </h4>
@@ -506,7 +506,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   <div className="pt-0.5">
                     <a
                       href={`mailto:${gymConfig.emailAddress}`}
-                      className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px] truncate"
+                      className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-mono text-[11px] truncate"
                     >
                       <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       <span className="truncate">{gymConfig.emailAddress}</span>
@@ -614,14 +614,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                         {gymConfig.gymName}
                       </h3>
                     )}
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-red-500/15 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-red-400">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-600/10 dark:bg-white/10 text-[9px] font-mono font-bold uppercase tracking-widest text-blue-600 dark:text-white">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       v{latestCloudVersion || displayVersion}
                     </span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 pb-1 border-b border-slate-200/60 dark:border-white/10 lg:border-none">
-                    <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                    <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                     <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                       Facility Information
                     </h4>
@@ -635,7 +635,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 {/* Contact Information in a horizontal tablet grid, vertical desktop stack */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-2 pt-1 text-[11px]">
                   <div className="flex items-start gap-2 p-2 rounded-lg bg-slate-100/60 dark:bg-white/[0.03] lg:bg-transparent lg:dark:bg-transparent text-slate-600 dark:text-slate-300">
-                    <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                     <span className="leading-snug">{gymConfig.gymAddress}</span>
                   </div>
 
@@ -644,7 +644,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       {gymConfig.contactNumber1 && (
                         <a
                           href={`tel:${gymConfig.contactNumber1}`}
-                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-mono text-[11px]"
                         >
                           <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
                           <span>
@@ -656,7 +656,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                       {gymConfig.contactNumber2 && (
                         <a
                           href={`tel:${gymConfig.contactNumber2}`}
-                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px]"
+                          className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-mono text-[11px]"
                         >
                           <Phone className="w-3 h-3 text-blue-500 shrink-0" />
                           <span>
@@ -669,7 +669,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                     {gymConfig.emailAddress && (
                       <a
                         href={`mailto:${gymConfig.emailAddress}`}
-                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-red-400 transition-colors font-mono text-[11px] truncate"
+                        className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors font-mono text-[11px] truncate"
                       >
                         <Mail className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                         <span className="truncate">{gymConfig.emailAddress}</span>
@@ -701,7 +701,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                             onClick={() => handleNavigate(item.path)}
                             className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
                               isActive
-                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                ? 'bg-blue-600/10 dark:bg-white/10 text-blue-600 dark:text-white font-bold'
                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
                             }`}
                           >
@@ -720,11 +720,11 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                             onClick={() => handleNavigate(item.path)}
                             className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium transition-all cursor-pointer ${
                               isActive
-                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                ? 'bg-blue-600/10 dark:bg-white/10 text-blue-600 dark:text-white font-bold'
                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
                             }`}
                           >
-                            <Icon className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-red-400" />
+                            <Icon className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-white" />
                             <span className="truncate">{item.name}</span>
                           </button>
                         );
@@ -735,7 +735,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 3: System & Portal OR Live Rates */}
               <div className="col-span-1 md:col-span-1 lg:col-span-2 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     {resolvedVariant === 'system' && isAuthenticated
                       ? 'System & Portal'
@@ -755,7 +755,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                             onClick={() => handleNavigate(tab.path)}
                             className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all cursor-pointer ${
                               isActive
-                                ? 'bg-blue-600/10 dark:bg-red-500/15 text-blue-600 dark:text-red-400 font-bold'
+                                ? 'bg-blue-600/10 dark:bg-white/10 text-blue-600 dark:text-white font-bold'
                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium'
                             }`}
                           >
@@ -831,10 +831,10 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                     <button
                       type="button"
                       onClick={() => setAgreementDoc('agreement')}
-                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-red-500/15 hover:bg-blue-600/20 dark:hover:bg-red-500/25 border border-blue-500/30 dark:border-red-500/30 text-xs font-bold text-blue-700 dark:text-red-300 transition-all cursor-pointer text-left"
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-blue-600/10 dark:bg-[#161a22] hover:bg-blue-600/20 dark:hover:bg-[#1f2430] border border-blue-500/30 dark:border-white/10 text-xs font-bold text-blue-700 dark:text-white transition-all cursor-pointer text-left"
                     >
                       <span className="flex items-center gap-2 truncate">
-                        <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0" />
+                        <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-white shrink-0" />
                         <span className="truncate">User Agreement</span>
                       </span>
                       {isAgreementAccepted ? (
