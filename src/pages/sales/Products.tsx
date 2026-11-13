@@ -1928,7 +1928,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
   return (
     <div
       className={`space-y-6 ${
-        selectedProductIds.length > 0 ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
+        selectedProductIds.length > 0 ? 'pb-28 md:pb-16 lg:pb-16' : 'pb-1'
       }`}
     >
       {/* ADMIN EXCLUSIVE INDICATION GUIDE */}

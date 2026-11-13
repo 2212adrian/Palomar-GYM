@@ -1788,7 +1788,7 @@ const chipCounts = useMemo(() => {
             {activeTab === 'Directory' && (
               <div
                 className={`space-y-3 md:space-y-4 ${
-                  isSelectionActive ? 'pb-4 md:pb-16 lg:pb-16' : 'pb-1'
+                  isSelectionActive ? 'pb-24 md:pb-16 lg:pb-16' : 'pb-1'
                 }`}
               >
                 {/* SEARCH & REWORKED RESPONSIVE CATEGORY TOOLBAR */}
@@ -2689,77 +2689,50 @@ const chipCounts = useMemo(() => {
             return (
               <div
                 style={{ position: 'fixed' }}
-                className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 z-[195] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-3 py-2 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-2 select-none transition-all duration-300 ease-in-out ${
+                className={`md:hidden fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))] left-2 right-2 h-14 z-[210] bg-(--bg-card)/98 backdrop-blur-xl text-(--color-text) px-2 py-2 rounded-2xl shadow-2xl border border-(--border-color) flex items-center justify-between gap-1.5 select-none transition-all duration-300 ease-in-out ${
                   isNavFloatingOpen
                     ? 'translate-y-24 opacity-0 pointer-events-none'
                     : 'translate-y-0 opacity-100 pointer-events-auto'
                 }`}
               >
-                {/* Selected Counter Badge + Multi Button */}
-                <div className="flex items-center gap-1.5 pr-2 border-r border-(--border-color) shrink-0">
-                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs">
+                {/* Selected Counter Badge */}
+                <div className="flex items-center pr-1.5 border-r border-(--border-color) shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
                     {selectedMemberIds.length}
                   </span>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMultiSelect((prev) => {
-                        const next = !prev;
-                        if (!next && selectedMemberIds.length > 1) {
-                          setSelectedMemberIds([selectedMemberIds[0]]);
-                        }
-                        return next;
-                      });
-                    }}
-                    className={`px-2 py-1 rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 transition-all border active:scale-95 ${
-                      isMultiSelect
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 border-(--border-color)'
-                    }`}
-                  >
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    <span>Multi</span>
-                    <span
-                      className={`text-[9px] px-1 py-0.2 rounded font-extrabold uppercase ${
-                        isMultiSelect
-                          ? 'bg-white/20 text-white'
-                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-slate-400'
-                      }`}
-                    >
-                      {isMultiSelect ? 'ON' : 'OFF'}
-                    </span>
-                  </button>
                 </div>
 
-                {/* Action Buttons: Profile (with text), Subscribe (with text), Purchase (Indigo), 3-Dots */}
-                <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto scrollbar-none py-0.5">
-                  {singleSelectedMember && (
+                {/* Action Buttons (Fills space evenly without dead gaps or scrolling) */}
+                <div className="flex-1 flex items-center gap-1 min-w-0">
+                  {singleSelectedMember ? (
                     <>
-                      {/* Profile: with Profile Label */}
+                      {/* Profile */}
                       <button
                         type="button"
-                        onClick={() => setSelectedProfileMember(singleSelectedMember)}
-                        className="h-9 px-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider border border-blue-500/20 active:scale-95 transition-colors cursor-pointer shrink-0"
+                        onClick={() =>
+                          setSelectedProfileMember(singleSelectedMember)
+                        }
+                        className="flex-1 min-w-0 h-9 px-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center gap-1 text-[10px] font-heading font-bold uppercase tracking-tight border border-blue-500/20 active:scale-95 transition-colors cursor-pointer"
                         title="View Profile"
                       >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Profile</span>
+                        <Eye className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Profile</span>
                       </button>
 
-                      {/* Subscribe / Renew: with Subscribe / Renew Label */}
+                      {/* Subscribe / Renew */}
                       <button
                         type="button"
                         disabled={isSingleActionDisabled}
                         onClick={(e) => {
-                          if (isSingleActionDisabled || !singleSelectedMember) return;
+                          if (isSingleActionDisabled || !singleSelectedMember)
+                            return;
                           handleTableRenewOrSubscribe(
                             singleSelectedMember,
                             singleSubInfo?.hasSub || false,
                             e
                           );
                         }}
-                        className={`h-9 px-2.5 rounded-xl flex items-center gap-1 text-[10px] font-heading font-bold uppercase tracking-wider active:scale-95 transition-colors border cursor-pointer shrink-0 ${
+                        className={`flex-1 min-w-0 h-9 px-1.5 rounded-xl flex items-center justify-center gap-1 text-[10px] font-heading font-bold uppercase tracking-tight active:scale-95 transition-colors border cursor-pointer ${
                           isSingleActionDisabled
                             ? 'bg-slate-400/20 text-slate-400 border-slate-500/20 opacity-60 cursor-not-allowed'
                             : 'bg-emerald-500/10 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
@@ -2773,63 +2746,95 @@ const chipCounts = useMemo(() => {
                         }
                       >
                         {isSingleActionDisabled ? (
-                          <Lock className="w-3.5 h-3.5" />
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
                         ) : (
-                          <Zap className="w-3.5 h-3.5" />
+                          <Zap className="w-3.5 h-3.5 shrink-0" />
                         )}
-                        <span>{singleSubInfo?.hasSub ? 'Renew' : 'Subscribe'}</span>
+                        <span className="truncate">
+                          {singleSubInfo?.hasSub ? 'Renew' : 'Subscribe'}
+                        </span>
+                      </button>
+
+                      {/* Purchase Physical Card */}
+                      <button
+                        type="button"
+                        disabled={!isSessionOpen}
+                        onClick={() => {
+                          if (!isSessionOpen) {
+                            toast.warning(
+                              'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                            );
+                            return;
+                          }
+                          setIsBatchBuyCardModalOpen(true);
+                        }}
+                        className="h-9 px-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1 shadow-md active:scale-95 transition-transform border border-indigo-500/30 shrink-0"
+                        title="Purchase physical card"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                        <span>₱{settings.card_printing_fee || 50}</span>
+                      </button>
+
+                      {/* 3-Dots Action Menu Trigger */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMobileActionSheetMember(singleSelectedMember)
+                        }
+                        className="w-9 h-9 bg-(--bg-page) text-slate-400 border border-(--border-color) rounded-xl flex items-center justify-center hover:text-(--color-text) active:scale-95 cursor-pointer transition-colors shrink-0"
+                        title="More Options"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Batch Purchase Physical Cards */}
+                      <button
+                        type="button"
+                        disabled={!isSessionOpen}
+                        onClick={() => {
+                          if (!isSessionOpen) {
+                            toast.warning(
+                              'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                            );
+                            return;
+                          }
+                          setIsBatchBuyCardModalOpen(true);
+                        }}
+                        className="flex-1 h-9 px-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-transform border border-indigo-500/30"
+                        title="Purchase physical cards"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          Buy ₱
+                          {(
+                            selectedMemberIds.length *
+                            (settings.card_printing_fee || 50)
+                          ).toLocaleString()}
+                        </span>
+                      </button>
+
+                      {/* Batch Print Member Cards */}
+                      <button
+                        type="button"
+                        onClick={() => setShowBatchCardModal(true)}
+                        className="flex-1 h-9 px-3 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-colors"
+                        title="Print Member Cards"
+                      >
+                        <Printer className="w-3.5 h-3.5 shrink-0" />
+                        <span>Print Cards</span>
                       </button>
                     </>
                   )}
+                </div>
 
-                  {/* Purchase Physical Cards: Distinct Indigo Color & CreditCard Icon */}
-                  <button
-                    type="button"
-                    disabled={!isSessionOpen}
-                    onClick={() => {
-                      if (!isSessionOpen) {
-                        toast.warning(
-                          'Cannot purchase cards: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                        );
-                        return;
-                      }
-                      setIsBatchBuyCardModalOpen(true);
-                    }}
-                    className="h-9 px-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1 shadow-md active:scale-95 transition-transform border border-indigo-500/30 shrink-0"
-                    title="Purchase physical cards"
-                  >
-                    <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                    <span>
-                      {selectedMemberIds.length === 1
-                        ? `₱${settings.card_printing_fee || 50}`
-                        : `₱${(
-                            selectedMemberIds.length *
-                            (settings.card_printing_fee || 50)
-                          ).toLocaleString()}`}
-                    </span>
-                  </button>
-
-                  {/* 3-Dots Action Menu Trigger (Opens pullable container with 2 per row) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (singleSelectedMember) {
-                        setMobileActionSheetMember(singleSelectedMember);
-                      } else {
-                        setShowBatchCardModal(true);
-                      }
-                    }}
-                    className="w-9 h-9 bg-(--bg-page) text-slate-400 border border-(--border-color) rounded-xl flex items-center justify-center hover:text-(--color-text) active:scale-95 cursor-pointer transition-colors shrink-0"
-                    title="More Options"
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-
-                  {/* Clear Selection */}
+                {/* Clear Selection */}
+                <div className="flex items-center pl-1 border-l border-(--border-color) shrink-0">
                   <button
                     type="button"
                     onClick={resetActionState}
-                    className="p-1.5 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors active:scale-95 shrink-0"
+                    className="w-8 h-8 rounded-xl text-slate-400 hover:text-(--color-text) hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer flex items-center justify-center transition-colors active:scale-95 shrink-0"
                     title="Clear selection"
                   >
                     <X className="w-4 h-4" />
