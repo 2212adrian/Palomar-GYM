@@ -16,6 +16,31 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.6',
+    date: '2026-11-13',
+    summary:
+      'Fonts & Dark Mode Update: Mobile UI stability improvements, standardized blue color schemes and CSS theming variables, global input UX refinements, and readable heading font preferences.',
+    sections: [
+      {
+        type: 'Mobile UI Stability & Theme Consistency',
+        items: [
+          'Mobile Keyboard Input Handling: Configured windowSoftInputMode to adjustResize for better mobile input handling when the on-screen keyboard appears.',
+          'Resize Listener Optimization: Optimized window resize event listeners to prevent unnecessary UI re-renders.',
+          'Interactive Widget Viewport Support: Updated the viewport meta tag for improved mobile interactive widget behavior.',
+          'Unified Color & Dark Mode Variables: Standardized UI components to use consistent blue color schemes and CSS variables across light and dark mode themes.',
+        ],
+      },
+      {
+        type: 'Text Input UX & Typography',
+        items: [
+          'Global Input Consistency: Disabled browser autofill, autocorrect, and spellcheck globally on text inputs for predictable form behavior.',
+          'Heading Font Readability Hook: Added the useHeadingFont hook to manage heading font readability preferences.',
+          'System Font Support: Added support for system fonts in .font-heading via the system-heading-font class.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.5',
     date: '2026-11-10',
     summary:
