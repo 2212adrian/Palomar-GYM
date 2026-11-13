@@ -14,6 +14,8 @@ import { LogbookRecordAttendance } from '../logbook/components/LogbookRecordAtte
 import { SalesManager } from './SystemInformation/SalesManager';
 import { AttendanceManager } from './SystemInformation/AttendanceManager';
 import { AuditLogsManager } from './SystemInformation/AuditLogsManager';
+import { CsvDataMigrationModal } from './components/CsvDataMigrationModal';
+import { DatabaseMigrationManager } from './components/DatabaseMigrationManager';
 import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -38,6 +40,7 @@ import {
   UserX,
   Search,
   AlertTriangle,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const MIN_ALLOWED_DATE = '2024-01-01';
@@ -74,6 +77,8 @@ export const DatabaseBackup: React.FC = () => {
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [backupNotes, setBackupNotes] = useState<string>('');
+  const [isCsvMigrationModalOpen, setIsCsvMigrationModalOpen] =
+    useState<boolean>(false);
 
   // Restore Modal State
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState<boolean>(false);
@@ -140,7 +145,7 @@ export const DatabaseBackup: React.FC = () => {
   const [startDate, setStartDate] = useState<string>(MIN_ALLOWED_DATE);
   const [endDate, setEndDate] = useState<string>(todayStr);
   const [activeTab, setActiveTab] = useState<
-    'attendance' | 'sales' | 'subscriptions' | 'audit_logs'
+    'attendance' | 'sales' | 'subscriptions' | 'audit_logs' | 'migration'
   >('attendance');
   const [tabLoading, setTabLoading] = useState<boolean>(false);
   const [attendanceList, setAttendanceList] = useState<any[]>([]);
@@ -1592,6 +1597,31 @@ export const DatabaseBackup: React.FC = () => {
           </div>
 
           <div className="hidden sm:flex items-center gap-3">
+            {isSuperAdminOnly && (
+              <button
+                type="button"
+                disabled={!!activeSession}
+                onClick={() => {
+                  if (activeSession) {
+                    toast.error(
+                      'Please close the active cash session before opening CSV Data Migration.'
+                    );
+                    return;
+                  }
+                  setIsCsvMigrationModalOpen(true);
+                }}
+                title={
+                  activeSession
+                    ? 'Close the active cash session before running CSV Data Migration'
+                    : 'SuperAdmin Secure Two-Group CSV Data Migration'
+                }
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-500 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-blue-600/15 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                CSV DATA MIGRATION
+              </button>
+            )}
+
             <button
               disabled={!!activeSession}
               onClick={() => {
@@ -1996,6 +2026,48 @@ export const DatabaseBackup: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* SuperAdmin-Exclusive CSV Legacy Data Migration Panel */}
+        {isSuperAdminOnly && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-(--bg-card) border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left shadow-xs">
+            <div className="flex items-start gap-3.5 min-w-0">
+              <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-blue-600 dark:text-blue-400 shrink-0">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider text-(--color-text)">
+                    Unified CSV Data Migration (Products &amp; Members)
+                  </h3>
+                  <span className="text-[10px] font-mono font-bold uppercase text-blue-600 dark:text-blue-400">
+                    • SuperAdmin Exclusive
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Download the two-group CSV template, validate every row against database rules, seal with AES-GCM &amp; SHA-256, and audit historical migrations. Best used when Products and Members lists are empty while cash drawer is closed.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={!!activeSession}
+              onClick={() => {
+                if (activeSession) {
+                  toast.error(
+                    'Cannot open CSV Data Migration while a cash session is open.'
+                  );
+                  return;
+                }
+                setIsCsvMigrationModalOpen(true);
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Open CSV Migration</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* SuperAdmin Master Terminal (Controlled on mobile, always visible on sm:) */}
@@ -2028,6 +2100,7 @@ export const DatabaseBackup: React.FC = () => {
                   'sales',
                   'subscriptions',
                   'audit_logs',
+                  'migration',
                 ] as const
               ).map((tab) => (
                 <button
@@ -2042,14 +2115,16 @@ export const DatabaseBackup: React.FC = () => {
                 >
                   {tab === 'subscriptions'
                     ? 'Subscriptions'
-                    : tab.replace('_', ' ')}
+                    : tab === 'migration'
+                      ? 'Data Migration'
+                      : tab.replace('_', ' ')}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Date Filter Bar for Attendance, Sales, and Audit Logs */}
-          {activeTab !== 'subscriptions' && (
+          {activeTab !== 'subscriptions' && activeTab !== 'migration' && (
             <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-black/25 border border-slate-200 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs font-heading font-bold uppercase tracking-wider w-full sm:w-auto">
                 <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
@@ -2137,6 +2212,16 @@ export const DatabaseBackup: React.FC = () => {
               loading={tabLoading}
               isSuperAdmin={isSuperAdminOnly}
               onRefresh={fetchTabData}
+            />
+          )}
+
+          {activeTab === 'migration' && (
+            <DatabaseMigrationManager
+              embedded
+              onSuccess={() => {
+                fetchProducts();
+                fetchTabData();
+              }}
             />
           )}
 
@@ -2752,6 +2837,18 @@ export const DatabaseBackup: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* SuperAdmin-Exclusive Two-Group CSV Data Migration Console */}
+      {isSuperAdminOnly && (
+        <CsvDataMigrationModal
+          isOpen={isCsvMigrationModalOpen}
+          onClose={() => setIsCsvMigrationModalOpen(false)}
+          onSuccess={() => {
+            fetchProducts();
+            fetchTabData();
+          }}
+        />
+      )}
     </div>
   );
 };

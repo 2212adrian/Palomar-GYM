@@ -44,8 +44,6 @@ import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { useAuthStore } from '../../../stores/authStore';
-import { isSuperAdmin } from '../../../constants/auth';
-import { Database } from 'lucide-react';
 import {
   memberService,
   subscriptionService,
@@ -2457,26 +2455,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
                       Select Intake Mode
                     </span>
-                    {isSuperAdmin(user?.email) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isSessionOpen) {
-                            toast.warning(
-                              'Cannot perform legacy migration: Cash drawer session is currently open. Please close the session in Cash Management first.',
-                              { toastId: 'migration-session-open-block' }
-                            );
-                            return;
-                          }
-                          handleModalClose();
-                          window.dispatchEvent(new Event('trigger-member-migration'));
-                        }}
-                        className="inline-flex items-center gap-1.5 text-[10px] font-heading font-black text-amber-600 dark:text-amber-400 hover:text-amber-500 uppercase tracking-wider cursor-pointer transition-colors"
-                      >
-                        <Database className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Legacy Data Migration</span>
-                      </button>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

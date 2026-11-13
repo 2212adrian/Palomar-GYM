@@ -50,10 +50,6 @@ import { supabase } from '../../lib/supabase/client';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
-import { useAuthStore } from '../../stores/authStore';
-import { isSuperAdmin } from '../../constants/auth';
-import { LegacyDataMigrationModal } from './components/LegacyDataMigrationModal';
-import { Database } from 'lucide-react';
 
 // Import Shared Types
 import type {
@@ -151,10 +147,6 @@ export const MembersList: React.FC<MembersListProps> = ({
   const isPlansPath = useMemo(() => {
     return location.pathname.includes('/plans');
   }, [location.pathname]);
-
-  const { user } = useAuthStore();
-  const isSuper = isSuperAdmin(user?.email);
-  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'Directory' | 'Queue'>(
     'Directory'
@@ -601,33 +593,17 @@ export const MembersList: React.FC<MembersListProps> = ({
       setWizardPrefill(undefined);
       setIsWizardOpen(true);
     };
-    const handleMigrationEvent = () => {
-      if (!isSuper) {
-        toast.error('Legacy Data Migration is restricted to SuperAdmin.');
-        return;
-      }
-      if (isSessionOpen) {
-        toast.warning(
-          'Cannot perform legacy data migration: Cash drawer session is currently open. Please close the session in Cash Management first.',
-          { toastId: 'migration-session-open-block' }
-        );
-        return;
-      }
-      setIsMigrationModalOpen(true);
-    };
 
     window.addEventListener('trigger-member-print', handlePrintEvent);
     window.addEventListener('trigger-member-recycle', handleRecycleEvent);
     window.addEventListener('trigger-member-wizard', handleWizardEvent);
-    window.addEventListener('trigger-member-migration', handleMigrationEvent);
 
     return () => {
       window.removeEventListener('trigger-member-print', handlePrintEvent);
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
-      window.removeEventListener('trigger-member-migration', handleMigrationEvent);
     };
-  }, [handleOpenPrintModal, isOffline, isSuper]);
+  }, [handleOpenPrintModal, isOffline]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -1644,31 +1620,6 @@ const chipCounts = useMemo(() => {
               <span>RECYCLE BIN</span>
             </Button>
 
-            {isSuper && (
-              <Button
-                onClick={() => {
-                  if (isSessionOpen) {
-                    toast.warning(
-                      'Cannot perform legacy data migration: Cash drawer session is open. Please close the session in Cash Management first.',
-                      { toastId: 'migration-session-open-block' }
-                    );
-                    return;
-                  }
-                  setIsMigrationModalOpen(true);
-                }}
-                variant="secondary"
-                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 cursor-pointer"
-                title={
-                  isSessionOpen
-                    ? 'Legacy Data Migration is locked while cash drawer session is open'
-                    : 'SuperAdmin Legacy Data Migration'
-                }
-              >
-                <Database className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
-                <span>DATA MIGRATION</span>
-              </Button>
-            )}
-
             <Button
               onClick={() => {
                 setWizardPrefillMember(undefined);
@@ -2141,25 +2092,6 @@ const chipCounts = useMemo(() => {
                             </span>
                           </button>
                         )}
-                        {isSuper && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isSessionOpen) {
-                                toast.warning(
-                                  'Cannot perform legacy data migration: Cash drawer session is open. Please close the session in Cash Management first.',
-                                  { toastId: 'migration-session-open-block' }
-                                );
-                                return;
-                              }
-                              setIsMigrationModalOpen(true);
-                            }}
-                            className="px-4 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-amber-500/30 transition-all inline-flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Database className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Legacy Data Migration</span>
-                          </button>
-                        )}
                       </div>
                     </div>
                   ) : (
@@ -2276,16 +2208,6 @@ const chipCounts = useMemo(() => {
                             <span>
                               {isRefreshingEmpty ? 'Refreshing...' : 'Refresh'}
                             </span>
-                          </button>
-                        )}
-                        {isSuper && (
-                          <button
-                            type="button"
-                            onClick={() => setIsMigrationModalOpen(true)}
-                            className="px-3.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-amber-500/30 transition-all inline-flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Database className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Data Migration</span>
                           </button>
                         )}
                       </div>
@@ -3174,15 +3096,6 @@ const chipCounts = useMemo(() => {
           initialSelectedIds={selectedMemberIds}
           onClose={() => setShowBatchCardModal(false)}
           onSuccess={fetchMembers}
-        />
-      )}
-
-      {/* SUPERADMIN LEGACY DATA MIGRATION MODAL */}
-      {isMigrationModalOpen && (
-        <LegacyDataMigrationModal
-          isOpen={isMigrationModalOpen}
-          onClose={() => setIsMigrationModalOpen(false)}
-          onSuccess={() => fetchMembers(true)}
         />
       )}
 
