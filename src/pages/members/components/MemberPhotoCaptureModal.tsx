@@ -319,7 +319,7 @@ export const MemberPhotoCaptureModal: React.FC<
               }}
               className={`flex-1 py-2 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border transition-all cursor-pointer ${
                 activeTab === 'camera'
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs'
+                  ? 'bg-(--color-primary) text-white border-transparent shadow-xs'
                   : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >
@@ -335,7 +335,7 @@ export const MemberPhotoCaptureModal: React.FC<
               }}
               className={`flex-1 py-2 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border transition-all cursor-pointer ${
                 activeTab === 'upload'
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs'
+                  ? 'bg-(--color-primary) text-white border-transparent shadow-xs'
                   : 'bg-(--bg-page) border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >

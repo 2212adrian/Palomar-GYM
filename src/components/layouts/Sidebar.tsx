@@ -134,7 +134,7 @@ const SidebarAvatar: React.FC<{
 
   return (
     <div
-      className={`w-full h-full rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading relative z-10 ${
+      className={`w-full h-full rounded-full bg-(--color-primary) text-white flex items-center justify-center font-heading relative z-10 ${
         isMini ? 'text-[10px] font-black' : 'text-sm font-bold'
       }`}
     >
@@ -530,7 +530,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <path
                   d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z"
-                  className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300"
+                  className="fill-(--color-primary) opacity-85 dark:opacity-90 transition-colors duration-300"
                 />
               </svg>
             </div>
@@ -706,7 +706,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       collapsed
                         ? `w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0 border ${
                             isSingleActive
-                              ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                              ? 'bg-(--color-primary) text-white border-transparent shadow-md font-black'
                               : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
                           }`
                         : `w-full h-[52px] px-4 rounded-[16px] justify-between border ${
@@ -770,7 +770,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         collapsed
                           ? `w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0 border ${
                               isChildActive
-                                ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                                ? 'bg-(--color-primary) text-white border-transparent shadow-md font-black'
                                 : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
                             }`
                           : `w-full h-[52px] px-4 justify-between border ${
@@ -894,7 +894,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         )}
 
                                       {child.badge && (
-                                        <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-white border border-red-500/20 rounded-md shrink-0">
+                                        <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-500/25 rounded-md shrink-0">
                                           {child.badge}
                                         </span>
                                       )}
@@ -938,7 +938,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 to="/settings"
                 className={`w-11 h-11 mx-auto flex items-center justify-center rounded-xl border transition-all cursor-pointer shadow-xs ${
                   isSettingsActive
-                    ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md font-black'
+                    ? 'bg-(--color-primary) text-white border-transparent shadow-md font-black'
                     : 'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
                 }`}
                 title="System Settings"
@@ -1041,7 +1041,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     to="/settings"
                     className={`flex-1 h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
-                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                        ? 'bg-(--color-primary) text-white border-transparent shadow-md'
                         : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
                     }`}
                   >
@@ -1120,7 +1120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <path
                     d="M 25 0 C 65 0, 95 15, 110 38 C 125 60, 142 75, 160 80 L 160 0 Z"
-                    className="fill-[#123c73] opacity-80 dark:fill-[#bf0202] dark:opacity-90 transition-colors duration-300"
+                    className="fill-(--color-primary) opacity-85 dark:opacity-90 transition-colors duration-300"
                   />
                 </svg>
               </div>
@@ -1397,7 +1397,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                           )}
 
                                         {child.badge && (
-                                          <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5 bg-red-500/15 text-[#bf0202] dark:text-white border border-red-500/20 rounded-md shrink-0">
+                                          <span className="text-[7px] font-black tracking-widest px-1.5 py-0.5 bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-500/25 rounded-md shrink-0">
                                             {child.badge}
                                           </span>
                                         )}
@@ -1463,7 +1463,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => setMobileOpen(false)}
                     className={`flex-1 h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
-                        ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white border-transparent shadow-md'
+                        ? 'bg-(--color-primary) text-white border-transparent shadow-md'
                         : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
                     }`}
                   >

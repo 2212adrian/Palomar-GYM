@@ -118,7 +118,7 @@ export const ConfirmSignUp: React.FC = () => {
   if (!initialized) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-white dark:bg-[#0f1012] select-none font-sans text-slate-900 dark:text-slate-100 font-body">
-        <Loader2 className="w-8 h-8 animate-spin text-[#1b365d] dark:text-[#bf0202]" />
+        <Loader2 className="w-8 h-8 animate-spin text-(--color-primary)" />
         <p className="text-xs font-heading tracking-widest text-slate-500 dark:text-slate-400 uppercase mt-4">
           Verifying Account...
         </p>
@@ -228,9 +228,9 @@ export const ConfirmSignUp: React.FC = () => {
           </div>
 
           <div className="space-y-4 mt-6">
-            <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-              <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
-                <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+            <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-blue-950/20 border border-slate-200 dark:border-blue-500/30 rounded-xl text-left">
+              <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+                <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-blue-400" />
                 <span>ACTIVATION PROTOCOL</span>
               </div>
               <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">

@@ -467,7 +467,7 @@ export const LegacyDataMigrationModal: React.FC<LegacyDataMigrationModalProps> =
     <div className="fixed inset-0 z-[2500] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in font-sans select-none">
       <div className="relative bg-(--bg-card) text-(--color-text) border border-(--border-color) rounded-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] max-w-5xl transition-all">
         {/* TOP ACCENT STRIP */}
-        <div className="w-full h-1.5 bg-gradient-to-r from-amber-500 via-[#123c73] to-[#bf0202]" />
+        <div className="w-full h-1.5 bg-gradient-to-r from-amber-500 via-blue-700 to-blue-500" />
 
         {/* HEADER */}
         <div className="p-4 sm:p-5 border-b border-(--border-color) flex items-center justify-between bg-(--bg-card) shrink-0">
@@ -635,7 +635,7 @@ export const LegacyDataMigrationModal: React.FC<LegacyDataMigrationModalProps> =
                   {planBreakdown.profileOnly} Profile Only
                 </span>
                 <span className="text-slate-300 dark:text-zinc-700">•</span>
-                <span className="text-[11px] font-mono text-purple-600 dark:text-purple-400 font-bold">
+                <span className="text-[11px] font-mono text-sky-600 dark:text-sky-400 font-bold">
                   {planBreakdown.cards} Cards
                 </span>
               </div>

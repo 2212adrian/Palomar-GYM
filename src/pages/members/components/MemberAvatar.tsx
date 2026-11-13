@@ -168,7 +168,7 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
         />
       ) : (
         <div
-          className={`w-full h-full bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading font-black shadow-inner border border-white/20 ${roundedClassName}`}
+          className={`w-full h-full bg-(--color-primary) text-white flex items-center justify-center font-heading font-black shadow-inner border border-white/20 ${roundedClassName}`}
           style={{ fontSize: `${Math.max(12, Math.round(size * 0.42))}px` }}
         >
           {initial}
@@ -479,7 +479,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-[#123c73] dark:bg-[#bf0202] text-white flex flex-col items-center justify-center space-y-1.5">
+                <div className="w-full h-full bg-(--color-primary) text-white flex flex-col items-center justify-center space-y-1.5">
                   <User className="w-14 h-14 text-white/60" />
                   <span className="text-[11px] font-bold uppercase tracking-wider text-white/80">
                     No Photo Uploaded
@@ -493,7 +493,7 @@ export const MemberPhotoModal: React.FC<MemberPhotoModalProps> = ({
               <button
                 type="button"
                 onClick={() => setMode('camera')}
-                className="py-2.5 px-3 bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white rounded-xl font-heading text-xs font-extrabold uppercase tracking-wider cursor-pointer shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                className="py-2.5 px-3 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-xs font-extrabold uppercase tracking-wider cursor-pointer shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95"
               >
                 <Camera className="w-4 h-4" />
                 <span>Take Photo</span>

@@ -187,6 +187,18 @@ export const generateBarcodeDataUrl = (
   }
 };
 
+const safePdfText = (val: string | number | null | undefined): string => {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/[\u20B1₱]/g, 'Php ')
+    .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
+    .trim();
+};
+
 // Generates high-resolution PDF document bytes without horizontal distortion
 export const generatePdfFile = async (
   items: PrintableItem[],
@@ -321,11 +333,11 @@ export const generatePdfFile = async (
 
       // 4. Draw Texts
       if (settings.showProductName) {
+        const cleanName = safePdfText(labelItem.product_name);
         const truncatedName =
-          labelItem.product_name.length > (isSmallLabel ? 20 : 25)
-            ? labelItem.product_name.substring(0, isSmallLabel ? 17 : 22) +
-              '...'
-            : labelItem.product_name;
+          cleanName.length > (isSmallLabel ? 20 : 25)
+            ? cleanName.substring(0, isSmallLabel ? 17 : 22) + '...'
+            : cleanName;
 
         const textWidth = font.widthOfTextAtSize(
           truncatedName,
@@ -341,7 +353,7 @@ export const generatePdfFile = async (
       }
 
       if (settings.showBarcodeText) {
-        const codeText = labelItem.barcode_id;
+        const codeText = safePdfText(labelItem.barcode_id);
         const textWidth = font.widthOfTextAtSize(codeText, barcodeTextSize);
         page.drawText(codeText, {
           x: x + (width - textWidth) / 2,
@@ -353,7 +365,9 @@ export const generatePdfFile = async (
       }
 
       if (settings.showPrice) {
-        const priceText = `Php ${Number(labelItem.selling_price).toFixed(2)}`;
+        const priceText = safePdfText(
+          `Php ${Number(labelItem.selling_price).toFixed(2)}`
+        );
         const textWidth = font.widthOfTextAtSize(priceText, priceTextSize);
         page.drawText(priceText, {
           x: x + (width - textWidth) / 2,

@@ -1,10 +1,11 @@
 @import 'tailwindcss';
+@config "../tailwind.config.ts";
 
 /* Define class selector variant support for manually toggling dark mode in Tailwind v4 */
 @variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================
-   SCROLLBAR SYSTEM THEME TUNING (ADAPTIVE LIGHT/DARK)
+   SCROLLBAR SYSTEM THEME TUNING (ADAPTIVE LIGHT/DARK BLUE)
    ========================================================== */
 ::-webkit-scrollbar {
   width: 6px;
@@ -18,60 +19,57 @@
   height: 0;
 }
 
-/* --- LIGHT MODE: NAVY BLUE SCROLLBARS --- */
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #295c9a; /* Logo Shield Blue */
+  background-color: var(--color-primary-light);
   border-radius: 9999px;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #123c73; /* Darker Shield Blue */
+  background-color: var(--color-primary);
 }
 
 html {
   scrollbar-width: thin;
-  scrollbar-color: #295c9a transparent;
+  scrollbar-color: var(--color-primary-light) transparent;
 }
 
-/* --- DARK MODE: RED SCROLLBARS (Explicit Class) --- */
 .dark ::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background-color: #9c0202; /* Deep Crimson Red */
+  background-color: var(--color-primary);
   border-radius: 9999px;
   background-clip: padding-box;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background-color: #bf0202; /* Vibrant Wolf Red */
+  background-color: var(--color-primary-light);
 }
 
 .dark html {
-  scrollbar-color: #9c0202 transparent;
+  scrollbar-color: var(--color-primary) transparent;
 }
 
-/* --- DARK MODE: RED SCROLLBARS (System Preference Fallback) --- */
 @media (prefers-color-scheme: dark) {
   :root:not(.light) ::-webkit-scrollbar-track {
     background: transparent;
   }
   :root:not(.light) ::-webkit-scrollbar-thumb {
-    background-color: #9c0202; /* Deep Crimson Red */
+    background-color: var(--color-primary);
     border-radius: 9999px;
     background-clip: padding-box;
   }
   :root:not(.light) ::-webkit-scrollbar-thumb:hover {
-    background-color: #bf0202; /* Vibrant Wolf Red */
+    background-color: var(--color-primary-light);
   }
   :root:not(.light) html {
-    scrollbar-color: #9c0202 transparent;
+    scrollbar-color: var(--color-primary) transparent;
   }
 }
 
@@ -96,16 +94,17 @@ html {
 }
 
 :root {
-  /* LIGHT MODE: Premium Ice Slate & Athletic Navy (from Logo Shield) */
+  /* LIGHT MODE: Crisp Ice Slate & Unified Athletic Blue */
   --bg-page: #f0f4f8; /* Elegant light slate blue canvas */
   --bg-card: #ffffff; /* Lighter white card for proper depth hierarchy */
   --bg-input: #e2e8f0; /* Structured inner inputs */
-  --border-color: rgba(12, 60, 115, 0.08);
-  --color-glow: #123c73; /* Shield Navy Blue */
+  --border-color: rgba(29, 78, 216, 0.12);
+  --color-glow: #2563eb; /* Vibrant Blue Glow */
   --color-text: #0b1a30; /* Readable dark navy text */
-  --color-primary: #123c73;
-  --color-primary-hover: #0c2950;
-  --color-primary-light: #295c9a;
+  --color-primary: #1d4ed8; /* Cohesive Primary Blue */
+  --color-primary-hover: #1e40af; /* Deeper Hover Blue */
+  --color-primary-light: #3b82f6; /* Lighter Accent Blue */
+  --color-primary-rgb: 29, 78, 216;
 }
 
 /* Automatically apply dark mode if system prefers it and no manual override is set */
@@ -115,32 +114,29 @@ html {
     --bg-page: #0c0e12; /* Deepest base - a rich midnight obsidian blue-black */
     --bg-card: #161920; /* Elevated panel/card/sidebar - polished and comfortable */
     --bg-input: #1e232d; /* Even lighter for readable form inputs/fields */
-    --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
+    --border-color: rgba(148, 163, 184, 0.1); /* Clean slate border lines */
     --color-text: #f3f4f6;
-    --color-primary: #bf0202; /* Active Wolf Red */
-    --color-primary-hover: #9c0202;
-    --color-primary-light: #e03434;
+    --color-glow: #3b82f6; /* Cohesive Blue Glow */
+    --color-primary: #2563eb; /* Active Primary Blue */
+    --color-primary-hover: #1d4ed8; /* Deeper Hover Blue */
+    --color-primary-light: #60a5fa; /* High-Contrast Dark Mode Blue Accent */
+    --color-primary-rgb: 37, 99, 235;
   }
 }
 
 /* Explicit Dark Mode selection */
 .dark {
-  --color-glow: #bf0202;
+  --color-glow: #3b82f6;
   /* CORRECTED DEPTH HIERARCHY: Deepest base on bottom, lighter surfaces on top */
   --bg-page: #0c0e12; /* Deepest base - a rich midnight obsidian blue-black */
   --bg-card: #161920; /* Elevated panel/card/sidebar - polished and comfortable */
   --bg-input: #1e232d; /* Even lighter for readable form inputs/fields */
-  --border-color: rgba(148, 163, 184, 0.08); /* Clean slate border lines */
+  --border-color: rgba(148, 163, 184, 0.1); /* Clean slate border lines */
   --color-text: #f3f4f6;
-  --color-primary: #bf0202; /* Active Wolf Red */
-  --color-primary-hover: #9c0202;
-  --color-primary-light: #e03434;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --color-glow: #bf0202;
-  }
+  --color-primary: #2563eb; /* Active Primary Blue */
+  --color-primary-hover: #1d4ed8; /* Deeper Hover Blue */
+  --color-primary-light: #60a5fa; /* High-Contrast Dark Mode Blue Accent */
+  --color-primary-rgb: 37, 99, 235;
 }
 
 /* Apply default font fallback to body elements */
@@ -150,27 +146,18 @@ body {
   color: var(--color-text);
 }
 
-/* --- CINEMATIC TRANSITIONS FOR THEME SWAPPING --- */
+/* --- CONTAINER TRANSITIONS FOR THEME SWAPPING (Kept off inputs/labels to prevent Android typing lag) --- */
 body,
 .auth-split-container,
 .auth-left,
 .admin-split-container,
 .admin-left,
 .admin-right,
-.field-input,
-.protocol-notice-box,
-.brand,
-.system-subtitle,
-.checkbox-ui,
-span,
-p,
-label,
-button {
+.protocol-notice-box {
   transition:
-    background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-    color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* --- 1. LOGIN PANEL SPLIT LAYOUT CONTROLLER --- */
@@ -392,13 +379,11 @@ button {
   color: var(--color-text);
   font-size: 14px;
   outline: none;
-  transition:
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+  transition: border-color 0.15s ease;
 }
 
 .field-input:focus {
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25) !important;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.2) !important;
 }
 
 .field-label {
@@ -492,7 +477,7 @@ button {
 .styled-checkbox:checked + .checkbox-label .checkbox-ui {
   background-color: var(--color-primary);
   border-color: var(--color-primary);
-  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35);
+  box-shadow: 0 0 12px rgba(var(--color-primary-rgb), 0.35);
 }
 
 .styled-checkbox:checked + .checkbox-label .checkbox-ui::after {
@@ -546,8 +531,8 @@ button {
 }
 
 .shake-error {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 12px rgba(var(--wolf-red-rgb), 0.35) !important;
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.35) !important;
   animation: field-shake 0.35s ease;
 }
 
@@ -746,7 +731,7 @@ select option {
 
 select:focus {
   border-color: var(--color-primary-light) !important;
-  box-shadow: 0 0 0 3px rgba(41, 92, 154, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.2) !important;
 }
 
 .dark select {
@@ -759,8 +744,8 @@ select:focus {
 }
 
 .dark select:focus {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 0 3px rgba(191, 2, 2, 0.2) !important;
+  border-color: var(--color-primary-light) !important;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25) !important;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -774,8 +759,8 @@ select:focus {
   }
 
   :root:not(.light) select:focus {
-    border-color: var(--color-primary) !important;
-    box-shadow: 0 0 0 3px rgba(191, 2, 2, 0.2) !important;
+    border-color: var(--color-primary-light) !important;
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25) !important;
   }
 }
 
@@ -868,15 +853,18 @@ select:focus {
     -webkit-backdrop-filter: none !important;
   }
 
-  /* 3. Eliminate layout thrashing from universal transitions on static text and labels */
+  /* 3. Eliminate layout thrashing from transitions on inputs, text, and labels */
   span,
   p,
-  label {
+  label,
+  input,
+  textarea,
+  .field-input,
+  .field-label {
     transition: none !important;
   }
 
   button,
-  input,
   select {
     transition-duration: 0.15s !important;
   }
@@ -902,8 +890,16 @@ html.is-capacitor {
   user-select: none;
 }
 
+/* Ensure zero IME composition lag, instant backspace/erase, and clean text selection inside Capacitor Android inputs */
 html.is-capacitor input,
-html.is-capacitor textarea {
-  -webkit-user-select: auto;
-  user-select: auto;
+html.is-capacitor textarea,
+html.is-capacitor select,
+html.is-capacitor .field-input,
+html.is-capacitor .field-label,
+html.is-capacitor [contenteditable='true'] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default;
+  touch-action: manipulation;
+  transition: none !important;
 }

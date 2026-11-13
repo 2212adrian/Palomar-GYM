@@ -545,8 +545,8 @@ export default function Settings() {
                   onClick={() => handleTabClick(tab.id)}
                   className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left ${
                     isActive
-                      ? 'bg-blue-600 dark:bg-red-600 text-white border-blue-600 dark:border-red-600 shadow-md'
-                      : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-red-500 hover:bg-blue-500/5 dark:hover:bg-red-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                      : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 hover:bg-blue-500/5 dark:hover:bg-blue-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
                   }`}
                 >
                   <div className="flex items-center gap-4">
@@ -554,7 +554,7 @@ export default function Settings() {
                       className={`p-2 rounded-lg transition-colors ${
                         isActive
                           ? 'bg-white/15 text-white'
-                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-red-500'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400'
                       }`}
                     >
                       <Icon className="w-6 h-6 shrink-0" />
@@ -584,7 +584,7 @@ export default function Settings() {
                     className={`w-5 h-5 shrink-0 transition-transform ${
                       isActive
                         ? 'text-white translate-x-1'
-                        : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-red-500'
+                        : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400'
                     }`}
                   />
                 </button>
@@ -628,7 +628,7 @@ export default function Settings() {
                 ) : (
                   <>
                     <span className="w-3.5 h-3.5 bg-[#0c0e12]" />
-                    <span className="w-3.5 h-3.5 bg-[#bf0202]" />
+                    <span className="w-3.5 h-3.5 bg-[#2563eb]" />
                     <span className="w-3.5 h-3.5 bg-[#161920]" />
                   </>
                 )}
@@ -715,7 +715,7 @@ export default function Settings() {
                       onClick={() => handleTabClick(tab.id)}
                       className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
                         isActive
-                          ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
+                          ? 'bg-blue-600 text-white font-semibold shadow-sm'
                           : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
                       }`}
                     >
@@ -744,7 +744,7 @@ export default function Settings() {
                         onClick={() => handleTabClick(tab.id)}
                         className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
                           isActive
-                            ? 'bg-blue-600 dark:bg-[#bf0202] text-white font-semibold shadow-sm'
+                            ? 'bg-blue-600 text-white font-semibold shadow-sm'
                             : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
                         }`}
                       >
@@ -761,7 +761,7 @@ export default function Settings() {
           <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 space-y-2.5 animate-slide-up">
             <button
               onClick={toggleTheme}
-              className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-red-500 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
             >
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-white dark:bg-[#111315] shadow-xs border border-slate-200/50 dark:border-white/5">
@@ -788,7 +788,7 @@ export default function Settings() {
                 ) : (
                   <>
                     <span className="w-2.5 h-2.5 bg-[#0c0e12]" />
-                    <span className="w-2.5 h-2.5 bg-[#bf0202]" />
+                    <span className="w-2.5 h-2.5 bg-[#2563eb]" />
                     <span className="w-2.5 h-2.5 bg-[#161920]" />
                   </>
                 )}
@@ -957,7 +957,7 @@ export default function Settings() {
           <button
             onClick={handleTriggerChildSave}
             disabled={isChildSaving}
-            className="inline-flex items-center gap-2.5 px-6 py-3 bg-blue-600 dark:bg-[#bf0202] text-white text-[10px] font-heading tracking-widest uppercase rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer border border-blue-500/20 dark:border-red-500/20"
+            className="inline-flex items-center gap-2.5 px-6 py-3 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-[10px] font-heading tracking-widest uppercase rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer border border-blue-500/20"
           >
             {isChildSaving ? (
               <Loader2 className="w-4 h-4 animate-spin" />

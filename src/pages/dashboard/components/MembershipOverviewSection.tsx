@@ -169,7 +169,7 @@ export const MembershipOverviewSection: React.FC<
                           );
                         }
                       }}
-                      className="px-2.5 py-1 text-[11px] font-bold bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white rounded-lg transition-all active:scale-95 cursor-pointer"
+                      className="px-2.5 py-1 text-[11px] font-bold bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-lg transition-all active:scale-95 cursor-pointer"
                     >
                       Renew
                     </button>

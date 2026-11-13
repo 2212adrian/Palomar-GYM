@@ -62,7 +62,7 @@ export const Card: React.FC<CardProps> = ({
         {/* Top Left Pill Badge */}
         {badgeText && (
           <div className="absolute top-5 left-5 z-20">
-            <span className="text-[10px] font-mono font-bold px-3 py-1 rounded-full border border-blue-500/40 dark:border-red-500/40 text-blue-600 dark:text-red-400 bg-blue-50/80 dark:bg-red-500/10 uppercase tracking-widest backdrop-blur-md">
+            <span className="text-[10px] font-mono font-bold px-3 py-1 rounded-full border border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-500/10 uppercase tracking-widest backdrop-blur-md">
               {badgeText}
             </span>
           </div>
@@ -74,7 +74,7 @@ export const Card: React.FC<CardProps> = ({
             <svg
               viewBox="0 0 150 100"
               preserveAspectRatio="none"
-              className="w-full h-full text-blue-600 dark:text-red-600 opacity-90 transition-colors duration-500"
+              className="w-full h-full text-blue-600 opacity-90 transition-colors duration-500"
             >
               <path fill="currentColor" d="M0,0 C50,40 100,0 150,60 L150,0 Z" />
             </svg>

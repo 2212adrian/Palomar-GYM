@@ -1208,7 +1208,7 @@ let itemCount = 0;
         ctx.lineWidth = 1;
         ctx.strokeRect(10, 10, width - 20, height - 20);
 
-        ctx.fillStyle = '#bf0202';
+        ctx.fillStyle = '#1d4ed8';
         ctx.fillRect(10, 10, width - 20, 4);
 
         let y = 35;

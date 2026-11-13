@@ -704,7 +704,7 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
                       onClick={() => setCurrentPage(page)}
                       className={`h-7 w-7 rounded-lg font-mono font-bold transition-all cursor-pointer text-[10px] disabled:opacity-50 border-none ${
                         clampedPage === page
-                          ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white'
+                          ? 'bg-(--color-primary) text-white'
                           : 'border border-(--border-color) text-slate-700 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-neutral-800 bg-transparent'
                       }`}
                     >

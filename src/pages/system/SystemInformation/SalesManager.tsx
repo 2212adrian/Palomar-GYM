@@ -196,7 +196,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
             <div className="space-y-1">
               {item.parsed_items.map((it: any, idx: number) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono font-black text-blue-600 dark:text-red-400">
+                  <span className="font-mono font-black text-blue-600 dark:text-blue-400">
                     {it.quantity}x
                   </span>
                   <span className="font-semibold text-slate-800 dark:text-slate-200">
@@ -338,7 +338,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="font-heading font-bold uppercase text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <PackagePlus className="w-4 h-4 text-blue-600 dark:text-red-400" />
+                <PackagePlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>Products in this transaction</span>
               </label>
               <button

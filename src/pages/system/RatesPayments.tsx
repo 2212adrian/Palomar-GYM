@@ -483,7 +483,7 @@ export const RatesPayments: React.FC = () => {
           onClick={() => setActiveTab('rates')}
           className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'rates'
-              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              ? 'bg-(--color-primary) text-white shadow-xs'
               : 'text-slate-400 hover:text-(--color-text)'
           }`}
         >
@@ -495,7 +495,7 @@ export const RatesPayments: React.FC = () => {
           onClick={() => setActiveTab('preview')}
           className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'preview'
-              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              ? 'bg-(--color-primary) text-white shadow-xs'
               : 'text-slate-400 hover:text-(--color-text)'
           }`}
         >

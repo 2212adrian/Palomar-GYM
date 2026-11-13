@@ -55,9 +55,17 @@ export function VirtualWindowList<T>({
     end: Math.min(items.length, 12),
   });
 
+  const lastWidthRef = useRef<number>(
+    typeof window !== 'undefined' ? window.innerWidth : 0
+  );
+
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
+      const currentWidth = window.innerWidth;
+      if (currentWidth === lastWidthRef.current) return;
+      lastWidthRef.current = currentWidth;
+      const nextMobile = currentWidth < 1024;
+      setIsMobile((prev) => (prev === nextMobile ? prev : nextMobile));
     };
     window.addEventListener('resize', checkMobile, { passive: true });
     return () => window.removeEventListener('resize', checkMobile);
@@ -125,13 +133,20 @@ export function VirtualWindowList<T>({
     };
 
     scrollParent.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    let lastResizeWidth = window.innerWidth;
+    const onHorizontalResize = () => {
+      const w = window.innerWidth;
+      if (w === lastResizeWidth) return;
+      lastResizeWidth = w;
+      onScroll();
+    };
+    window.addEventListener('resize', onHorizontalResize, { passive: true });
 
     updateVisibleRange();
 
     return () => {
       scrollParent.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onHorizontalResize);
     };
   }, [items.length, isMobile, mobileOnly, updateVisibleRange]);
 

@@ -57,7 +57,13 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <form
-        onSubmit={onSave}
+        onSubmit={(e) => {
+          const normalized = formFullName.trim().toUpperCase();
+          if (normalized !== formFullName) {
+            setFormFullName(normalized);
+          }
+          onSave(e);
+        }}
         className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-lg shadow-2xl p-6 md:p-8 space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <div className="flex justify-between items-center border-b border-slate-200 dark:border-white/5 pb-3">
@@ -139,7 +145,7 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
             <input
               type="text"
               value={formFullName}
-              onChange={(e) => setFormFullName(e.target.value.toUpperCase())}
+              onChange={(e) => setFormFullName(e.target.value)}
               className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none uppercase"
               placeholder="e.g. DELA CRUZ, JUAN M."
               required
@@ -229,7 +235,7 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
           <button
             type="submit"
             disabled={saving || uploading}
-            className="flex-1 py-3 bg-[#1b365d] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-md animate-fade-in border-none"
+            className="flex-1 py-3 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-md animate-fade-in border-none transition-colors"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Save Parameters

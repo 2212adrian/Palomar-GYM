@@ -518,7 +518,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 2: Live Facility Rates */}
               <div className="border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Live Facility Rates
                   </h4>
@@ -565,7 +565,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 3: Legal & Documentation (Register: No User Agreement & No About Developer) */}
               <div className="border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Legal &amp; Documentation
                   </h4>
@@ -575,7 +575,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   <button
                     type="button"
                     onClick={() => setAgreementDoc('terms')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
                   >
                     <span className="flex items-center gap-2 truncate">
                       <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -682,7 +682,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 2: Primary Console Navigation */}
               <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     {resolvedVariant === 'system' && isAuthenticated
                       ? 'Console Navigation'
@@ -820,7 +820,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               {/* SECTION 4: Legal & Documentation */}
               <div className="col-span-1 md:col-span-1 lg:col-span-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/70 dark:border-white/10 text-left">
                 <div className="flex items-center gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-red-500" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                   <h4 className="font-heading text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-white">
                     Legal &amp; Documentation
                   </h4>
@@ -853,7 +853,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                   <button
                     type="button"
                     onClick={() => setAgreementDoc('terms')}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-red-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
                   >
                     <span className="flex items-center gap-2 truncate">
                       <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />

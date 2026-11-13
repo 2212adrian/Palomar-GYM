@@ -179,9 +179,9 @@ export const BackupSafetyBanner: React.FC = () => {
                   navigate('/settings');
                   closeModal();
                 }}
-                className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-purple-500/50 hover:bg-purple-500/10 transition-all flex flex-col items-center gap-1.5 cursor-pointer group"
+                className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-blue-500/50 hover:bg-blue-500/10 transition-all flex flex-col items-center gap-1.5 cursor-pointer group"
               >
-                <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
                   <Settings className="w-4 h-4" />
                 </div>
                 <span className="text-[10px] font-heading font-black uppercase text-slate-700 dark:text-slate-200">

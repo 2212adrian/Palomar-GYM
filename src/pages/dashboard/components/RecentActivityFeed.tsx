@@ -35,7 +35,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
       case 'membership_new':
       case 'membership_renew':
         return (
-          <UserPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+          <UserPlus className="w-4 h-4 text-sky-600 dark:text-sky-400" />
         );
       default:
         return <Activity className="w-4 h-4 text-slate-500" />;
@@ -49,7 +49,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({
       case 'primary':
         return 'bg-blue-100 text-[#123c73] dark:bg-blue-950 dark:text-blue-300';
       case 'purple':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300';
+        return 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300';
       case 'info':
         return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300';
       default:

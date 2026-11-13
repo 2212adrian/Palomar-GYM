@@ -122,7 +122,7 @@ export const CashDrawerDashboardWidget: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate('/cash-management')}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e232d] hover:bg-[#123c73] hover:text-white dark:hover:bg-[#bf0202] text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
             >
               <span>Cash Management</span>
               <ExternalLink className="w-3 h-3" />
@@ -134,7 +134,7 @@ export const CashDrawerDashboardWidget: React.FC = () => {
         {isSessionOpen ? (
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 pt-3.5">
             {/* 1. Hero Card: Expected Physical Drawer Cash */}
-            <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 rounded-xl bg-gradient-to-br from-[#123c73] to-[#0c2950] dark:from-[#bf0202] dark:to-[#8a0202] text-white flex flex-col justify-between shadow-xs">
+            <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#1e3a8a] text-white flex flex-col justify-between shadow-xs">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-white/80 tracking-wider">
                   Physical Drawer Cash
@@ -247,7 +247,7 @@ export const CashDrawerDashboardWidget: React.FC = () => {
               <button
                 type="button"
                 onClick={() => navigate('/cash-management')}
-                className="px-3.5 py-2 rounded-xl bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 shadow-xs"
+                className="px-3.5 py-2 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 active:scale-95 shadow-xs"
               >
                 <Play className="w-3.5 h-3.5" />
                 <span>Open Cash Session</span>

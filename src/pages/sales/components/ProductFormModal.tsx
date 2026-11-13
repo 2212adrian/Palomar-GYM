@@ -723,7 +723,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-500'
                   : isLocked
                     ? 'bg-slate-500/10 border border-slate-500/20 text-slate-500'
-                    : 'bg-[#123c73]/10 dark:bg-[#bf0202]/15 border border-[#123c73]/20 dark:border-[#bf0202]/30 text-[#123c73] dark:text-[#bf0202]'
+                    : 'bg-blue-600/10 dark:bg-blue-500/15 border border-blue-600/20 dark:border-blue-500/30 text-blue-700 dark:text-blue-400'
               }`}
             >
               {isSuccess ? (
@@ -752,7 +752,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     onClick={() => setIsMultiAddMode(!isMultiAddMode)}
                     className={`text-[8px] sm:text-[9px] font-black uppercase tracking-wider px-1.5 sm:px-2 py-0.5 rounded-full border transition-all cursor-pointer shrink-0 ${
                       isMultiAddMode
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
+                        ? 'bg-(--color-primary) text-white border-transparent shadow-sm'
                         : 'bg-(--bg-input) text-(--color-text)/70 border-(--border-color) hover:text-(--color-text)'
                     }`}
                   >
@@ -904,7 +904,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           {isMultiAddMode && stagedItems.length > 0 && (
             <div className="p-2.5 sm:p-3 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-2 animate-fade-in min-w-0">
               <div className="flex items-center justify-between gap-1 min-w-0">
-                <span className="text-[10px] sm:text-[11px] font-black text-[#123c73] dark:text-[#bf0202] uppercase tracking-wider flex items-center gap-1 truncate">
+                <span className="text-[10px] sm:text-[11px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1 truncate">
                   <Sparkles className="w-3 h-3 shrink-0" />
                   Staged Queue ({stagedItems.length})
                 </span>
@@ -959,7 +959,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   htmlFor="modal-product-name"
                   className="text-xs font-bold text-(--color-text)/80 flex items-center gap-1.5"
                 >
-                  <Tag className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202] shrink-0" />
+                  <Tag className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400 shrink-0" />
                   <span>Product Name</span>
                   <span className="text-rose-500">*</span>
                 </label>
@@ -1018,7 +1018,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     <InfinityIcon
                       className={`w-4 h-4 shrink-0 transition-colors ${
                         isInfiniteStock
-                          ? 'text-[#123c73] dark:text-[#bf0202]'
+                          ? 'text-blue-700 dark:text-blue-400'
                           : 'text-(--color-text)/50'
                       }`}
                     />
@@ -1044,7 +1044,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   <div
                     className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center p-0.5 ${
                       isInfiniteStock
-                        ? 'bg-[#123c73] dark:bg-[#bf0202]'
+                        ? 'bg-(--color-primary)'
                         : 'bg-(--bg-card) border border-(--border-color)'
                     }`}
                   >
@@ -1111,7 +1111,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <div className="p-3 sm:p-4 bg-(--bg-input)/50 border border-(--border-color) rounded-2xl space-y-2.5 min-w-0">
               <div className="flex items-center justify-between gap-1 min-w-0">
                 <span className="text-[10px] font-black uppercase tracking-widest text-(--color-text)/70 flex items-center gap-1.5 truncate">
-                  <Barcode className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202] shrink-0" />
+                  <Barcode className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400 shrink-0" />
                   Image & External Barcode
                 </span>
                 <span className="text-[10px] text-(--color-text)/50 font-medium shrink-0">
@@ -1162,9 +1162,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       className="py-2.5 px-3 bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-[#1e232d] border border-(--border-color) text-(--color-text) rounded-xl text-[11px] font-bold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
                     >
                       {uploading ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#123c73] dark:text-[#bf0202]" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-700 dark:text-blue-400" />
                       ) : (
-                        <FolderPlus className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                        <FolderPlus className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
                       )}
                       <span>Upload</span>
                     </button>
@@ -1174,11 +1174,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       onClick={() => setShowLiveScanner(!showLiveScanner)}
                       className={`py-2.5 px-3 border rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
                         showLiveScanner
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent ring-2 ring-white/30 animate-pulse'
+                          ? 'bg-(--color-primary) text-white border-transparent ring-2 ring-white/30 animate-pulse'
                           : 'bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-[#1e232d] border-(--border-color) text-(--color-text)'
                       }`}
                     >
-                      <Camera className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                      <Camera className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
                       <span>Scan/Snap</span>
                     </button>
                   </div>
@@ -1196,7 +1196,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     />
                     <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-(--color-text)/40">
                       {apiLoading ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#123c73] dark:text-[#bf0202]" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-700 dark:text-blue-400" />
                       ) : (
                         <Barcode className="w-3.5 h-3.5" />
                       )}
@@ -1212,10 +1212,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     <span className="text-[9px] font-bold text-(--color-text)/50 uppercase shrink-0">
                       External Barcode:
                     </span>
-                    <span className="font-mono font-bold text-xs text-[#123c73] dark:text-[#bf0202] truncate max-w-[130px] sm:max-w-none">
+                    <span className="font-mono font-bold text-xs text-blue-700 dark:text-blue-400 truncate max-w-[130px] sm:max-w-none">
                       {formManufacturerBarcode}
                     </span>
-                    <span className="px-1 py-0.5 rounded text-[7px] font-black uppercase bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] shrink-0">
+                    <span className="px-1 py-0.5 rounded text-[7px] font-black uppercase bg-blue-600/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 shrink-0">
                       {formManufacturerSource}
                     </span>
                   </div>
@@ -1375,7 +1375,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                         }}
                         className="px-3 py-1.5 bg-(--bg-card) hover:bg-(--bg-input) text-(--color-text) border border-(--border-color) rounded-xl text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer"
                       >
-                        <SwitchCamera className="w-3.5 h-3.5 text-[#123c73] dark:text-[#bf0202]" />
+                        <SwitchCamera className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
                         <span>Switch</span>
                       </button>
                     )}
@@ -1402,7 +1402,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   type="button"
                   disabled={saving || isSubmitting || isSuccess}
                   onClick={handleAddCurrentToQueue}
-                  className="px-3 sm:px-4 py-2.5 bg-[#123c73]/10 dark:bg-[#bf0202]/15 hover:bg-[#123c73]/20 text-[#123c73] dark:text-red-400 border border-[#123c73]/30 dark:border-[#bf0202]/30 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-1 active:scale-95 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 sm:px-4 py-2.5 bg-blue-600/10 dark:bg-blue-500/15 hover:bg-blue-600/20 text-blue-700 dark:text-blue-400 border border-blue-600/30 dark:border-blue-500/30 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-1 active:scale-95 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Queue</span>
@@ -1427,7 +1427,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 } ${
                   isLocked
                     ? 'bg-slate-600 hover:bg-slate-700 text-white shadow-slate-600/20'
-                    : 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] text-white shadow-[#123c73]/20 dark:shadow-[#bf0202]/20'
+                    : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white shadow-blue-600/20'
                 }`}
               >
                 {(saving || isSubmitting) && (

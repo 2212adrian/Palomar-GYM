@@ -162,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-heading text-[11px] tracking-wider uppercase font-black transition-all cursor-pointer select-none ${
                     isSalesRegisterActive
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-sm'
+                      ? 'bg-(--color-primary) text-white shadow-sm'
                       : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
                   }`}
                 >
@@ -179,7 +179,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-heading text-[11px] tracking-wider uppercase font-black transition-all cursor-pointer select-none ${
                     isProductsActive
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-sm'
+                      ? 'bg-(--color-primary) text-white shadow-sm'
                       : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
                   }`}
                 >
@@ -214,7 +214,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-heading text-[11px] tracking-wider uppercase font-black transition-all cursor-pointer select-none ${
                     isLogbookActive
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-sm'
+                      ? 'bg-(--color-primary) text-white shadow-sm'
                       : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
                   }`}
                 >
@@ -231,7 +231,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-heading text-[11px] tracking-wider uppercase font-black transition-all cursor-pointer select-none ${
                     isMemberListActive
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-sm'
+                      ? 'bg-(--color-primary) text-white shadow-sm'
                       : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
                   }`}
                 >
@@ -260,7 +260,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={handleSalesClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 cursor-pointer ${
                     isSalesDomainActive
-                      ? 'text-[#123c73] dark:text-[#bf0202] font-black'
+                      ? 'text-blue-600 dark:text-blue-400 font-black'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -279,7 +279,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronDown
                       className={`w-2.5 h-2.5 transition-transform duration-300 ${
                         activeFloating === 'sales'
-                          ? 'rotate-180 text-[#123c73] dark:text-[#bf0202]'
+                          ? 'rotate-180 text-blue-600 dark:text-blue-400'
                           : 'opacity-50'
                       }`}
                     />
@@ -291,7 +291,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={notifyNavigationClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                     isSalesDomainActive
-                      ? 'text-[#123c73] dark:text-[#bf0202] font-black'
+                      ? 'text-blue-600 dark:text-blue-400 font-black'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -313,7 +313,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={handleLogbookClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 cursor-pointer ${
                     isLogbookDomainActive
-                      ? 'text-[#123c73] dark:text-[#bf0202] font-black'
+                      ? 'text-blue-600 dark:text-blue-400 font-black'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -329,7 +329,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <ChevronDown
                       className={`w-2.5 h-2.5 transition-transform duration-300 ${
                         activeFloating === 'logbook'
-                          ? 'rotate-180 text-[#123c73] dark:text-[#bf0202]'
+                          ? 'rotate-180 text-blue-600 dark:text-blue-400'
                           : 'opacity-50'
                       }`}
                     />
@@ -341,7 +341,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={notifyNavigationClick}
                   className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                     isLogbookDomainActive
-                      ? 'text-[#123c73] dark:text-[#bf0202] font-black'
+                      ? 'text-blue-600 dark:text-blue-400 font-black'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -372,8 +372,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   !isSessionOpen
                     ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-60 cursor-not-allowed'
                     : isScannerModalOpen
-                      ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-blue-500/40 dark:shadow-red-500/40 scale-105 ring-2 ring-emerald-400'
-                      : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white shadow-slate-900/30'
+                      ? 'bg-(--color-primary) text-white shadow-blue-500/40 scale-105 ring-2 ring-emerald-400'
+                      : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white shadow-blue-900/30'
                 }`}
               >
                 <Scan
@@ -399,7 +399,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 className={`group flex flex-col items-center justify-center gap-1 py-1 transition-all duration-200 active:scale-90 ${
                   isPlansActive
-                    ? 'text-[#123c73] dark:text-[#bf0202] font-black'
+                    ? 'text-blue-600 dark:text-blue-400 font-black'
                     : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -434,8 +434,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             !isSessionOpen
               ? 'bg-slate-400 dark:bg-zinc-700 text-white opacity-60 cursor-not-allowed border-slate-300 dark:border-zinc-600'
               : isScannerModalOpen
-                ? 'bg-[#123c73] dark:bg-[#bf0202] text-emerald-400 border-blue-400 dark:border-red-400 ring-4 ring-emerald-500/20'
-                : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white border-white/20 hover:scale-105 cursor-pointer shadow-slate-950/40'
+                ? 'bg-(--color-primary) text-emerald-400 border-blue-400 ring-4 ring-emerald-500/20'
+                : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white border-white/20 hover:scale-105 cursor-pointer shadow-slate-950/40'
           }`}
         >
           <Scan className="w-6 h-6" />

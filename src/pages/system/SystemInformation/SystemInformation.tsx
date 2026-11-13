@@ -525,7 +525,7 @@ export const SystemInformation: React.FC = () => {
                   type="button"
                   onClick={handleUpdateToLatest}
                   disabled={isUpdatingApp}
-                  className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white"
+                  className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-heading font-black tracking-widest uppercase transition-all cursor-pointer disabled:opacity-60 shadow-md bg-(--color-primary) hover:bg-(--color-primary-hover) text-white"
                 >
                   <Download
                     className={`w-4 h-4 ${isUpdatingApp ? 'animate-bounce' : ''}`}
@@ -625,7 +625,7 @@ export const SystemInformation: React.FC = () => {
               <div className="space-y-2 p-3 bg-(--bg-page) border border-(--border-color) rounded-xl">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 truncate">
-                    <Cloud className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                    <Cloud className="w-3.5 h-3.5 text-sky-500 shrink-0" />
                     Storage
                   </span>
                   <span className="text-[10px] font-mono font-bold text-slate-400">
@@ -643,7 +643,7 @@ export const SystemInformation: React.FC = () => {
                   </div>
                   <div className="w-full h-2 bg-(--bg-card) border border-(--border-color) rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                      className="h-full bg-sky-500 rounded-full transition-all duration-500"
                       style={{ width: `${storageUsagePercent}%` }}
                     />
                   </div>
@@ -670,7 +670,7 @@ export const SystemInformation: React.FC = () => {
                 className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
               >
                 <div className="flex items-center gap-2 truncate">
-                  <FileText className="w-3.5 h-3.5 text-indigo-500 dark:text-red-400 shrink-0" />
+                  <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                   <span className="text-[11px] font-bold text-(--color-text) truncate">
                     Agreement
                   </span>

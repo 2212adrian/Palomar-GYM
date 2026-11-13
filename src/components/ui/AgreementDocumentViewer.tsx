@@ -53,7 +53,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({
   title,
   children,
 }) => (
-  <section className="space-y-1.5 border-l-2 border-blue-500/50 dark:border-red-500/50 pl-3 text-left">
+  <section className="space-y-1.5 border-l-2 border-blue-500/50 pl-3 text-left">
     <h4 className="font-heading text-xs uppercase tracking-wider text-slate-900 dark:text-white">
       {title}
     </h4>
@@ -212,7 +212,7 @@ export const AgreementDocumentViewer: React.FC<
         <header className="sticky top-0 z-10 bg-slate-50 dark:bg-[#161920] border-b border-slate-200 dark:border-white/10 px-5 sm:px-6 pt-5 shrink-0">
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-red-400">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                 {gymProfile.gymName}
               </p>
               <h3 className="font-heading text-lg uppercase tracking-wider text-slate-900 dark:text-white">
@@ -253,7 +253,7 @@ export const AgreementDocumentViewer: React.FC<
                 onClick={() => setActiveDocument('agreement')}
                 className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                   activeDocument === 'agreement'
-                    ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
+                    ? 'bg-(--color-primary) text-white shadow-xs'
                     : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                 }`}
               >
@@ -266,7 +266,7 @@ export const AgreementDocumentViewer: React.FC<
               onClick={() => setActiveDocument('terms')}
               className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 activeDocument === 'terms'
-                  ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
             >
@@ -278,7 +278,7 @@ export const AgreementDocumentViewer: React.FC<
               onClick={() => setActiveDocument('privacy')}
               className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 activeDocument === 'privacy'
-                  ? 'bg-blue-600 dark:bg-[#bf0202] text-white shadow-xs'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
             >
@@ -311,7 +311,7 @@ export const AgreementDocumentViewer: React.FC<
           <button
             type="button"
             onClick={handleAccept}
-            className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-[#bf0202] dark:hover:bg-red-700 text-white text-xs font-heading font-black uppercase tracking-widest cursor-pointer border-none shadow-md transition-all active:scale-95"
+            className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs font-heading font-black uppercase tracking-widest cursor-pointer border-none shadow-md transition-all active:scale-95"
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>Accept</span>
@@ -327,8 +327,8 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
   profile,
 }) => (
   <div className="space-y-4 text-left">
-    <div className="flex gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-red-500/10 border border-indigo-200 dark:border-red-500/20">
-      <FileText className="w-5 h-5 shrink-0 text-indigo-600 dark:text-red-400" />
+    <div className="flex gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+      <FileText className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
         This User Agreement is a binding electronic contract between you and{' '}
         <strong>{profile.gymName}</strong> governing your membership, physical access to the facility, and use of all digital systems including the Online Pre-Registration Portal, Member QR &amp; Physical Access Cards, Logbook, and POS Registers.
@@ -591,7 +591,7 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
           <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
-            <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-red-400 shrink-0 mt-0.5" />
+            <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
             <span className="text-[11px] text-slate-700 dark:text-slate-300 leading-snug">
               {profile.gymAddress}
             </span>

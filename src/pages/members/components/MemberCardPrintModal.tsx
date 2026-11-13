@@ -515,8 +515,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           ctx.lineWidth = 1 * scale;
           ctx.stroke();
 
-          // Header Red Line
-          ctx.fillStyle = '#dc2626';
+          // Header Blue Accent Line
+          ctx.fillStyle = '#2563eb';
           ctx.fillRect(
             cardX + cardW * 0.04,
             cardY + 6.8 * scale,
@@ -525,7 +525,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           );
 
           // Subtitle (MUAYTHAI BOXING)
-          ctx.fillStyle = '#dc2626';
+          ctx.fillStyle = '#3b82f6';
           ctx.font = `900 ${Math.round(2.7 * scale)}px Arial, sans-serif`;
           ctx.textAlign = 'center';
           ctx.fillText(
@@ -687,8 +687,8 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
             detailsY + 21.8 * scale
           );
 
-          // Vertical Red Divider Line
-          ctx.fillStyle = '#dc2626';
+          // Vertical Blue Divider Line
+          ctx.fillStyle = '#2563eb';
           ctx.fillRect(
             detailsX + boxHalfW + 0.45 * scale,
             detailsY + 17.5 * scale,
@@ -719,7 +719,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
           );
 
           const footerY = cardY + cardH - 5 * scale;
-          ctx.fillStyle = '#dc2626';
+          ctx.fillStyle = '#2563eb';
           ctx.fillRect(cardX, footerY, cardW, 0.35 * scale);
 
           ctx.fillStyle = '#ffffff';
@@ -975,10 +975,10 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
             }
             .header { text-align: center; }
             .gym-title { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 9.5pt; font-weight: 900; letter-spacing: 0.5px; color: #ffffff; text-transform: uppercase; line-height: 1; margin: 0; }
-            .header-red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm auto 0.5mm auto; width: 92%; }
-            .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #dc2626; text-transform: uppercase; line-height: 1; margin: 0; }
+            .header-red-line { height: 0.35mm; background-color: #2563eb; margin: 0.6mm auto 0.5mm auto; width: 92%; }
+            .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #3b82f6; text-transform: uppercase; line-height: 1; margin: 0; }
             .gym-address, .gym-contact { font-family: Arial, sans-serif; font-size: 4pt; color: #ffffff; line-height: 1.1; font-weight: 600; margin: 0; }
-            .red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm 0; width: 100%; }
+            .red-line { height: 0.35mm; background-color: #2563eb; margin: 0.6mm 0; width: 100%; }
 
             .main-content { display: flex; gap: 2.5mm; align-items: center; flex: 1; min-height: 0; margin: 0.5mm 0; }
             .qr-wrapper {
@@ -1047,7 +1047,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
             .dates-row { display: flex; gap: 1mm; align-items: flex-end; }
             .dates-row .field-group { flex: 1; min-width: 0; }
             .dates-row .field-box { font-size: 5pt; text-align: center; padding: 0.5mm 0.4mm; }
-            .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #dc2626; flex-shrink: 0; margin-bottom: 0.2mm; }
+            .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #2563eb; flex-shrink: 0; margin-bottom: 0.2mm; }
 
             .footer-text {
               font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
@@ -1267,10 +1267,10 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         }
         .card-sheet-container .header { text-align: center; }
         .card-sheet-container .gym-title { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 9.5pt; font-weight: 900; letter-spacing: 0.5px; color: #ffffff; text-transform: uppercase; line-height: 1; margin: 0; }
-        .card-sheet-container .header-red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm auto 0.5mm auto; width: 92%; }
-        .card-sheet-container .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #dc2626; text-transform: uppercase; line-height: 1; margin: 0; }
+        .card-sheet-container .header-red-line { height: 0.35mm; background-color: #2563eb; margin: 0.6mm auto 0.5mm auto; width: 92%; }
+        .card-sheet-container .gym-subtitle { font-family: 'Freshman', 'Arial Black', Impact, sans-serif; font-size: 7pt; font-weight: 900; color: #3b82f6; text-transform: uppercase; line-height: 1; margin: 0; }
         .card-sheet-container .gym-address, .card-sheet-container .gym-contact { font-family: Arial, sans-serif; font-size: 4pt; color: #ffffff; line-height: 1.1; font-weight: 600; margin: 0; }
-        .card-sheet-container .red-line { height: 0.35mm; background-color: #dc2626; margin: 0.6mm 0; width: 100%; }
+        .card-sheet-container .red-line { height: 0.35mm; background-color: #2563eb; margin: 0.6mm 0; width: 100%; }
 
         .card-sheet-container .main-content { display: flex; gap: 2.5mm; align-items: center; flex: 1; min-height: 0; margin: 0.5mm 0; }
         .card-sheet-container .qr-wrapper {
@@ -1295,7 +1295,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
         .card-sheet-container .dates-row { display: flex; gap: 1mm; align-items: flex-end; }
         .card-sheet-container .dates-row .field-group { flex: 1; min-width: 0; }
         .card-sheet-container .dates-row .field-box { font-size: 5pt; text-align: center; padding: 0.5mm 0.4mm; }
-        .card-sheet-container .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #dc2626; flex-shrink: 0; margin-bottom: 0.2mm; }
+        .card-sheet-container .vertical-red-divider { width: 0.3mm; height: 6mm; background-color: #2563eb; flex-shrink: 0; margin-bottom: 0.2mm; }
 
         .card-sheet-container .footer-text {
           font-family: Arial, sans-serif; font-size: 3.6pt; color: #ffffff !important; font-weight: 800; text-align: center; letter-spacing: 0.2px; text-transform: uppercase; margin-top: 0.2mm; line-height: 1;
@@ -2169,7 +2169,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                                           style={{
                                             width: '0.3mm',
                                             height: '6mm',
-                                            backgroundColor: '#dc2626',
+                                            backgroundColor: '#2563eb',
                                             flexShrink: 0,
                                             marginBottom: '0.2mm',
                                           }}

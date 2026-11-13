@@ -1361,56 +1361,56 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             row.payment_method,
             row.payment_ref
           );
-          page.drawText(String(row.receipt_no).slice(0, 15), {
+          page.drawText(safePdfText(row.receipt_no).slice(0, 15), {
             x: 30,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(String(row.date).slice(0, 16), {
+          page.drawText(safePdfText(row.date).slice(0, 16), {
             x: 115,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(String(row.customer_name).slice(0, 20), {
+          page.drawText(safePdfText(row.customer_name).slice(0, 20), {
             x: 205,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(String(row.transaction_type).slice(0, 14), {
+          page.drawText(safePdfText(row.transaction_type).slice(0, 14), {
             x: 335,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
-          page.drawText(row.gross_sales.toFixed(2), {
+          page.drawText(safePdfText(row.gross_sales.toFixed(2)), {
             x: 420,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(row.vat_exempt_sales.toFixed(2), {
+          page.drawText(safePdfText(row.vat_exempt_sales.toFixed(2)), {
             x: 485,
             y,
             size: 6.5,
             font,
             color: rgb(0.4, 0.4, 0.4),
           });
-          page.drawText(row.vat_amount.toFixed(2), {
+          page.drawText(safePdfText(row.vat_amount.toFixed(2)), {
             x: 550,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(row.net_sales.toFixed(2), {
+          page.drawText(safePdfText(row.net_sales.toFixed(2)), {
             x: 605,
             y,
             size: 6.5,
@@ -1482,14 +1482,14 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               ? Number(row.closing_actual_cash).toFixed(2)
               : '-';
 
-          page.drawText(String(row.session_number || '').slice(0, 15), {
+          page.drawText(safePdfText(row.session_number || '').slice(0, 15), {
             x: 30,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(String(row.opened_at || '').slice(0, 16), {
+          page.drawText(safePdfText(row.opened_at || '').slice(0, 16), {
             x: 115,
             y,
             size: 6.5,
@@ -1497,7 +1497,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             color: rgb(0.3, 0.3, 0.3),
           });
           page.drawText(
-            row.closed_at ? String(row.closed_at).slice(0, 16) : 'In Progress',
+            safePdfText(
+              row.closed_at ? String(row.closed_at).slice(0, 16) : 'In Progress'
+            ),
             {
               x: 195,
               y,
@@ -1506,42 +1508,42 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.3, 0.3, 0.3),
             }
           );
-          page.drawText(String(row.opened_by_name || '-').slice(0, 11), {
+          page.drawText(safePdfText(row.opened_by_name || '-').slice(0, 11), {
             x: 275,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(String(row.closed_by_name || '-').slice(0, 11), {
+          page.drawText(safePdfText(row.closed_by_name || '-').slice(0, 11), {
             x: 345,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(Number(row.opening_float || 0).toFixed(2), {
+          page.drawText(safePdfText(Number(row.opening_float || 0).toFixed(2)), {
             x: 415,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
-          page.drawText(expectedText, {
+          page.drawText(safePdfText(expectedText), {
             x: 480,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
-          page.drawText(countedText, {
+          page.drawText(safePdfText(countedText), {
             x: 555,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(discText, {
+          page.drawText(safePdfText(discText), {
             x: 630,
             y,
             size: 6.5,
@@ -1586,42 +1588,42 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.97, 0.98, 0.99),
             });
           }
-          page.drawText(String(row.barcode).slice(0, 18), {
+          page.drawText(safePdfText(row.barcode).slice(0, 18), {
             x: 30,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(String(row.name).slice(0, 42), {
+          page.drawText(safePdfText(row.name).slice(0, 42), {
             x: 150,
             y,
             size: 6.5,
             font: fontBold,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(row.price.toFixed(2), {
+          page.drawText(safePdfText(row.price.toFixed(2)), {
             x: 400,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(`${row.sold} units`, {
+          page.drawText(safePdfText(`${row.sold} units`), {
             x: 520,
             y,
             size: 6.5,
             font: fontBold,
             color: rgb(0.06, 0.6, 0.35),
           });
-          page.drawText(row.revenue.toFixed(2), {
+          page.drawText(safePdfText(row.revenue.toFixed(2)), {
             x: 630,
             y,
             size: 6.5,
             font: fontBold,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(`${row.stock} in stock`, {
+          page.drawText(safePdfText(`${row.stock} in stock`), {
             x: 740,
             y,
             size: 6.5,
@@ -1658,35 +1660,35 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             row.payment_method,
             row.gcash_ref_no
           );
-          page.drawText(String(row.customer_name).slice(0, 26), {
+          page.drawText(safePdfText(row.customer_name).slice(0, 26), {
             x: 30,
             y,
             size: 6.5,
             font,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(String(row.customer_type || 'Walk-In'), {
+          page.drawText(safePdfText(row.customer_type || 'Walk-In'), {
             x: 215,
             y,
             size: 6.5,
             font,
             color: rgb(0.2, 0.2, 0.2),
           });
-          page.drawText(`${row.visits_count} visits`, {
+          page.drawText(safePdfText(`${row.visits_count} visits`), {
             x: 345,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(Number(row.total_fees || 0).toFixed(2), {
+          page.drawText(safePdfText(Number(row.total_fees || 0).toFixed(2)), {
             x: 460,
             y,
             size: 6.5,
             font,
             color: rgb(0.06, 0.6, 0.35),
           });
-          page.drawText(String(row.latest_checkin).slice(0, 16), {
+          page.drawText(safePdfText(row.latest_checkin).slice(0, 16), {
             x: 575,
             y,
             size: 6.5,
@@ -1737,7 +1739,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             '';
           const payment = formatPaymentWithRef(row.payment_method, subRef);
 
-          page.drawText(cid.slice(0, 16), {
+          page.drawText(safePdfText(cid).slice(0, 16), {
             x: 30,
             y,
             size: 6.5,
@@ -1745,30 +1747,30 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             color: rgb(0.07, 0.23, 0.45),
           });
           page.drawText(
-            String(row.members?.full_name || 'Member').slice(0, 20),
+            safePdfText(row.members?.full_name || 'Member').slice(0, 20),
             { x: 135, y, size: 6.5, font, color: rgb(0.1, 0.1, 0.1) }
           );
           page.drawText(
-            String(
+            safePdfText(
               row.plan_type ? row.plan_type.toUpperCase() : 'Monthly Pass'
             ).slice(0, 18),
             { x: 275, y, size: 6.5, font, color: rgb(0.2, 0.2, 0.2) }
           );
-          page.drawText(Number(row.price || 0).toFixed(2), {
+          page.drawText(safePdfText(Number(row.price || 0).toFixed(2)), {
             x: 395,
             y,
             size: 6.5,
             font,
             color: rgb(0.06, 0.6, 0.35),
           });
-          page.drawText(String(row.start_date || row.created_at).slice(0, 10), {
+          page.drawText(safePdfText(row.start_date || row.created_at).slice(0, 10), {
             x: 480,
             y,
             size: 6.5,
             font,
             color: rgb(0.3, 0.3, 0.3),
           });
-          page.drawText(String(row.end_date || 'Ongoing').slice(0, 10), {
+          page.drawText(safePdfText(row.end_date || 'Ongoing').slice(0, 10), {
             x: 565,
             y,
             size: 6.5,
@@ -1808,42 +1810,42 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               color: rgb(0.97, 0.98, 0.99),
             });
           }
-          page.drawText(row.date, {
+          page.drawText(safePdfText(row.date), {
             x: 30,
             y,
             size: 6.5,
             font: fontBold,
             color: rgb(0.1, 0.1, 0.1),
           });
-          page.drawText(row.sales.toFixed(2), {
+          page.drawText(safePdfText(row.sales.toFixed(2)), {
             x: 160,
             y,
             size: 6.5,
             font,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(row.logbook.toFixed(2), {
+          page.drawText(safePdfText(row.logbook.toFixed(2)), {
             x: 300,
             y,
             size: 6.5,
             font,
             color: rgb(0.06, 0.6, 0.35),
           });
-          page.drawText(row.subscription.toFixed(2), {
+          page.drawText(safePdfText(row.subscription.toFixed(2)), {
             x: 440,
             y,
             size: 6.5,
             font,
-            color: rgb(0.5, 0.2, 0.7),
+            color: rgb(0.15, 0.39, 0.92),
           });
-          page.drawText(row.totalRevenue.toFixed(2), {
+          page.drawText(safePdfText(row.totalRevenue.toFixed(2)), {
             x: 590,
             y,
             size: 6.5,
             font: fontBold,
             color: rgb(0.07, 0.23, 0.45),
           });
-          page.drawText(`${row.transactionCount} transactions`, {
+          page.drawText(safePdfText(`${row.transactionCount} transactions`), {
             x: 725,
             y,
             size: 6.5,
@@ -1986,7 +1988,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
               </p>
             </div>
             <div className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-zinc-800/90 border border-slate-200/90 dark:border-zinc-700/80 shadow-2xs">
-              <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block mb-0.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 block mb-0.5">
                 📋 Key Data Included
               </span>
               <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
@@ -2325,7 +2327,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                             key={idx}
                             className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
                           >
-                            <td className="p-2.5 font-mono text-xs font-bold text-purple-600 dark:text-purple-400">
+                            <td className="p-2.5 font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
                               {row.receipt_number ||
                                 `SUB-${String(row.id).slice(0, 6)}`}
                             </td>

@@ -317,7 +317,7 @@ export const OfflinePopup: React.FC = () => {
                   type="button"
                   onClick={handleManualRetry}
                   disabled={isChecking}
-                  className="px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-lg bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] active:scale-95 text-white transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  className="px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-lg bg-(--color-primary) hover:bg-(--color-primary-hover) active:scale-95 text-white transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {isChecking ? (
                     <>

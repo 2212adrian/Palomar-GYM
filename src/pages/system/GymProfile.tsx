@@ -490,7 +490,7 @@ export const GymProfile: React.FC = () => {
           onClick={() => setActiveTab('info')}
           className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'info'
-              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              ? 'bg-(--color-primary) text-white shadow-xs'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
@@ -502,7 +502,7 @@ export const GymProfile: React.FC = () => {
           onClick={() => setActiveTab('branding')}
           className={`flex-1 py-2.5 px-3 rounded-xl font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'branding'
-              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+              ? 'bg-(--color-primary) text-white shadow-xs'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
@@ -520,7 +520,7 @@ export const GymProfile: React.FC = () => {
         >
           <div className="p-4 sm:p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-4">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Building className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
+              <Building className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               Gym Information
             </h3>
 
@@ -543,7 +543,7 @@ export const GymProfile: React.FC = () => {
                       placeholder="Enter business name"
                       title="Gym Name"
                       onChange={(e) => setGymName(e.target.value)}
-                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 font-bold outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                       required
                     />
                   )}
@@ -566,7 +566,7 @@ export const GymProfile: React.FC = () => {
                       placeholder="Enter support email"
                       title="Business Email"
                       onChange={(e) => setEmailAddress(e.target.value)}
-                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                      className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                       required
                     />
                   )}
@@ -590,7 +590,7 @@ export const GymProfile: React.FC = () => {
                     title="Gym Description"
                     rows={3}
                     onChange={(e) => setGymDescription(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all resize-none leading-relaxed"
                     required
                   />
                 )}
@@ -613,7 +613,7 @@ export const GymProfile: React.FC = () => {
                     placeholder="Enter street, city, province"
                     title="Physical Address"
                     onChange={(e) => setGymAddress(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                     required
                   />
                 )}
@@ -639,7 +639,7 @@ export const GymProfile: React.FC = () => {
                         placeholder="GYM Contact 1"
                         title="Contact Name 1"
                         onChange={(e) => setContactName1(e.target.value)}
-                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                         required
                       />
                     )}
@@ -662,7 +662,7 @@ export const GymProfile: React.FC = () => {
                         placeholder="09762607481"
                         title="Contact Number 1"
                         onChange={(e) => setContactNumber1(e.target.value)}
-                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                         required
                       />
                     )}
@@ -687,7 +687,7 @@ export const GymProfile: React.FC = () => {
                         placeholder="GYM Contact 2"
                         title="Contact Name 2"
                         onChange={(e) => setContactName2(e.target.value)}
-                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                         required
                       />
                     )}
@@ -710,7 +710,7 @@ export const GymProfile: React.FC = () => {
                         placeholder="09123456789"
                         title="Contact Number 2"
                         onChange={(e) => setContactNumber2(e.target.value)}
-                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                        className="w-full px-3 py-2 sm:py-2.5 border border-slate-200 dark:border-white/10 rounded-lg text-xs sm:text-sm bg-white dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                         required
                       />
                     )}
@@ -729,7 +729,7 @@ export const GymProfile: React.FC = () => {
         >
           <div className="p-4 sm:p-5 bg-slate-50/30 dark:bg-neutral-900/10 border border-slate-200 dark:border-white/5 rounded-2xl space-y-5">
             <h3 className="text-sm font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <ImageIcon className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
+              <ImageIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               Branding & Media Displays
             </h3>
 
@@ -879,7 +879,7 @@ export const GymProfile: React.FC = () => {
               <div className="p-4 sm:p-5 border border-slate-200 dark:border-white/10 rounded-2xl bg-white dark:bg-[#13161a] space-y-3.5 shadow-2xs">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-blue-500 dark:text-[#bf0202]" />
+                    <Lock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     <h4 className="text-xs font-heading tracking-wider uppercase font-bold text-slate-800 dark:text-slate-200">
                       Live Terminal Preview
                     </h4>
@@ -899,7 +899,7 @@ export const GymProfile: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleOpenLivePreview}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1b365d] dark:bg-[#bf0202] hover:opacity-90 text-white rounded-xl text-xs font-heading font-bold tracking-wider uppercase shadow-md cursor-pointer transition-all duration-200 active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl text-xs font-heading font-bold tracking-wider uppercase shadow-md cursor-pointer transition-all duration-200 active:scale-95"
                 >
                   <ExternalLink className="w-4 h-4" />
                   <span>Open Live Login Preview</span>

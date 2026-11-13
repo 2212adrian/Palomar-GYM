@@ -175,7 +175,7 @@ export const getPaymentMethodInfo = (method: string) => {
     label: 'Promo',
     icon: Gift,
     badgeClass:
-      'bg-purple-50 text-purple-900 border-purple-200/90 dark:bg-purple-900/80 dark:text-purple-200 dark:border-purple-500 font-bold tracking-wider',
+      'bg-sky-50 text-sky-900 border-sky-200/90 dark:bg-sky-900/80 dark:text-sky-200 dark:border-sky-500 font-bold tracking-wider',
   };
 };
 
@@ -206,12 +206,12 @@ const CATEGORY_THEMES = {
     label: 'REGULAR WALK-IN',
     shortLabel: 'REGULAR',
     icon: User,
-    borderAccent: 'bg-purple-500 dark:bg-purple-400',
+    borderAccent: 'bg-sky-500 dark:bg-sky-400',
     badgeClass:
-      'bg-purple-50 text-purple-900 border-purple-200/90 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-500 font-bold',
+      'bg-sky-50 text-sky-900 border-sky-200/90 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-500 font-bold',
     iconBoxClass:
-      'bg-purple-50/80 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-600 shadow-xs',
-    priceTextClass: 'text-purple-700 dark:text-purple-400 font-black',
+      'bg-sky-50/80 text-sky-800 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-600 shadow-xs',
+    priceTextClass: 'text-sky-700 dark:text-sky-400 font-black',
   },
   member: {
     label: 'EXISTING MEMBER',

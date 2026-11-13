@@ -930,7 +930,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     onClick={() => setPaymentMethod('Cash')}
                     className={`py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'Cash'
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
+                        ? 'bg-(--color-primary) text-white border-transparent shadow-sm'
                         : 'bg-transparent border-(--border-color) text-slate-500'
                     }`}
                   >
@@ -942,7 +942,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                     onClick={() => setPaymentMethod('GCash')}
                     className={`py-2.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                       paymentMethod === 'GCash'
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-sm'
+                        ? 'bg-(--color-primary) text-white border-transparent shadow-sm'
                         : 'bg-transparent border-(--border-color) text-slate-500'
                     }`}
                   >

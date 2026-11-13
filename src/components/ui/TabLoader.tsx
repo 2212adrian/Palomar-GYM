@@ -120,7 +120,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
           50% {
             opacity: 1;
             transform: scale(1.05);
-            fill: #123c73;
+            fill: #1d4ed8;
           }
         }
 
@@ -133,7 +133,7 @@ export const TabLoader: React.FC<TabLoaderProps> = ({ isVisible }) => {
           50% {
             opacity: 1;
             transform: scale(1.05);
-            fill: #bf0202;
+            fill: #2563eb;
           }
         }
 

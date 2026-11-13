@@ -1,5 +1,5 @@
 //src/components/ui/Input.tsx
-import React, { forwardRef, useState, useEffect } from 'react';
+import React, { forwardRef, useState } from 'react';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -30,30 +30,23 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     },
     ref
   ) => {
-    const [internalPopulated, setInternalPopulated] = useState<boolean>(() => {
-      if (props.value !== undefined) {
-        return String(props.value).length > 0;
-      }
-      if (props.defaultValue !== undefined) {
-        return String(props.defaultValue).length > 0;
-      }
-      return false;
-    });
+    const [uncontrolledPopulated, setUncontrolledPopulated] = useState<boolean>(
+      () =>
+        props.defaultValue !== undefined &&
+        String(props.defaultValue).length > 0
+    );
 
-    useEffect(() => {
-      if (props.value !== undefined) {
-        setInternalPopulated(String(props.value).length > 0);
-      }
-    }, [props.value]);
-
+    const isControlled = props.value !== undefined;
     const isPopulated =
       controlledIsPopulated !== undefined
         ? controlledIsPopulated
-        : internalPopulated;
+        : isControlled
+          ? String(props.value).length > 0
+          : uncontrolledPopulated;
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (controlledIsPopulated === undefined) {
-        setInternalPopulated(e.target.value.length > 0);
+      if (!isControlled && controlledIsPopulated === undefined) {
+        setUncontrolledPopulated(e.target.value.length > 0);
       }
       onChange?.(e);
     };
@@ -63,12 +56,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         return 'border-red-500 focus:border-red-500 focus:ring-red-500/20';
       }
       if (isPopulated && !error) {
-        return 'border-emerald-500 focus:border-blue-500 focus:ring-blue-500/20';
+        return 'border-emerald-500 focus:border-(--color-primary-light) focus:ring-(--color-primary)/20';
       }
       if (touched && !isPopulated) {
-        return 'border-amber-500 focus:border-blue-500 focus:ring-blue-500/20';
+        return 'border-amber-500 focus:border-(--color-primary-light) focus:ring-(--color-primary)/20';
       }
-      return 'border-slate-300 dark:border-white/10 focus:border-blue-500 focus:ring-blue-500/20';
+      return 'border-slate-300 dark:border-white/10 focus:border-(--color-primary-light) focus:ring-(--color-primary)/20';
     };
 
     return (

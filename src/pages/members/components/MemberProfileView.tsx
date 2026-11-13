@@ -1734,7 +1734,7 @@ setSheetHeightPercent((current) => {
               onClick={() => setActiveTab(tab as any)}
               className={`min-h-9.5 px-3.5 py-2 rounded-xl text-xs font-heading font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${
                 activeTab === tab
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
                   : 'bg-slate-500/5 border border-(--border-color) text-slate-400 hover:text-(--color-text)'
               }`}
             >
@@ -2075,7 +2075,7 @@ setSheetHeightPercent((current) => {
                           <input
                             type="text"
                             value={editLastName}
-                            onChange={(e) => setEditLastName(e.target.value.toUpperCase())}
+                            onChange={(e) => setEditLastName(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. DELA CRUZ"
                           />
@@ -2087,7 +2087,7 @@ setSheetHeightPercent((current) => {
                           <input
                             type="text"
                             value={editFirstName}
-                            onChange={(e) => setEditFirstName(e.target.value.toUpperCase())}
+                            onChange={(e) => setEditFirstName(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. JUAN"
                           />
@@ -2103,7 +2103,7 @@ setSheetHeightPercent((current) => {
                             type="text"
                             maxLength={2}
                             value={editMiddleInitial}
-                            onChange={(e) => setEditMiddleInitial(e.target.value.toUpperCase())}
+                            onChange={(e) => setEditMiddleInitial(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. M."
                           />
@@ -2115,7 +2115,7 @@ setSheetHeightPercent((current) => {
                           <input
                             type="text"
                             value={editSuffix}
-                            onChange={(e) => setEditSuffix(e.target.value.toUpperCase())}
+                            onChange={(e) => setEditSuffix(e.target.value)}
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. JR."
                           />
@@ -2878,7 +2878,7 @@ setSheetHeightPercent((current) => {
                         isOffline
                           ? 'opacity-50 cursor-not-allowed text-slate-400'
                           : selectedCardFormat === 'QR'
-                            ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-md cursor-pointer'
+                            ? 'bg-(--color-primary) text-white shadow-md cursor-pointer'
                             : 'text-slate-400 hover:text-(--color-text) cursor-pointer'
                       }`}
                     >
@@ -2969,7 +2969,7 @@ setSheetHeightPercent((current) => {
                             className={`flex-1 sm:flex-initial min-h-9 px-3.5 py-1.5 rounded-xl font-heading text-xs font-bold uppercase tracking-wider shadow-xs flex items-center justify-center gap-1.5 transition-colors border-none shrink-0 ${
                               isOffline
                                 ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                                : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer active:scale-95'
+                                : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer active:scale-95'
                             }`}
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -2985,8 +2985,8 @@ setSheetHeightPercent((current) => {
                             <h4 className="font-heading font-black text-base tracking-widest text-white uppercase leading-none">
                               WOLF PALOMAR GYM
                             </h4>
-                            <div className="h-0.5 bg-red-600 my-1 mx-auto w-[92%]" />
-                            <div className="font-heading font-extrabold text-xs text-red-600 tracking-wider uppercase leading-none">
+                            <div className="h-0.5 bg-blue-600 my-1 mx-auto w-[92%]" />
+                            <div className="font-heading font-extrabold text-xs text-blue-500 tracking-wider uppercase leading-none">
                               MUAYTHAI BOXING
                             </div>
                             <p className="text-[10px] text-zinc-400 font-medium font-mono leading-tight pt-0.5">
@@ -3292,7 +3292,7 @@ setSheetHeightPercent((current) => {
                     className={`min-h-[40px] px-5 py-2 font-bold rounded-xl font-heading text-xs tracking-wider uppercase border-none flex items-center justify-center gap-2 shadow-md transition-all ${
                       isOffline
                         ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
-                        : 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer'
+                        : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer'
                     }`}
                   >
                     <Save className="w-3.5 h-3.5" />

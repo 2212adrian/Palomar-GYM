@@ -22,7 +22,7 @@ export const CashMetricsCards: React.FC<CashMetricsCardsProps> = ({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3.5 font-body">
       {/* 1. Hero Card: Live Drawer Cash */}
-      <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[105px] sm:min-h-[115px] transition-all hover:shadow-lg">
+      <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-(--color-primary) text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[105px] sm:min-h-[115px] transition-all hover:shadow-lg">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-black uppercase tracking-wider text-white/80">
             Physical Drawer Cash

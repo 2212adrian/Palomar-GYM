@@ -330,7 +330,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 onClick={() => onTimeRangeChange(range)}
                 className={`flex-1 sm:flex-initial px-3 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
                   timeRange === range
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-2xs'
+                    ? 'bg-(--color-primary) text-white shadow-2xs'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -981,13 +981,13 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
                   <div className="p-4 bg-slate-50 dark:bg-[#1e232d]/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                      <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
                         Active Contracts
                       </span>
-                      <Calendar className="w-4 h-4 text-purple-500" />
+                      <Calendar className="w-4 h-4 text-sky-500" />
                     </div>
                     <div className="mt-2">
-                      <div className="text-2xl sm:text-3xl font-black text-purple-600 dark:text-purple-400 font-heading">
+                      <div className="text-2xl sm:text-3xl font-black text-sky-600 dark:text-sky-400 font-heading">
                         {subscriptionBreakdown?.activeTotalCount ||
                           metrics.activeMembersCount ||
                           0}
@@ -1271,7 +1271,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               <button
                 type="button"
                 onClick={() => navigate('/cash-management')}
-                className="bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer self-start sm:self-auto"
+                className="bg-(--color-primary) hover:bg-(--color-primary-hover) text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer self-start sm:self-auto"
               >
                 <span>Go to Cash Management</span>
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -1281,7 +1281,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             {/* 5-Card Metrics: EXACT same cards as Live Cash Management */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3.5 font-body">
               {/* 1. PHYSICAL DRAWER CASH (Hero) */}
-              <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs flex flex-col justify-between min-h-[105px]">
+              <div className="col-span-2 sm:col-span-2 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-(--color-primary) text-white shadow-xs flex flex-col justify-between min-h-[105px]">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-wider text-white/80">
                     Physical Drawer Cash
@@ -1486,7 +1486,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                                         : isOutflow
                                           ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                                           : tx.type === 'digital_in'
-                                            ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                            ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
                                             : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                                   }`}
                                 >
@@ -1581,7 +1581,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   setSelectedReportType('bir');
                   setIsExportModalOpen(true);
                 }}
-                className="bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                className="bg-(--color-primary) hover:bg-(--color-primary-hover) text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>Open Full Export Center</span>
@@ -1611,7 +1611,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('bir');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-[#123c73] hover:text-white dark:hover:bg-[#bf0202] text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate BIR Journal</span>
@@ -1668,7 +1668,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('sales');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-[#123c73] hover:text-white dark:hover:bg-[#bf0202] text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate Sales Log</span>
@@ -1679,7 +1679,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950 px-2 py-0.5 rounded">
+                    <span className="text-[10px] uppercase font-bold text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-950 px-2 py-0.5 rounded">
                       Logbook Registry
                     </span>
                     <Clock className="w-4 h-4 text-slate-400" />
@@ -1697,7 +1697,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                     setSelectedReportType('attendance');
                     setIsExportModalOpen(true);
                   }}
-                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-[#123c73] hover:text-white dark:hover:bg-[#bf0202] text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Generate Access Log</span>

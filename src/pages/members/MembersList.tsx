@@ -6,6 +6,7 @@ import React, {
   useContext,
   useRef,
   useCallback,
+  useDeferredValue,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
@@ -165,6 +166,7 @@ export const MembersList: React.FC<MembersListProps> = ({
     useState<MembershipSettings>(getSynchronousInitialSettings);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [activeChip, setActiveChip] = useState<FilterChip>('all');
 
   // Selection state for multi-select batch operations
@@ -1020,7 +1022,7 @@ const chipCounts = useMemo(() => {
   ]);
 
   const filteredMembers = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = deferredSearchQuery.toLowerCase().trim();
     const now = Date.now();
 
     const matched = members.filter((m: Member) => {
@@ -1133,7 +1135,7 @@ const chipCounts = useMemo(() => {
     });
   }, [
     members,
-    searchQuery,
+    deferredSearchQuery,
     activeChip,
     getActiveSubscription,
     getLatestSubscriptionRecord,
@@ -1773,7 +1775,7 @@ const chipCounts = useMemo(() => {
                   onClick={() => setActiveTab(item.id as any)}
                   className={`flex-1 py-3 px-4 font-heading text-xs md:text-sm tracking-wider uppercase font-extrabold cursor-pointer flex items-center justify-center gap-2 transition-all ${
                     activeTab === item.id
-                      ? 'border-b-2 border-[#123c73] dark:border-[#bf0202] text-slate-900 dark:text-white'
+                      ? 'border-b-2 border-(--color-primary) text-slate-900 dark:text-white'
                       : 'border-b-2 border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
                   }`}
                 >
@@ -1910,7 +1912,7 @@ const chipCounts = useMemo(() => {
                         onClick={() => setActiveChip(chip.id as FilterChip)}
                         className={`px-3 py-1.5 rounded-xl text-[11px] font-heading font-extrabold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-1.5 shrink-0 ${
                           activeChip === chip.id
-                            ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs'
+                            ? 'bg-(--color-primary) text-white border-transparent shadow-xs'
                             : 'bg-(--bg-page) border-(--border-color) text-slate-500 hover:text-(--color-text)'
                         }`}
                       >
@@ -1939,7 +1941,7 @@ const chipCounts = useMemo(() => {
                       <button
                         type="button"
                         onClick={() => setActiveChip('all')}
-                        className="px-3 py-1.5 rounded-xl text-[11px] font-heading font-extrabold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-1.5 shrink-0 bg-[#123c73] dark:bg-[#bf0202] text-white border-transparent shadow-xs"
+                        className="px-3 py-1.5 rounded-xl text-[11px] font-heading font-extrabold uppercase tracking-wider cursor-pointer border transition-all flex items-center gap-1.5 shrink-0 bg-(--color-primary) text-white border-transparent shadow-xs"
                       >
                         <span>
                           {activeChip === 'expired'
@@ -2179,7 +2181,7 @@ const chipCounts = useMemo(() => {
                       setIsWizardOpen(true);
                     }}
                     title="Enroll New Member"
-                    className="hidden sm:flex w-full py-3 px-4 rounded-2xl text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md transition-all duration-200 border border-white/10 group mt-3 select-none bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] cursor-pointer hover:shadow-lg"
+                    className="hidden sm:flex w-full py-3 px-4 rounded-2xl text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2 shadow-md transition-all duration-200 border border-white/10 group mt-3 select-none bg-(--color-primary) hover:bg-(--color-primary-hover) cursor-pointer hover:shadow-lg"
                   >
                     <div className="w-5 h-5 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
                       <Plus className="w-3.5 h-3.5 text-white" />
@@ -2578,7 +2580,7 @@ const chipCounts = useMemo(() => {
             }`}
           >
             <div className="flex items-center gap-2 pr-2 border-r border-(--border-color)">
-              <span className="w-6 h-6 rounded-full bg-[#123c73] dark:bg-[#bf0202] text-white font-mono font-bold text-xs flex items-center justify-center">
+              <span className="w-6 h-6 rounded-full bg-(--color-primary) text-white font-mono font-bold text-xs flex items-center justify-center">
                 {selectedMemberIds.length}
               </span>
               <span className="font-heading text-xs font-bold uppercase tracking-wider text-(--color-text)">
@@ -2648,7 +2650,7 @@ const chipCounts = useMemo(() => {
               <button
                 type="button"
                 onClick={() => setShowBatchCardModal(true)}
-                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
+                className="px-3.5 py-2 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors shadow-md border-none"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Print Member Cards</span>
@@ -2819,7 +2821,7 @@ const chipCounts = useMemo(() => {
                       <button
                         type="button"
                         onClick={() => setShowBatchCardModal(true)}
-                        className="flex-1 h-9 px-3 bg-blue-600 hover:bg-blue-700 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-colors"
+                        className="flex-1 h-9 px-3 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-colors"
                         title="Print Member Cards"
                       >
                         <Printer className="w-3.5 h-3.5 shrink-0" />
@@ -2861,7 +2863,7 @@ const chipCounts = useMemo(() => {
             }`}
           >
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-              <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
+              <div className="flex items-center gap-1 text-(--color-primary-light) shrink-0">
                 <Users className="w-3.5 h-3.5" />
                 <span className="text-[11px]">{stats.total} Members</span>
               </div>
@@ -2917,7 +2919,7 @@ const chipCounts = useMemo(() => {
                   setWizardPrefill(undefined);
                   setIsWizardOpen(true);
                 }}
-                className="h-9 px-3 rounded-xl text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-transform bg-[#123c73] dark:bg-[#bf0202] cursor-pointer active:scale-95"
+                className="h-9 px-3 rounded-xl text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-transform bg-(--color-primary) hover:bg-(--color-primary-hover) cursor-pointer active:scale-95"
                 title="Enroll Member"
               >
                 <Plus className="w-4 h-4" />
@@ -2963,7 +2965,7 @@ const chipCounts = useMemo(() => {
                 <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-zinc-700 mx-auto shrink-0 cursor-grab active:cursor-grabbing mb-1" />
 
                 <div className="flex items-center gap-3 border-b border-(--border-color) pb-4">
-                  <div className="w-11 h-11 rounded-2xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
+                  <div className="w-11 h-11 rounded-2xl bg-(--color-primary) text-white flex items-center justify-center font-heading text-sm font-black shrink-0">
                     {(mobileActionSheetMember.full_name || 'M')[0]}
                   </div>
                   <div className="min-w-0 flex-1">

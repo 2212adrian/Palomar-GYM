@@ -375,7 +375,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               font-size: 14px;
               font-weight: 900;
               letter-spacing: 5px;
-              color: #bf0202;
+              color: #1d4ed8;
               margin-bottom: 5px;
               text-transform: uppercase;
             }
@@ -433,7 +433,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             .plan-price {
               font-size: 24px;
               font-weight: 900;
-              color: #bf0202;
+              color: #1d4ed8;
               font-family: monospace;
             }
             .plan-benefits {
@@ -792,7 +792,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
       {/* Queue Header & Actions (Desktop / Tablet Header) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none">
         <div>
-          <h3 className="font-heading text-xs tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase font-bold">
+          <h3 className="font-heading text-xs tracking-widest text-blue-700 dark:text-blue-400 uppercase font-bold">
             Online Pre-Registrations Queue
           </h3>
         </div>
@@ -1170,7 +1170,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               type="button"
               onClick={fetchQueue}
               disabled={isSyncing}
-              className="w-9 h-9 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center cursor-pointer transition-transform active:scale-95 shadow-md disabled:opacity-50"
+              className="w-9 h-9 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white flex items-center justify-center cursor-pointer transition-transform active:scale-95 shadow-md disabled:opacity-50"
               title="Sync Queue"
             >
               <RefreshCw

@@ -251,10 +251,10 @@ const TypewriterText: React.FC<{ phrases: string[] }> = React.memo(
 
     return (
       <>
-        <span className="text-blue-500 dark:text-red-600">
+        <span className="text-blue-500">
           {typewriterText}
         </span>
-        <span className="text-blue-500 dark:text-red-600 animate-[blink_0.8s_infinite]">
+        <span className="text-blue-500 animate-[blink_0.8s_infinite]">
           |
         </span>
       </>
@@ -1340,17 +1340,48 @@ export const Login: React.FC = () => {
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>
   ) => {
-    if (e.key === 'Backspace') {
-      if (!twoFactorCode[index] && index > 0) {
+    const isBackspaceKey =
+      e.key === 'Backspace' ||
+      e.keyCode === 8 ||
+      (e.key === 'Unidentified' && !twoFactorCode[index]);
+
+    if (isBackspaceKey) {
+      if (twoFactorCode[index]) {
+        const next = [...twoFactorCode];
+        next[index] = '';
+        setTwoFactorCode(next);
+        e.preventDefault();
+      } else if (index > 0) {
         const next = [...twoFactorCode];
         next[index - 1] = '';
         setTwoFactorCode(next);
         twoFactorInputRefs.current[index - 1]?.focus();
+        e.preventDefault();
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       twoFactorInputRefs.current[index - 1]?.focus();
     } else if (e.key === 'ArrowRight' && index < 5) {
       twoFactorInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleDigitBeforeInput = (
+    index: number,
+    e: React.FormEvent<HTMLInputElement>
+  ) => {
+    const nativeEvt = e.nativeEvent as InputEvent | undefined;
+    if (nativeEvt?.inputType === 'deleteContentBackward') {
+      if (twoFactorCode[index]) {
+        const next = [...twoFactorCode];
+        next[index] = '';
+        setTwoFactorCode(next);
+      } else if (index > 0) {
+        const next = [...twoFactorCode];
+        next[index - 1] = '';
+        setTwoFactorCode(next);
+        twoFactorInputRefs.current[index - 1]?.focus();
+      }
+      e.preventDefault();
     }
   };
 
@@ -1586,17 +1617,48 @@ export const Login: React.FC = () => {
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>
   ) => {
-    if (e.key === 'Backspace') {
-      if (!recoveryCode[index] && index > 0) {
+    const isBackspaceKey =
+      e.key === 'Backspace' ||
+      e.keyCode === 8 ||
+      (e.key === 'Unidentified' && !recoveryCode[index]);
+
+    if (isBackspaceKey) {
+      if (recoveryCode[index]) {
+        const next = [...recoveryCode];
+        next[index] = '';
+        setRecoveryCode(next);
+        e.preventDefault();
+      } else if (index > 0) {
         const next = [...recoveryCode];
         next[index - 1] = '';
         setRecoveryCode(next);
         recoveryInputRefs.current[index - 1]?.focus();
+        e.preventDefault();
       }
     } else if (e.key === 'ArrowLeft' && index > 0) {
       recoveryInputRefs.current[index - 1]?.focus();
     } else if (e.key === 'ArrowRight' && index < 5) {
       recoveryInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleRecoveryDigitBeforeInput = (
+    index: number,
+    e: React.FormEvent<HTMLInputElement>
+  ) => {
+    const nativeEvt = e.nativeEvent as InputEvent | undefined;
+    if (nativeEvt?.inputType === 'deleteContentBackward') {
+      if (recoveryCode[index]) {
+        const next = [...recoveryCode];
+        next[index] = '';
+        setRecoveryCode(next);
+      } else if (index > 0) {
+        const next = [...recoveryCode];
+        next[index - 1] = '';
+        setRecoveryCode(next);
+        recoveryInputRefs.current[index - 1]?.focus();
+      }
+      e.preventDefault();
     }
   };
 
@@ -1711,7 +1773,7 @@ export const Login: React.FC = () => {
         <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-wider text-slate-900 dark:text-white uppercase mb-0.5 select-none">
           LOGIN
         </h1>
-        <p className="font-heading text-[10px] sm:text-[11px] tracking-[2.5px] font-bold text-blue-600 dark:text-red-500 uppercase select-none">
+        <p className="font-heading text-[10px] sm:text-[11px] tracking-[2.5px] font-bold text-blue-600 dark:text-blue-400 uppercase select-none">
           GYM MANAGEMENT SYSTEM
         </p>
       </div>
@@ -1755,7 +1817,7 @@ export const Login: React.FC = () => {
             shake={shakeEmail}
             touched={touchedLogin.usernameOrEmail}
             disabled={isSubmitting || isLoggingIn}
-            className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+            className="bg-white/95 dark:bg-[#161920] border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-blue-500 rounded-xl shadow-sm focus:shadow-blue-500/10 select-text pointer-events-auto"
           />
         </div>
 
@@ -1775,7 +1837,7 @@ export const Login: React.FC = () => {
             shake={shakePassword}
             touched={touchedLogin.password}
             disabled={isSubmitting || isLoggingIn}
-            className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+            className="bg-white/95 dark:bg-[#161920] border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-blue-500 rounded-xl shadow-sm focus:shadow-blue-500/10 select-text pointer-events-auto"
             rightElement={
               <button
                 type="button"
@@ -1813,7 +1875,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('agreement');
                 }}
-                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
               >
                 User Agreement
               </button>
@@ -1824,7 +1886,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('terms');
                 }}
-                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
               >
                 Terms &amp; Conditions
               </button>{' '}
@@ -1835,7 +1897,7 @@ export const Login: React.FC = () => {
                   e.preventDefault();
                   setAgreementDocument('privacy');
                 }}
-                className="text-blue-600 dark:text-purple-500 font-bold hover:underline cursor-pointer"
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
               >
                 Privacy Policy
               </button>
@@ -1847,7 +1909,7 @@ export const Login: React.FC = () => {
         <button
           type="submit"
           disabled={isSubmitting || isLoggingIn}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
             <span className="flex items-center gap-2">
@@ -1939,8 +2001,8 @@ export const Login: React.FC = () => {
         </h1>
 
         <div className="flex items-center justify-center gap-1.5 mb-4 select-none">
-          <div className="w-10 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-600 rounded-full transition-colors duration-500" />
-          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
+          <div className="w-10 h-1 bg-blue-600 dark:bg-blue-500 rounded-full transition-colors duration-500" />
+          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-500 rounded-full transition-colors duration-500" />
         </div>
 
         {recoveryStep === 'request' ? (
@@ -1970,7 +2032,7 @@ export const Login: React.FC = () => {
                   shake={shakeRecovery}
                   touched={touchedRecovery.email}
                   disabled={isRecoverySubmitting}
-                  className="bg-white/80 dark:bg-[#161920]/90 border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-red-600 rounded-xl backdrop-blur-md transition-all shadow-sm focus:shadow-blue-500/10 dark:focus:shadow-red-500/10 select-text pointer-events-auto"
+                  className="bg-white/95 dark:bg-[#161920] border-slate-200 dark:border-white/10 focus:border-blue-600 dark:focus:border-blue-500 rounded-xl shadow-sm focus:shadow-blue-500/10 select-text pointer-events-auto"
                 />
               </div>
 
@@ -1983,7 +2045,7 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isRecoverySubmitting}
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25 select-none pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isRecoverySubmitting
                   ? 'DISPATCHING RECOVERY CODE...'
@@ -2036,10 +2098,11 @@ export const Login: React.FC = () => {
                       onChange={(e) =>
                         handleRecoveryDigitChange(idx, e.target.value)
                       }
+                      onBeforeInput={(e) => handleRecoveryDigitBeforeInput(idx, e)}
                       onKeyDown={(e) => handleRecoveryDigitKeyDown(idx, e)}
                       onPaste={idx === 0 ? handleRecoveryDigitPaste : undefined}
                       disabled={isVerifyingRecovery}
-                      className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-600 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+                      className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/95 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none shadow-sm"
                       autoFocus={idx === 0}
                     />
                   ))}
@@ -2101,7 +2164,7 @@ export const Login: React.FC = () => {
                   recoveryCode.join('').length !== 6 ||
                   !recoveryNewPassword
                 }
-                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
+                className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25 disabled:opacity-50 disabled:cursor-not-allowed select-none pointer-events-auto mt-2"
               >
                 {isVerifyingRecovery ? (
                   <>
@@ -2188,8 +2251,8 @@ export const Login: React.FC = () => {
         </h1>
 
         <div className="flex items-center justify-center gap-1.5 mb-3 select-none">
-          <div className="w-10 h-1 bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-red-600 dark:to-rose-600 rounded-full transition-colors duration-500" />
-          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-red-600 rounded-full transition-colors duration-500" />
+          <div className="w-10 h-1 bg-blue-600 dark:bg-blue-500 rounded-full transition-colors duration-500" />
+          <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-500 rounded-full transition-colors duration-500" />
         </div>
 
         <p className="text-center text-xs text-slate-600 dark:text-slate-300 mb-1 leading-relaxed font-bold select-none">
@@ -2210,7 +2273,7 @@ export const Login: React.FC = () => {
               type="button"
               onClick={handleResend2FACode}
               disabled={isResending2FA}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none"
+              className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25 disabled:opacity-50 disabled:cursor-not-allowed select-none"
             >
               {isResending2FA ? (
                 <>
@@ -2259,10 +2322,11 @@ export const Login: React.FC = () => {
                   maxLength={1}
                   value={digit}
                   onChange={(e) => handleDigitChange(idx, e.target.value)}
+                  onBeforeInput={(e) => handleDigitBeforeInput(idx, e)}
                   onKeyDown={(e) => handleDigitKeyDown(idx, e)}
                   onPaste={idx === 0 ? handleDigitPaste : undefined}
                   disabled={isVerifying2FA}
-                  className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/90 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-red-500/80 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-red-500/20 outline-none transition-all shadow-sm"
+                  className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/95 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none shadow-sm"
                   autoFocus={idx === 0}
                 />
               ))}
@@ -2300,7 +2364,7 @@ export const Login: React.FC = () => {
               type="button"
               onClick={() => verify2FACode()}
               disabled={isVerifying2FA || twoFactorCode.join('').length !== 6}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-[#161a22] dark:to-[#1a1f2c] hover:from-blue-700 hover:to-indigo-800 dark:hover:from-[#1e2330] dark:hover:to-[#222938] text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-600/80 dark:hover:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed select-none"
+              className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-md active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25 disabled:opacity-50 disabled:cursor-not-allowed select-none"
             >
               {isVerifying2FA ? (
                 <>
@@ -2375,8 +2439,8 @@ export const Login: React.FC = () => {
         <div className="relative w-full h-screen shrink-0 overflow-hidden">
           {/* Ambient Mobile Liquid Background Orbs */}
           <div className="block sm:hidden absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
-            <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-indigo-400/20 to-sky-300/30 dark:from-red-600/25 dark:via-rose-800/15 dark:to-indigo-950/30 blur-3xl" />
-            <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-indigo-500/20 via-blue-300/20 to-purple-400/15 dark:from-rose-950/30 dark:via-red-900/20 dark:to-indigo-900/20 blur-3xl" />
+            <div className="animate-liquid-1 absolute -top-24 -left-20 w-80 h-80 rounded-full bg-gradient-to-br from-blue-400/25 via-sky-400/20 to-blue-300/30 dark:from-blue-600/25 dark:via-blue-800/15 dark:to-slate-950/30 blur-3xl" />
+            <div className="animate-liquid-2 absolute -bottom-28 -right-20 w-96 h-96 rounded-full bg-gradient-to-tl from-blue-500/20 via-blue-300/20 to-sky-400/15 dark:from-blue-950/30 dark:via-blue-900/20 dark:to-slate-900/20 blur-3xl" />
           </div>
 
           {/* Live Preview Mode Overlay Banner */}
@@ -2430,7 +2494,7 @@ export const Login: React.FC = () => {
               {theme === 'dark' ? (
                 <>
                   <span className="w-3 h-3 bg-[#0c0e12]" />
-                  <span className="w-3 h-3 bg-[#dc2626]" />
+                  <span className="w-3 h-3 bg-[#2563eb]" />
                   <span className="w-3 h-3 bg-[#161920]" />
                 </>
               ) : (
@@ -2596,10 +2660,10 @@ export const Login: React.FC = () => {
                       </span>
                     </span>
                   </p>
-                  <div className="block group-[.expanded]:hidden text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                  <div className="block group-[.expanded]:hidden text-[8px] text-blue-400 tracking-widest font-heading uppercase mt-4">
                     CLICK TO EXPAND GYM INFORMATION
                   </div>
-                  <div className="hidden group-[.expanded]:block text-[8px] text-blue-400 dark:text-red-500 tracking-widest font-heading uppercase mt-4">
+                  <div className="hidden group-[.expanded]:block text-[8px] text-blue-400 tracking-widest font-heading uppercase mt-4">
                     CLICK TO COLLAPSE GYM INFORMATION
                   </div>
                 </Card>
@@ -2697,7 +2761,7 @@ export const Login: React.FC = () => {
                 className={`group flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/85 dark:bg-[#161920]/90 border border-slate-200/90 dark:border-white/10 shadow-lg backdrop-blur-xl transition-all duration-300 transform text-slate-800 dark:text-slate-200 select-none ${
                   isPreview
                     ? 'pointer-events-none opacity-40 saturate-0 cursor-not-allowed'
-                    : 'pointer-events-auto hover:shadow-xl dark:shadow-red-950/20 hover:-translate-y-0.5 active:translate-y-0 hover:text-blue-600 dark:hover:text-red-500 cursor-pointer'
+                    : 'pointer-events-auto hover:shadow-xl dark:shadow-blue-950/20 hover:-translate-y-0.5 active:translate-y-0 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer'
                 }`}
                 aria-label="Slide down to download apps and terminal client"
                 title={
@@ -2707,17 +2771,17 @@ export const Login: React.FC = () => {
                 }
               >
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 dark:bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-red-600" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-blue-500" />
                 </span>
 
-                <Download className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
+                <Download className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
 
                 <span className="text-[10.5px] font-heading font-black tracking-widest uppercase">
                   {isPreview ? 'DOWNLOAD APPS (LOCKED)' : 'DOWNLOAD APPS'}
                 </span>
 
-                <ChevronDown className="w-4 h-4 text-blue-600 dark:text-red-500 transition-transform duration-300 group-hover:translate-y-0.5 animate-bounce" />
+                <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400 transition-transform duration-300 group-hover:translate-y-0.5 animate-bounce" />
               </button>
             </div>
           )}
@@ -2775,7 +2839,7 @@ export const Login: React.FC = () => {
               }`}
             >
               {/* Top ambient glow */}
-              <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-500/15 dark:from-red-600/20 to-transparent pointer-events-none" />
+              <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-500/15 dark:from-blue-600/20 to-transparent pointer-events-none" />
 
               {/* Dismiss button */}
               <button
@@ -2790,26 +2854,26 @@ export const Login: React.FC = () => {
               <div className="p-6 sm:p-7 relative z-10 space-y-5 text-center">
                 {/* Dynamic Icon Badge */}
                 <div className="flex justify-center">
-                  <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-red-950/50 dark:to-neutral-900 border border-blue-500/20 dark:border-red-600/30 shadow-inner">
+                  <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-50 to-sky-100 dark:from-blue-950/50 dark:to-neutral-900 border border-blue-500/25 shadow-inner">
                     {period === 'morning' ? (
                       <Sun className="w-8 h-8 text-amber-500 dark:text-amber-400 animate-spin-slow" />
                     ) : period === 'afternoon' ? (
-                      <Sun className="w-8 h-8 text-blue-500 dark:text-orange-400" />
+                      <Sun className="w-8 h-8 text-blue-500 dark:text-blue-400" />
                     ) : (
-                      <Moon className="w-8 h-8 text-indigo-500 dark:text-red-400" />
+                      <Moon className="w-8 h-8 text-blue-500 dark:text-blue-400" />
                     )}
-                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-red-500 absolute -top-1 -right-1 animate-pulse" />
+                    <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 absolute -top-1 -right-1 animate-pulse" />
                   </div>
                 </div>
 
                 {/* Salutation and Name */}
                 <div className="space-y-1">
-                  <span className="text-[10px] font-heading font-black tracking-[3px] uppercase text-blue-600 dark:text-red-500">
+                  <span className="text-[10px] font-heading font-black tracking-[3px] uppercase text-blue-600 dark:text-blue-400">
                     WOLF PALOMAR GYM
                   </span>
                   <h3 className="text-2xl sm:text-3xl font-heading font-black tracking-wide text-slate-900 dark:text-white uppercase leading-tight">
                     {salutation}, <br />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-500 dark:via-rose-500 dark:to-red-600">
+                    <span className="text-blue-600 dark:text-blue-400">
                       {greetingUser?.name || 'Commander'}
                     </span>
                   </h3>
@@ -2821,7 +2885,7 @@ export const Login: React.FC = () => {
 
                 {/* Local Date & Time Badge */}
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-[11px] font-mono font-medium">
-                  <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-red-500" />
+                  <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                   <span>
                     {formattedDate} • {formattedTime}
                   </span>
@@ -2832,7 +2896,7 @@ export const Login: React.FC = () => {
                   <button
                     type="button"
                     onClick={closeGreetingAndProceed}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700 hover:from-blue-700 hover:to-indigo-800 dark:hover:from-red-700 dark:hover:to-rose-800 text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/20 dark:border-red-500/50 dark:hover:border-red-400"
+                    className="w-full py-3 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black tracking-widest text-xs uppercase rounded-xl shadow-lg active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 border border-blue-400/25"
                   >
                     <span>ENTER SYSTEM</span>
                     <ArrowRight className="w-4 h-4" />
@@ -2846,7 +2910,7 @@ export const Login: React.FC = () => {
               {/* 4-Second Animated Progress Bar */}
               <div className="w-full h-1 bg-slate-200 dark:bg-white/10 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 dark:from-red-600 dark:via-rose-600 dark:to-red-700"
+                  className="h-full bg-(--color-primary)"
                   style={{
                     animation: 'greetingProgress 4s linear forwards',
                   }}

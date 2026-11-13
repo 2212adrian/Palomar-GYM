@@ -1549,7 +1549,7 @@ export const DatabaseBackup: React.FC = () => {
             onClick={() => setMobileMainTab('backups')}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer ${
               mobileMainTab === 'backups'
-                ? 'bg-[#123c73] dark:bg-red-600 text-white shadow-xs'
+                ? 'bg-(--color-primary) text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-(--color-text)'
             }`}
           >
@@ -1561,7 +1561,7 @@ export const DatabaseBackup: React.FC = () => {
             onClick={() => setMobileMainTab('terminal')}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer ${
               mobileMainTab === 'terminal'
-                ? 'bg-[#123c73] dark:bg-red-600 text-white shadow-xs'
+                ? 'bg-(--color-primary) text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-(--color-text)'
             }`}
           >
@@ -2033,7 +2033,7 @@ export const DatabaseBackup: React.FC = () => {
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-lg text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0 ${
                     activeTab === tab
-                      ? 'bg-[#123c73] dark:bg-red-600 text-white shadow-xs'
+                      ? 'bg-(--color-primary) text-white shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -2050,7 +2050,7 @@ export const DatabaseBackup: React.FC = () => {
             <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-black/25 border border-slate-200 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs font-heading font-bold uppercase tracking-wider w-full sm:w-auto">
                 <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Calendar className="w-4 h-4 text-blue-600 dark:text-red-500 shrink-0" />
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                   <span>Range:</span>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto">

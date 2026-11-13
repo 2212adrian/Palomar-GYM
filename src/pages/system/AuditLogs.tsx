@@ -1,5 +1,5 @@
 // src/pages/system/AuditLogs.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { toast } from 'react-toastify';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
@@ -43,6 +43,7 @@ export const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeSeverity, setActiveSeverity] = useState<string>('all');
   const [activeOperator, setActiveOperator] = useState<string>('all');
@@ -641,6 +642,7 @@ export const AuditLogs: React.FC = () => {
   }, [logs]);
 
   const processedLogs = useMemo(() => {
+    const query = deferredSearchQuery.trim().toLowerCase();
     return logs.filter((log) => {
       const matchesCategory =
         activeCategory === 'all' ||
@@ -651,7 +653,6 @@ export const AuditLogs: React.FC = () => {
       const matchesOperator =
         activeOperator === 'all' || log.actor_username === activeOperator;
 
-      const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !query ||
         log.actor_username.toLowerCase().includes(query) ||
@@ -662,7 +663,7 @@ export const AuditLogs: React.FC = () => {
         matchesCategory && matchesSeverity && matchesOperator && matchesSearch
       );
     });
-  }, [logs, activeCategory, activeSeverity, activeOperator, searchQuery]);
+  }, [logs, activeCategory, activeSeverity, activeOperator, deferredSearchQuery]);
 
   const timelineGroups = useMemo(() => {
     if (!processedLogs.length) return [];

@@ -161,8 +161,8 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
             onClick={() => setFilterType('digital_in')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               filterType === 'digital_in'
-                ? 'bg-purple-600 text-white'
-                : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20'
+                ? 'bg-sky-600 text-white'
+                : 'bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20'
             }`}
           >
             Digital In
@@ -263,7 +263,7 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
                                 : isOutflow
                                   ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                                   : tx.type === 'digital_in'
-                                    ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                    ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
                                     : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                             }`}
                           >
@@ -402,7 +402,7 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
                                 ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
                                 : isOutflow
                                   ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                                  : 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                  : 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
                           }`}
                         >
                           {tx.displayType}

@@ -93,12 +93,12 @@ export const ActionQueueDrawer: React.FC = () => {
         return <CreditCard className="w-4 h-4 text-indigo-500" />;
 
       case 'sale':
-        return <ShoppingCart className="w-4 h-4 text-violet-500" />;
+        return <ShoppingCart className="w-4 h-4 text-blue-500" />;
       case 'sale_delete':
       case 'sale_soft_delete':
         return <Trash2 className="w-4 h-4 text-rose-500" />;
       case 'sale_restore':
-        return <RotateCcw className="w-4 h-4 text-violet-500" />;
+        return <RotateCcw className="w-4 h-4 text-blue-500" />;
 
       case 'product_create':
       case 'product_update':

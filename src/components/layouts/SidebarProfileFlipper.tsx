@@ -79,22 +79,22 @@ const GAME_THEMES: Record<GoalTimeframe, GameCardTheme> = {
     label: 'MO',
     badgeTitle: 'MONTHLY TARGET',
     icon: (
-      <Flame className="w-3 h-3 text-violet-300 shrink-0 fill-violet-300/30" />
+      <Flame className="w-3 h-3 text-blue-300 shrink-0 fill-blue-300/30" />
     ),
-    bgGradient: 'from-[#230b42] via-[#5b21b6] to-[#180630]',
-    borderColor: 'border-violet-500/40',
-    glowColor: 'shadow-[0_4px_16px_rgba(139,92,246,0.2)]',
+    bgGradient: 'from-[#0a1e3d] via-[#1d4ed8] to-[#081630]',
+    borderColor: 'border-blue-500/40',
+    glowColor: 'shadow-[0_4px_16px_rgba(37,99,235,0.25)]',
     activePillClass:
-      'bg-violet-400 text-slate-950 font-black shadow-[0_0_8px_rgba(167,139,250,0.6)]',
+      'bg-blue-400 text-slate-950 font-black shadow-[0_0_8px_rgba(96,165,250,0.6)]',
     inactivePillClass:
-      'text-violet-200/70 hover:text-white hover:bg-violet-900/50',
-    progressBarBg: 'bg-slate-950/70 border border-violet-500/30',
+      'text-blue-200/70 hover:text-white hover:bg-blue-900/50',
+    progressBarBg: 'bg-slate-950/70 border border-blue-500/30',
     progressBarFill:
-      'bg-gradient-to-r from-violet-500 via-fuchsia-300 to-purple-200 shadow-[0_0_8px_rgba(167,139,250,0.8)]',
-    percentBadgeBg: 'bg-violet-500/20 text-violet-300 border-violet-400/40',
-    accentSubtext: 'text-violet-300',
-    chipBg: 'bg-violet-950/70',
-    chipBorder: 'border-violet-500/30',
+      'bg-gradient-to-r from-blue-600 via-blue-400 to-sky-200 shadow-[0_0_8px_rgba(96,165,250,0.8)]',
+    percentBadgeBg: 'bg-blue-500/20 text-blue-200 border-blue-400/40',
+    accentSubtext: 'text-blue-300',
+    chipBg: 'bg-blue-950/70',
+    chipBorder: 'border-blue-500/30',
   },
   yearly: {
     label: 'YR',
@@ -225,7 +225,7 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
           <div className="flex items-center justify-between gap-2.5">
             <div className="relative shrink-0">
               <div
-                className={`w-10 h-10 rounded-full ring-2 ${isSuperAdminUser ? 'ring-purple-500/50 dark:ring-purple-400/50' : 'ring-[#123c73]/20 dark:ring-red-500/30'} p-0.5 bg-slate-100 dark:bg-neutral-800 overflow-hidden`}
+                className={`w-10 h-10 rounded-full ring-2 ${isSuperAdminUser ? 'ring-blue-500/60 dark:ring-blue-400/60' : 'ring-blue-600/25 dark:ring-blue-500/35'} p-0.5 bg-slate-100 dark:bg-neutral-800 overflow-hidden`}
               >
                 {avatarElement}
               </div>
@@ -234,7 +234,7 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
 
             <div className="flex-1 min-w-0">
               <h4
-                className={`font-heading text-xs font-black tracking-wider uppercase truncate leading-none ${isSuperAdminUser ? 'text-purple-600 dark:text-purple-400' : 'text-slate-900 dark:text-white'}`}
+                className={`font-heading text-xs font-black tracking-wider uppercase truncate leading-none ${isSuperAdminUser ? 'text-blue-600 dark:text-blue-400' : 'text-slate-900 dark:text-white'}`}
               >
                 {isSuperAdminUser
                   ? 'SUPERADMIN'
@@ -245,12 +245,12 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
                 <span
                   className={
                     isSuperAdminUser
-                      ? 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/15 dark:bg-purple-950/70 text-purple-600 dark:text-purple-300 border border-purple-500/35 text-[9px] font-sans font-black uppercase tracking-wide shadow-xs'
+                      ? 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-500/15 dark:bg-blue-950/70 text-blue-600 dark:text-blue-300 border border-blue-500/35 text-[9px] font-sans font-black uppercase tracking-wide shadow-xs'
                       : 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-[9px] font-sans font-extrabold uppercase tracking-wide'
                   }
                 >
                   <span
-                    className={`w-1 h-1 rounded-full ${isSuperAdminUser ? 'bg-purple-500 animate-pulse' : 'bg-emerald-500'}`}
+                    className={`w-1 h-1 rounded-full ${isSuperAdminUser ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`}
                   />
                   {isSuperAdminUser ? 'SUPERADMIN' : profile?.role || 'STAFF'}
                 </span>
@@ -265,9 +265,9 @@ export const SidebarProfileFlipper: React.FC<SidebarProfileFlipperProps> = ({
                 onClick={() => setIsFlipped(true)}
                 aria-label="Flip to Revenue Goals"
                 title="View Revenue Goals Card"
-                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#123c73] dark:bg-[#161a22] dark:hover:bg-[#1f2430] text-slate-700 hover:text-white dark:text-white border border-slate-200/80 dark:border-red-600/80 dark:hover:border-red-500 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95 group shrink-0"
+                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-(--color-primary) dark:bg-[#161a22] dark:hover:bg-(--color-primary) text-slate-700 hover:text-white dark:text-white border border-slate-200/80 dark:border-blue-500/40 dark:hover:border-blue-400 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95 group shrink-0"
               >
-                <Target className="w-3.5 h-3.5 text-[#123c73] group-hover:text-white dark:text-white transition-transform group-hover:rotate-45" />
+                <Target className="w-3.5 h-3.5 text-(--color-primary) group-hover:text-white dark:text-blue-400 transition-transform group-hover:rotate-45" />
                 <span className="text-[10px] font-sans font-black tracking-wider uppercase">
                   GOALS
                 </span>

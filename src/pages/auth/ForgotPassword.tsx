@@ -338,7 +338,7 @@ export const ForgotPassword: React.FC = () => {
         <div className="bg-white dark:bg-[#141414]/95 border border-slate-200 dark:border-white/5 rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500">
           {isInitializing ? (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <Loader2 className="w-8 h-8 animate-spin text-[#1b365d] dark:text-[#bf0202]" />
+              <Loader2 className="w-8 h-8 animate-spin text-(--color-primary)" />
               <p className="text-xs font-heading tracking-widest text-slate-500 dark:text-slate-400 uppercase">
                 Verifying Credentials...
               </p>
@@ -491,9 +491,9 @@ export const ForgotPassword: React.FC = () => {
 
               {/* Card Footer Actions */}
               <div className="space-y-4 mt-6 font-body">
-                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-red-950/10 border border-slate-200 dark:border-[#a63429] rounded-xl text-left">
-                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-[#bf0202] tracking-wider mb-1 font-heading">
-                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-[#bf0202]" />
+                <div className="protocol-notice-box p-3 bg-slate-100 dark:bg-blue-950/20 border border-slate-200 dark:border-blue-500/30 rounded-xl text-left">
+                  <div className="notice-header flex items-center gap-1.5 text-[10px] font-bold text-[#1b365d] dark:text-blue-400 tracking-wider mb-1 font-heading">
+                    <ShieldAlert className="w-4 h-4 text-[#1b365d] dark:text-blue-400" />
                     <span>VERIFICATION PROTOCOL</span>
                   </div>
                   <p className="notice-body text-[9px] text-slate-900 dark:text-slate-400 leading-relaxed font-bold">

@@ -56,7 +56,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
         <button
           id="btn-quick-scan-member"
           onClick={onScanClick || openScanner}
-          className="group relative col-span-1 bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] text-white p-3 sm:p-3.5 rounded-xl font-medium transition-all shadow-xs hover:shadow-md flex flex-col justify-between text-left active:scale-[0.97] cursor-pointer overflow-hidden border border-blue-900/40 dark:border-red-900/40"
+          className="group relative col-span-1 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white p-3 sm:p-3.5 rounded-xl font-medium transition-all shadow-xs hover:shadow-md flex flex-col justify-between text-left active:scale-[0.97] cursor-pointer overflow-hidden border border-blue-800/40 dark:border-blue-500/40"
         >
           <div className="flex items-start justify-between gap-2">
             <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -73,7 +73,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
               <span className="truncate">Scan Member</span>
               <ArrowRight className="w-3 h-3 opacity-70 group-hover:translate-x-1 group-hover:opacity-100 transition-all shrink-0" />
             </div>
-            <p className="text-[10px] text-blue-100 dark:text-red-100 opacity-90 truncate mt-0.5">
+            <p className="text-[10px] text-blue-100 opacity-90 truncate mt-0.5">
               QR / Card Entry
             </p>
           </div>
@@ -129,10 +129,10 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
         <button
           id="btn-quick-new-subscription"
           onClick={onNewSubscriptionClick || (() => navigate('/logbook'))}
-          className="group col-span-1 bg-slate-50 dark:bg-[#1e232d] hover:bg-purple-50/70 dark:hover:bg-slate-800/80 text-slate-900 dark:text-slate-100 p-3 sm:p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/70 hover:border-purple-300 dark:hover:border-purple-500/40 transition-all text-left flex flex-col justify-between active:scale-[0.97] cursor-pointer"
+          className="group col-span-1 bg-slate-50 dark:bg-[#1e232d] hover:bg-sky-50/70 dark:hover:bg-slate-800/80 text-slate-900 dark:text-slate-100 p-3 sm:p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700/70 hover:border-sky-300 dark:hover:border-sky-500/40 transition-all text-left flex flex-col justify-between active:scale-[0.97] cursor-pointer"
         >
           <div className="flex items-start justify-between gap-2">
-            <div className="w-8 h-8 rounded-lg bg-purple-100/80 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-sky-100/80 dark:bg-sky-950/60 text-sky-700 dark:text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
               <FileCheck className="w-4 h-4" />
             </div>
           </div>
@@ -140,7 +140,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
           <div className="mt-2.5 min-w-0">
             <div className="text-xs font-black uppercase font-heading leading-tight flex items-center justify-between">
               <span className="truncate">Subscriptions</span>
-              <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-1 group-hover:text-purple-600 transition-all shrink-0" />
+              <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-1 group-hover:text-sky-600 transition-all shrink-0" />
             </div>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
               Plans & Logbook

@@ -1277,7 +1277,7 @@ export const OnlineRegistrationPage: React.FC = () => {
       ctx.strokeStyle = '#123c73';
       ctx.strokeRect(20, 20, 560, 760);
 
-      ctx.fillStyle = '#bf0202';
+      ctx.fillStyle = '#1d4ed8';
       ctx.fillRect(20, 20, 560, 12);
 
       ctx.textAlign = 'center';
@@ -1304,7 +1304,7 @@ export const OnlineRegistrationPage: React.FC = () => {
         timeStyle: 'short',
         timeZone: 'Asia/Manila',
       });
-      ctx.fillStyle = '#bf0202';
+      ctx.fillStyle = '#b45309';
       ctx.font = '600 13px sans-serif';
       ctx.fillText(`Expires: ${expDate} (Manila Time)`, 300, 620);
 
@@ -1403,7 +1403,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 disabled={isTicketLimitReached}
                 className={`px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
                   viewMode === 'form'
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                    ? 'bg-(--color-primary) text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 } ${isTicketLimitReached ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={
@@ -1428,7 +1428,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 }}
                 className={`px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all ${
                   viewMode !== 'form'
-                    ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                    ? 'bg-(--color-primary) text-white shadow-xs'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -1718,7 +1718,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={fetchLiveRates}
-                className="py-2.5 px-5 bg-[#123c73] dark:bg-[#bf0202] text-white hover:opacity-90 rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                className="py-2.5 px-5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Check Again</span>
@@ -1767,7 +1767,7 @@ export const OnlineRegistrationPage: React.FC = () => {
               <div className="flex items-center justify-between relative mb-2">
                 <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-zinc-800 -translate-y-1/2 z-0" />
                 <div
-                  className="absolute top-1/2 left-0 h-0.5 bg-[#123c73] dark:bg-[#bf0202] -translate-y-1/2 z-0 transition-all duration-300"
+                  className="absolute top-1/2 left-0 h-0.5 bg-(--color-primary) -translate-y-1/2 z-0 transition-all duration-300"
                   style={{
                     width: `${((currentStep - 1) / (wizardSteps.length - 1)) * 100}%`,
                   }}
@@ -1787,7 +1787,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                           isCompleted
                             ? 'bg-emerald-500 text-white shadow-md'
                             : isActive
-                              ? 'bg-[#123c73] dark:bg-[#bf0202] text-white ring-4 ring-blue-500/20 dark:ring-red-500/20'
+                              ? 'bg-(--color-primary) text-white ring-4 ring-blue-500/20'
                               : 'bg-slate-200 dark:bg-zinc-800 text-slate-500'
                         }`}
                       >
@@ -1800,7 +1800,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <span
                         className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mt-1 ${
                           isActive
-                            ? 'text-[#123c73] dark:text-[#bf0202]'
+                            ? 'text-blue-700 dark:text-blue-400'
                             : 'text-slate-400'
                         }`}
                       >
@@ -2223,7 +2223,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         <input
                           type="checkbox"
                           {...register('same_as_parent')}
-                          className="w-4 h-4 rounded border-slate-300 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 dark:text-blue-500 focus:ring-0 cursor-pointer"
                         />
                         <span>
                           Use Parent / Legal Guardian as Primary Emergency
@@ -2555,14 +2555,14 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setAgreementDocument('terms')}
-                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                        className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
                       >
                         Terms &amp; Conditions
                       </button>
                       <button
                         type="button"
                         onClick={() => setAgreementDocument('privacy')}
-                        className="text-[10px] text-blue-600 dark:text-red-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
+                        className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider underline hover:opacity-80 cursor-pointer"
                       >
                         Privacy Policy
                       </button>
@@ -2657,7 +2657,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <input
                         type="checkbox"
                         {...register('agreement')}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#123c73] dark:text-[#bf0202] focus:ring-0 cursor-pointer shrink-0"
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 dark:text-blue-500 focus:ring-0 cursor-pointer shrink-0"
                       />
                       <span className="text-[11px] sm:text-xs font-medium text-slate-800 dark:text-slate-200 leading-snug">
                         {isMinor ? (
@@ -2666,7 +2666,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                              className="text-blue-600 dark:text-blue-400 underline font-bold cursor-pointer"
                             >
                               Terms &amp; Conditions
                             </button>{' '}
@@ -2674,7 +2674,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                              className="text-blue-600 dark:text-blue-400 underline font-bold cursor-pointer"
                             >
                               Privacy Policy
                             </button>
@@ -2686,7 +2686,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('terms')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                              className="text-blue-600 dark:text-blue-400 underline font-bold cursor-pointer"
                             >
                               Terms &amp; Conditions
                             </button>{' '}
@@ -2694,7 +2694,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setAgreementDocument('privacy')}
-                              className="text-[#123c73] dark:text-red-400 underline font-bold cursor-pointer"
+                              className="text-blue-600 dark:text-blue-400 underline font-bold cursor-pointer"
                             >
                               Privacy Policy
                             </button>
@@ -2744,7 +2744,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                   disabled={isRestrictedUnder12 || isTicketLimitReached}
                   className={`py-2.5 sm:py-3 px-5 sm:px-6 rounded-xl font-heading text-[10px] tracking-wider uppercase font-black transition-all flex items-center gap-1.5 border-none shadow-md ${
                     !isRestrictedUnder12 && !isTicketLimitReached
-                      ? 'bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white cursor-pointer shadow-blue-500/10 dark:shadow-red-500/10'
+                      ? 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer shadow-blue-500/10'
                       : 'bg-slate-300 dark:bg-zinc-800 text-slate-500 cursor-not-allowed'
                   }`}
                 >

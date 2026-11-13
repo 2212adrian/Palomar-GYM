@@ -211,7 +211,7 @@ export const VersionUpdateManager: React.FC = () => {
             type="button"
             onClick={handleDownloadAndInstall}
             disabled={isUpdating}
-            className="flex-1 py-2.5 px-4 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all active:scale-95"
+            className="flex-1 py-2.5 px-4 bg-(--color-primary) hover:bg-(--color-primary-hover) disabled:opacity-50 text-white rounded-xl text-xs font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all active:scale-95"
           >
             {isUpdating ? (
               <>

@@ -258,7 +258,7 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
         <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="w-8 h-8 rounded-lg bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-(--color-primary) text-white flex items-center justify-center shadow-xs">
                 <Dumbbell className="w-4 h-4" />
               </div>
               <h1 className="text-lg sm:text-2xl font-black tracking-tight uppercase font-heading text-slate-900 dark:text-white truncate">

@@ -421,9 +421,9 @@ export const SyncConflictDashboard: React.FC<SyncConflictDashboardProps> = ({
                     </div>
 
                     {/* 2nd Transaction */}
-                    <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/40 dark:bg-purple-950/20 space-y-2 text-left">
+                    <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2 text-left">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black font-heading uppercase tracking-widest text-purple-700 dark:text-purple-300">
+                        <span className="text-[10px] font-black font-heading uppercase tracking-widest text-blue-700 dark:text-blue-300">
                           2nd {item.entityType === 'attendance' ? 'Check-in' : 'Transaction'}
                         </span>
                         <span className="text-[10px] font-mono font-semibold text-slate-500">

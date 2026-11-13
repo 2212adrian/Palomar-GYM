@@ -26,7 +26,7 @@ export const SecurityCaptchaModal: React.FC<SecurityCaptchaModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Security Verification">
       <div className="flex flex-col items-center justify-center p-3 space-y-3 font-body">
-        <div className="flex items-center gap-1.5 text-xs font-heading font-black text-blue-600 dark:text-red-500 uppercase tracking-wider">
+        <div className="flex items-center gap-1.5 text-xs font-heading font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider">
           <ShieldAlert className="w-4 h-4 shrink-0" />
           <span>Please complete the security check to proceed</span>
         </div>

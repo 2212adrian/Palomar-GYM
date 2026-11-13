@@ -6,6 +6,7 @@ import React, {
   useRef,
   useMemo,
   useCallback,
+  useDeferredValue,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
@@ -231,6 +232,7 @@ export const Products: React.FC<ProductsProps> = ({
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
 
   // Navigation & Modals Toggle States
@@ -1437,31 +1439,33 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
     }
   };
 
-  const filteredProducts = products.filter((p) => {
-    const query = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      query === '' ||
-      p.product_name.toLowerCase().includes(query) ||
-      p.barcode_id.toLowerCase().includes(query) ||
-      (p.manufacturer_barcode &&
-        p.manufacturer_barcode.toLowerCase().includes(query));
+  const filteredProducts = useMemo(() => {
+    const query = deferredSearchQuery.toLowerCase().trim();
+    return products.filter((p) => {
+      const matchesSearch =
+        query === '' ||
+        p.product_name.toLowerCase().includes(query) ||
+        p.barcode_id.toLowerCase().includes(query) ||
+        (p.manufacturer_barcode &&
+          p.manufacturer_barcode.toLowerCase().includes(query));
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (selectedStatusFilter === 'all') return true;
-    if (selectedStatusFilter === 'active') return p.status === 'Active';
-    if (selectedStatusFilter === 'inactive') return p.status === 'Inactive';
-    if (selectedStatusFilter === 'limited') return p.has_stock_limit;
-    if (selectedStatusFilter === 'low_stock') {
-      return (
-        p.has_stock_limit &&
-        p.low_stock_alert !== null &&
-        p.stock_quantity <= p.low_stock_alert
-      );
-    }
-    if (selectedStatusFilter === 'unlimited') return !p.has_stock_limit;
-    return true;
-  });
+      if (selectedStatusFilter === 'all') return true;
+      if (selectedStatusFilter === 'active') return p.status === 'Active';
+      if (selectedStatusFilter === 'inactive') return p.status === 'Inactive';
+      if (selectedStatusFilter === 'limited') return p.has_stock_limit;
+      if (selectedStatusFilter === 'low_stock') {
+        return (
+          p.has_stock_limit &&
+          p.low_stock_alert !== null &&
+          p.stock_quantity <= p.low_stock_alert
+        );
+      }
+      if (selectedStatusFilter === 'unlimited') return !p.has_stock_limit;
+      return true;
+    });
+  }, [products, deferredSearchQuery, selectedStatusFilter]);
 
   const isAllSelected =
     filteredProducts.length > 0 &&
@@ -1879,8 +1883,8 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
             <button
               onClick={() => handleEditClick(item)}
               className="flex items-center justify-center h-8 w-8 rounded-xl border transition-all duration-200 cursor-pointer shadow-xs active:scale-95 shrink-0
-    bg-slate-100 text-slate-700 border-slate-200 hover:bg-[#123c73] hover:text-white hover:border-[#123c73]
-    dark:bg-[#1e232d] dark:text-slate-200 dark:border-white/10 dark:hover:bg-[#bf0202] dark:hover:text-white dark:hover:border-[#bf0202]"
+    bg-slate-100 text-slate-700 border-slate-200 hover:bg-(--color-primary) hover:text-white hover:border-(--color-primary)
+    dark:bg-[#1e232d] dark:text-slate-200 dark:border-white/10 dark:hover:bg-(--color-primary) dark:hover:text-white dark:hover:border-(--color-primary)"
               title="Edit Product"
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -1943,7 +1947,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search items by name, internal barcode (PR-XXXX), or external barcode..."
-            className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-input) text-xs text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#123c73] dark:focus:border-[#bf0202] transition-all font-medium"
+            className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-input) text-xs text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-blue-500 transition-all font-medium"
           />
           {searchQuery && (
             <button
@@ -1962,7 +1966,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-(--bg-input) border border-(--border-color) rounded-lg text-xs text-(--color-text) font-semibold outline-none focus:border-[#123c73] dark:focus:border-[#bf0202] transition-all cursor-pointer"
+            className="px-3 py-1.5 bg-(--bg-input) border border-(--border-color) rounded-lg text-xs text-(--color-text) font-semibold outline-none focus:border-blue-500 transition-all cursor-pointer"
           >
             <option value="all">ALL ITEMS</option>
             <option value="active">VISIBLE</option>
@@ -2433,7 +2437,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
               whileTap={{ scale: 0.985 }}
               type="button"
               onClick={handleCreateClick}
-              className="hidden sm:flex w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
+              className="hidden sm:flex w-full py-3.5 px-4 rounded-2xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer border border-white/10 group mt-4 select-none"
             >
               <div className="w-6 h-6 rounded-lg bg-white/15 flex items-center justify-center group-hover:rotate-90 transition-transform duration-300 shrink-0">
                 <Plus className="w-4 h-4 text-white" />
@@ -2826,7 +2830,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
             }`}
           >
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-              <div className="flex items-center gap-1 text-[#123c73] dark:text-[#bf0202] shrink-0">
+              <div className="flex items-center gap-1 text-blue-700 dark:text-blue-400 shrink-0">
                 <Package className="w-3.5 h-3.5" />
                 <span className="text-[11px]">{products.length} Products</span>
               </div>
@@ -2875,7 +2879,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
                 <button
                   type="button"
                   onClick={handleCreateClick}
-                  className="h-9 px-3 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
+                  className="h-9 px-3 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white flex items-center justify-center gap-1 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 cursor-pointer active:scale-95 transition-transform"
                   title="Add New Item"
                 >
                   <Plus className="w-4 h-4" />

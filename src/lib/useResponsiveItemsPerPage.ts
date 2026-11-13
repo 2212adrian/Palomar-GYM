@@ -1,5 +1,5 @@
 // src/lib/useResponsiveItemsPerPage.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export function useResponsiveItemsPerPage() {
   const getItemsPerPage = () => {
@@ -16,10 +16,17 @@ export function useResponsiveItemsPerPage() {
   };
 
   const [itemsPerPage, setItemsPerPage] = useState(getItemsPerPage);
+  const lastWidthRef = useRef<number>(
+    typeof window !== 'undefined' ? window.innerWidth : 0
+  );
 
   useEffect(() => {
     const handleResize = () => {
-      setItemsPerPage(getItemsPerPage());
+      const currentWidth = window.innerWidth;
+      if (currentWidth === lastWidthRef.current) return;
+      lastWidthRef.current = currentWidth;
+      const next = getItemsPerPage();
+      setItemsPerPage((prev) => (prev === next ? prev : next));
     };
 
     window.addEventListener('resize', handleResize);

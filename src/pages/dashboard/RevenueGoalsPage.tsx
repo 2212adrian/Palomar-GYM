@@ -150,26 +150,26 @@ export const RevenueGoalsPage: React.FC = () => {
         helperText: `${format(monthStart, 'MMM 1')} – ${format(monthEnd, 'MMM d')}`,
         icon: Calendar,
         activeCard:
-          'bg-violet-50/70 dark:bg-violet-950/30 border-violet-500 dark:border-violet-400 ring-1 ring-violet-500/20 dark:ring-violet-400/30',
+          'bg-blue-50/70 dark:bg-blue-950/30 border-blue-500 dark:border-blue-400 ring-1 ring-blue-500/20 dark:ring-blue-400/30',
         inactiveCard:
-          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-violet-300 dark:hover:border-violet-700/60',
-        topBarColor: 'bg-violet-500',
-        iconContainerActive: 'bg-violet-500 text-white dark:bg-violet-500',
+          'bg-white dark:bg-[#161920] border-slate-200/80 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700/60',
+        topBarColor: 'bg-blue-500',
+        iconContainerActive: 'bg-blue-500 text-white dark:bg-blue-500',
         iconContainerInactive:
-          'bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/60 dark:border-violet-900/40',
-        titleColorActive: 'text-violet-800 dark:text-violet-300',
-        indicatorColor: 'bg-violet-500',
+          'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40',
+        titleColorActive: 'text-blue-800 dark:text-blue-300',
+        indicatorColor: 'bg-blue-500',
         heroContainer:
-          'border-violet-200/90 dark:border-violet-900/60 bg-gradient-to-br from-violet-50/40 via-white to-purple-50/20 dark:from-[#19092c] dark:via-[#161920] dark:to-[#10051e]',
+          'border-blue-200/90 dark:border-blue-900/60 bg-gradient-to-br from-blue-50/40 via-white to-sky-50/20 dark:from-[#09152c] dark:via-[#161920] dark:to-[#071022]',
         progressBarFill:
-          'bg-gradient-to-r from-violet-500 via-fuchsia-400 to-purple-400',
+          'bg-gradient-to-r from-blue-600 via-blue-400 to-sky-300',
         badgeClass:
-          'bg-violet-100 text-violet-800 dark:bg-violet-950/80 dark:text-violet-300 border-violet-300 dark:border-violet-800',
-        accentText: 'text-violet-600 dark:text-violet-400',
+          'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-300 dark:border-blue-800',
+        accentText: 'text-blue-600 dark:text-blue-400',
         inputBorderFocus:
-          'focus-within:border-violet-500 dark:focus-within:border-violet-400',
-        inputRingFocus: 'focus-within:ring-violet-500/20',
-        inputIconColor: 'text-violet-600 dark:text-violet-400',
+          'focus-within:border-blue-500 dark:focus-within:border-blue-400',
+        inputRingFocus: 'focus-within:ring-blue-500/20',
+        inputIconColor: 'text-blue-600 dark:text-blue-400',
       },
       {
         id: 'yearly',
@@ -632,10 +632,10 @@ export const RevenueGoalsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Monthly Input (Violet) */}
-          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-violet-500 dark:focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
+          {/* Monthly Input (Blue) */}
+          <div className={`p-4 rounded-2xl bg-slate-50 dark:bg-[#1e232d]/40 border border-slate-200/80 dark:border-slate-800 focus-within:border-blue-500 dark:focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all space-y-2 ${isOffline ? 'opacity-70' : ''}`}>
             <div className="flex items-center justify-between text-slate-700 dark:text-slate-200">
-              <div className="flex items-center gap-1.5 text-violet-700 dark:text-violet-400">
+              <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
                 <Calendar className="w-3.5 h-3.5" />
                 <label className="text-xs font-bold uppercase tracking-wider">
                   Monthly Target
@@ -661,7 +661,7 @@ export const RevenueGoalsPage: React.FC = () => {
                     monthly: Number(e.target.value) || 0,
                   }))
                 }
-                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-violet-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
+                className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -740,7 +740,7 @@ export const RevenueGoalsPage: React.FC = () => {
                     className={`px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md flex items-center gap-2 ${
                       isOffline
                         ? 'bg-slate-400 dark:bg-zinc-700 opacity-50 cursor-not-allowed'
-                        : 'bg-[#123c73] hover:bg-[#0c2950] dark:bg-[#bf0202] dark:hover:bg-[#9c0202] cursor-pointer active:scale-95 disabled:opacity-50'
+                        : 'bg-(--color-primary) hover:bg-(--color-primary-hover) cursor-pointer active:scale-95 disabled:opacity-50'
                     }`}
                   >
                     {isSaving ? (

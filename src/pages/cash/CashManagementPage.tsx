@@ -527,7 +527,7 @@ export const CashManagementPage: React.FC = () => {
                     ? 'bg-slate-300 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60'
                     : pendingApprovals.length > 0
                     ? 'bg-amber-600 hover:bg-amber-700 active:scale-95 text-white cursor-pointer'
-                    : 'bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] active:scale-95 text-white cursor-pointer'
+                    : 'bg-(--color-primary) hover:bg-(--color-primary-hover) active:scale-95 text-white cursor-pointer'
                 }`}
               >
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -686,7 +686,7 @@ export const CashManagementPage: React.FC = () => {
             onClick={() => setActiveCashTab('ledger')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all duration-150 cursor-pointer ${
               activeCashTab === 'ledger'
-                ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                ? 'bg-(--color-primary) text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -698,7 +698,7 @@ export const CashManagementPage: React.FC = () => {
             onClick={() => setActiveCashTab('history')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all duration-150 cursor-pointer ${
               activeCashTab === 'history'
-                ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                ? 'bg-(--color-primary) text-white shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -766,7 +766,7 @@ export const CashManagementPage: React.FC = () => {
                 </div>
               ) : isAdmin ? (
                 <div className="max-w-xl mx-auto text-center space-y-6">
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-[#123c73]/10 dark:bg-[#bf0202]/15 text-[#123c73] dark:text-[#bf0202] flex items-center justify-center mx-auto transition-transform hover:scale-105">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-blue-600/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 flex items-center justify-center mx-auto transition-transform hover:scale-105">
                     <Wallet className="w-7 h-7 sm:w-8 sm:h-8" />
                   </div>
 
@@ -816,7 +816,7 @@ export const CashManagementPage: React.FC = () => {
                             const val = e.target.value.replace(/[^0-9.]/g, '');
                             setOpeningFloatInput(val);
                           }}
-                          className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202]"
+                          className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
 
@@ -845,7 +845,7 @@ export const CashManagementPage: React.FC = () => {
                             onClick={() => setOpeningFloatInput(preset.toString())}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-150 active:scale-95 ${
                               openingFloatInput === preset.toString()
-                                ? 'bg-[#123c73] text-white dark:bg-[#bf0202] dark:text-white shadow-xs'
+                                ? 'bg-(--color-primary) text-white shadow-xs'
                                 : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#161920] dark:hover:bg-[#1e232d] text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-white/10'
                             }`}
                           >
@@ -864,14 +864,14 @@ export const CashManagementPage: React.FC = () => {
                         placeholder="e.g. Morning shift opener, change fund replenished..."
                         value={openingNotes}
                         onChange={(e) => setOpeningNotes(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#123c73] dark:focus:ring-[#bf0202] resize-none"
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                       />
                     </div>
 
                     <Button
                       type="submit"
                       loading={isOpeningSession}
-                      className="w-full py-3.5 sm:py-4 text-xs sm:text-sm font-heading font-black tracking-wider shadow-sm transition-all duration-150 active:scale-[0.99] bg-[#123c73] hover:bg-[#0f2e59] dark:bg-[#bf0202] dark:hover:bg-[#a60303] text-white"
+                      className="w-full py-3.5 sm:py-4 text-xs sm:text-sm font-heading font-black tracking-wider shadow-sm transition-all duration-150 active:scale-[0.99] bg-(--color-primary) hover:bg-(--color-primary-hover) text-white"
                     >
                       <Play className="w-4 h-4 mr-1.5" />
                       OPEN TODAY'S CASH SESSION
@@ -1048,7 +1048,7 @@ export const CashManagementPage: React.FC = () => {
                       onClick={() => setMobileHistoryPage(p)}
                       className={`w-7 h-7 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                         mobileHistoryPage === p
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                          ? 'bg-(--color-primary) text-white shadow-xs'
                           : 'border border-slate-200/80 dark:border-white/10 dark:bg-[#161920] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e232d]'
                       }`}
                     >

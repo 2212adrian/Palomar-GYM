@@ -2526,7 +2526,7 @@ export const LogbookPage: React.FC = () => {
             }}
             disabled={isActionLocked}
             title={isActionLocked ? actionLockReason : 'Create New Check-in'}
-            className={`h-10 px-4 rounded-xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white text-xs font-heading font-black tracking-wider uppercase flex items-center gap-2 shadow-sm transition-all border border-white/10 ${
+            className={`h-10 px-4 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white text-xs font-heading font-black tracking-wider uppercase flex items-center gap-2 shadow-sm transition-all border border-white/10 ${
               isActionLocked
                 ? 'opacity-50 cursor-not-allowed'
                 : 'cursor-pointer hover:shadow-md active:scale-95'
@@ -2821,7 +2821,7 @@ export const LogbookPage: React.FC = () => {
                             setInitialSearchVal('');
                             setIsCreateModalOpen(true);
                           }}
-                          className={`mt-4 px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
+                          className={`mt-4 px-5 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider shadow-md transition-all flex items-center gap-2 ${
                             isActionLocked
                               ? 'opacity-50 cursor-not-allowed'
                               : 'cursor-pointer hover:opacity-90 active:scale-95'
@@ -3352,7 +3352,7 @@ export const LogbookPage: React.FC = () => {
                         setInitialSearchVal('');
                         setIsCreateModalOpen(true);
                       }}
-                      className={`w-full py-3.5 px-4 rounded-2xl bg-[#123c73] hover:bg-[#0e2f5a] dark:bg-[#bf0202] dark:hover:bg-[#a10202] text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
+                      className={`w-full py-3.5 px-4 rounded-2xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white font-heading font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-md hover:shadow-lg transition-all duration-200 border border-white/10 group mt-4 select-none ${
                         isActionLocked
                           ? 'opacity-50 cursor-not-allowed'
                           : 'cursor-pointer'
@@ -3604,7 +3604,7 @@ export const LogbookPage: React.FC = () => {
                   setInitialSearchVal('');
                   setIsCreateModalOpen(true);
                 }}
-                className={`h-9 px-3.5 rounded-xl bg-[#123c73] dark:bg-[#bf0202] text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md transition-all ${
+                className={`h-9 px-3.5 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md transition-all ${
                   isActionLocked
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer active:scale-95'

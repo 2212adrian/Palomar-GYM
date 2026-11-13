@@ -36,7 +36,7 @@ export const Button: React.FC<ButtonProps> = ({
   const variantStyles = {
     primary: isDisabled
       ? 'font-heading text-slate-400 dark:text-zinc-500 bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 cursor-not-allowed'
-      : 'font-heading text-white bg-[#1b365d] hover:bg-[#112246] dark:bg-[#bf0202] dark:hover:bg-[#9c0202]',
+      : 'font-heading text-white bg-(--color-primary) hover:bg-(--color-primary-hover)',
 
     danger: isDisabled
       ? 'font-heading text-slate-400 dark:text-zinc-500 bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 cursor-not-allowed'

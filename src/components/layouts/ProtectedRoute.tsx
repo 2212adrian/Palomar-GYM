@@ -22,7 +22,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (!initialized || loading || isProfileLoading || (hasStoredAuthSession() && !user)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
       </div>
     );
   }

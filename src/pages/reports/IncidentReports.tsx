@@ -323,7 +323,7 @@ export const IncidentReports: React.FC = () => {
         {!isAdmin && (
           <button
             onClick={openCreateModal}
-            className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading tracking-widest uppercase shadow-md transition-all shrink-0 font-bold bg-[#123c73] dark:bg-[#bf0202] hover:opacity-90 text-white hover:scale-[1.02] active:scale-95 cursor-pointer"
+            className="hidden md:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-heading tracking-widest uppercase shadow-md transition-all shrink-0 font-bold bg-(--color-primary) hover:bg-(--color-primary-hover) text-white hover:scale-[1.02] active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             New Report
@@ -1500,7 +1500,7 @@ const handleBulkAction = async (
                 </div>
               ) : (
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#123c73] dark:text-[#bf0202]" />
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
                   <span>
                     This incident report has been reviewed or archived by gym
                     management and is now locked from further edits or erase operations. Note that reviewed reports will be automatically erased after 30 days unless archived.
@@ -1560,7 +1560,7 @@ const handleBulkAction = async (
                 placeholder="Search by title, staff name, description..."
                 title="Search reports"
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] outline-none transition-all"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
 
@@ -1582,7 +1582,7 @@ const handleBulkAction = async (
                         setSelectedIds([]);
                       }
                     }}
-                    className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                    className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                   />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Select All
@@ -1600,7 +1600,7 @@ const handleBulkAction = async (
                         }}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-heading tracking-wider uppercase transition-all shrink-0 cursor-pointer ${
                           statusFilter === filter
-                            ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                            ? 'bg-(--color-primary) text-white shadow-xs'
                             : 'bg-slate-100 dark:bg-[#1e232d] text-slate-500 dark:text-slate-400 hover:opacity-80'
                         }`}
                       >
@@ -1624,7 +1624,7 @@ const handleBulkAction = async (
                     setPriorityFilter(e.target.value as any);
                     setCurrentPage(1);
                   }}
-                  className="bg-slate-100 dark:bg-[#1e232d] border-none text-[10px] text-slate-500 dark:text-slate-400 font-heading tracking-wider uppercase rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#123c73] dark:focus:ring-[#bf0202] outline-none cursor-pointer"
+                  className="bg-slate-100 dark:bg-[#1e232d] border-none text-[10px] text-slate-500 dark:text-slate-400 font-heading tracking-wider uppercase rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer"
                 >
                   <option value="All">All Priority</option>
                   <option value="Low">Low</option>
@@ -1747,7 +1747,7 @@ const handleBulkAction = async (
                   className={`mt-3 px-4 py-2 rounded-xl font-heading text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-2 shadow-md transition-all ${
                     isOffline
                       ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
-                      : 'bg-[#123c73] dark:bg-[#bf0202] text-white hover:opacity-90 cursor-pointer active:scale-95'
+                      : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer active:scale-95'
                   }`}
                 >
                   <Plus className="w-4 h-4" />
@@ -1761,8 +1761,8 @@ const handleBulkAction = async (
                 ([dateLabel, groupReports]) => (
                   <div key={dateLabel} className="space-y-3 relative">
                     <div className="flex items-center gap-2 py-1 select-none">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#123c73] dark:bg-[#bf0202]" />
-                      <span className="text-[9px] font-heading tracking-widest text-[#123c73] dark:text-[#bf0202] uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                      <span className="text-[9px] font-heading tracking-widest text-blue-700 dark:text-blue-400 uppercase">
                         {dateLabel}
                       </span>
                       <div className="flex-1 h-px bg-slate-200/50 dark:bg-white/5" />
@@ -1778,7 +1778,7 @@ const handleBulkAction = async (
                           onClick={() => handleSelectReport(report)}
                           className={`relative p-4 border rounded-2xl cursor-pointer transition-all shadow-xs flex items-start gap-3.5 overflow-hidden group ${
                             isSelected
-                              ? 'bg-[#123c73]/5 dark:bg-[#bf0202]/5 border-[#123c73] dark:border-[#bf0202]'
+                              ? 'bg-blue-600/5 dark:bg-blue-500/10 border-blue-600 dark:border-blue-500'
                               : 'bg-white dark:bg-[#161920] border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/15'
                           }`}
                         >
@@ -1806,13 +1806,13 @@ const handleBulkAction = async (
                               }
                               title={`Select report: ${report.title}`}
                               aria-label={`Select report: ${report.title}`}
-                              className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-[#123c73] dark:accent-[#bf0202]"
+                              className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                             />
                           </div>
 
                           <div className="pl-1.5 flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
-                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#123c73] dark:group-hover:text-[#bf0202] transition-colors leading-snug line-clamp-1">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-snug line-clamp-1">
                                 {report.title}
                               </h4>
                               <span
@@ -1907,7 +1907,7 @@ const handleBulkAction = async (
                       title={`Go to page ${idx + 1}`}
                       className={`w-7 h-7 rounded-lg text-[10px] font-heading tracking-widest transition-all cursor-pointer ${
                         currentPage === idx + 1
-                          ? 'bg-[#123c73] dark:bg-[#bf0202] text-white'
+                          ? 'bg-(--color-primary) text-white'
                           : 'bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 hover:bg-slate-50'
                       }`}
                     >
@@ -2209,7 +2209,7 @@ const handleBulkAction = async (
                     }}
                     className={`py-2 px-2 rounded-lg font-heading text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       emergencyTab === 'palomar'
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white shadow-xs'
+                        ? 'bg-(--color-primary) text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
@@ -2571,7 +2571,7 @@ const handleBulkAction = async (
                 <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs">
                   <div className="p-3.5 bg-slate-50 dark:bg-black/20 rounded-2xl border border-slate-200/80 dark:border-white/5 space-y-1.5">
                     <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-heading font-bold text-xs uppercase tracking-wider">
-                      <Building2 className="w-4 h-4 text-[#123c73] dark:text-[#bf0202]" />
+                      <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                       <span>Executive Escalation: Palomar Gym Owners</span>
                     </div>
                     <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-xs">
@@ -2602,7 +2602,7 @@ const handleBulkAction = async (
                           </p>
                         </div>
                         <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-2">
-                          <span className="font-mono font-bold text-sm text-[#123c73] dark:text-red-400">
+                          <span className="font-mono font-bold text-sm text-blue-700 dark:text-blue-400">
                             {contacts.number1}
                           </span>
                           <div className="flex items-center gap-1.5">
@@ -2636,10 +2636,10 @@ const handleBulkAction = async (
                     {contacts.name2 && (
                       <div className="p-4 bg-white dark:bg-[#1e232d] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xs space-y-3">
                         <div className="flex items-center justify-between">
-                          <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-heading font-bold text-xs">
+                          <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center font-heading font-bold text-xs">
                             2
                           </div>
-                          <span className="text-[9px] font-heading font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                          <span className="text-[9px] font-heading font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400">
                             Secondary Owner
                           </span>
                         </div>
@@ -2652,13 +2652,13 @@ const handleBulkAction = async (
                           </p>
                         </div>
                         <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between gap-2">
-                          <span className="font-mono font-bold text-sm text-[#123c73] dark:text-red-400">
+                          <span className="font-mono font-bold text-sm text-blue-700 dark:text-blue-400">
                             {contacts.number2}
                           </span>
                           <div className="flex items-center gap-1.5">
                             <a
                               href={`tel:${contacts.number2}`}
-                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 transition-colors"
+                              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1.5 transition-colors"
                             >
                               <Phone className="w-3.5 h-3.5" />
                               <span>Call</span>
@@ -2761,7 +2761,7 @@ const handleBulkAction = async (
                     placeholder="E.g., Power Surge on Treadmill #4"
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all"
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                   />
                 </div>
 
@@ -2777,7 +2777,7 @@ const handleBulkAction = async (
                     title="Select priority severity of the incident"
                     value={formPriority}
                     onChange={(e) => setFormPriority(e.target.value as any)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all cursor-pointer"
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer"
                   >
                     <option value="Low">
                       Low (No disruption to core workflow)
@@ -2858,7 +2858,7 @@ const handleBulkAction = async (
                           }
                           className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer border ${
                             exists
-                              ? 'bg-[#123c73] dark:bg-[#bf0202] border-[#123c73] dark:border-[#bf0202] text-white'
+                              ? 'bg-(--color-primary) border-(--color-primary) text-white'
                               : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-white/5 text-slate-400 dark:text-slate-400 hover:opacity-80'
                           }`}
                         >
@@ -2884,7 +2884,7 @@ const handleBulkAction = async (
                     placeholder="Detail exactly what happened, medical/security measures applied, and parties involved..."
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#bf0202] transition-all resize-none leading-relaxed"
+                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all resize-none leading-relaxed"
                   />
                 </div>
 
@@ -2899,7 +2899,7 @@ const handleBulkAction = async (
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-5 py-2.5 bg-[#123c73] dark:bg-[#bf0202] hover:opacity-95 text-white disabled:opacity-50 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all font-bold"
+                    className="px-5 py-2.5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white disabled:opacity-50 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer transition-all font-bold"
                   >
                     {saving
                       ? 'Submitting...'
@@ -2961,7 +2961,7 @@ const handleBulkAction = async (
                 className={`h-9 px-3 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase tracking-wider shadow-md border border-white/10 transition-all shrink-0 ${
                   isOffline
                     ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-60 cursor-not-allowed'
-                    : 'bg-[#123c73] dark:bg-[#bf0202] text-white cursor-pointer active:scale-95'
+                    : 'bg-(--color-primary) hover:bg-(--color-primary-hover) text-white cursor-pointer active:scale-95'
                 }`}
                 title={isOffline ? 'Offline - Report filing restricted' : 'Create New Report'}
               >

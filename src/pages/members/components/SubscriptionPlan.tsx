@@ -3079,8 +3079,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                   {/* SECTION 2: ADULT EMERGENCY CONTACT OR MINOR PARENT SECTION */}
                   {!isMinor ? (
-                    <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-2xl space-y-3">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-purple-400 block">
+                    <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-2xl space-y-3">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 block">
                         Emergency Contact (Optional for 18+)
                       </span>
 
@@ -3094,7 +3094,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             value={emergencyName}
                             disabled={isEmergencyNameLocked}
                             onChange={(e) => setEmergencyName(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-purple-500"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-blue-500"
                             placeholder="Contact person's full name"
                           />
                         </div>
@@ -3136,7 +3136,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 e.target.value.replace(/\D/g, '')
                               )
                             }
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-mono font-bold text-(--color-text) outline-none focus:border-purple-500"
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-mono font-bold text-(--color-text) outline-none focus:border-blue-500"
                             placeholder="0918XXXXXXX"
                           />
                         </div>
@@ -4670,7 +4670,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                 className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
                   isOffline || !isSessionOpen || !isYearlyValid
                     ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                    : 'bg-[#123c73] dark:bg-[#bf0202] hover:bg-[#0c2950] dark:hover:bg-[#9c0202] active:scale-95 text-white cursor-pointer'
+                    : 'bg-(--color-primary) hover:bg-(--color-primary-hover) active:scale-95 text-white cursor-pointer'
                 }`}
               >
                 {isOffline ? (

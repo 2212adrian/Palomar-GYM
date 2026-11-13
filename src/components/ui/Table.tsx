@@ -191,7 +191,7 @@ export function Table<T>({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-slate-100 dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-slate-950 dark:focus:ring-[#bf0202] transition-all"
+            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-slate-100 dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-(--color-primary)"
           />
         </div>
       )}
@@ -222,7 +222,7 @@ export function Table<T>({
                       <button
                         type="button"
                         onClick={() => handleSort(col.key)}
-                        className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 dark:focus-visible:ring-[#bf0202] rounded px-1 -mx-1 py-1 transition-colors w-full text-left"
+                        className="flex items-center gap-1.5 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--color-primary) rounded px-1 -mx-1 py-1 transition-colors w-full text-left"
                       >
                         <span>{col.header}</span>
                         <span className="text-slate-500 dark:text-slate-400">
@@ -387,7 +387,7 @@ export function Table<T>({
                   aria-label={`Go to page ${page}`}
                   className={`min-w-8 h-8 px-2.5 rounded-lg font-mono text-xs font-semibold transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-[#1b365d] dark:bg-[#bf0202] text-white shadow-xs'
+                      ? 'bg-(--color-primary) text-white shadow-xs'
                       : 'border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-neutral-800'
                   }`}
                 >

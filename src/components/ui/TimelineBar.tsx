@@ -269,7 +269,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
               onClick={() => setIsSearchOpen((prev) => !prev)}
               className={`md:hidden p-2 sm:p-2.5 border rounded-xl transition-all cursor-pointer active:scale-95 shrink-0 relative shadow-xs ${
                 isSearchOpen || searchQuery
-                  ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202]'
+                  ? 'bg-(--color-primary) text-white border-(--color-primary)'
                   : 'bg-slate-50 dark:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#252b37]'
               }`}
               aria-label="Toggle search bar"
@@ -314,7 +314,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
             {(!isCurrentWeek || !isSelectedDateToday) && role === 'admin' && (
               <button
                 onClick={handleResetToCurrent}
-                className="px-2.5 py-2 sm:px-3 text-xs text-[#123c73] bg-[#123c73]/10 dark:text-red-300 dark:bg-red-950/40 border border-[#123c73]/20 dark:border-red-500/30 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-[#123c73]/20 dark:hover:bg-red-950/60 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                className="px-2.5 py-2 sm:px-3 text-xs text-blue-700 bg-blue-500/10 dark:text-blue-300 dark:bg-blue-950/40 border border-blue-500/20 dark:border-blue-500/30 font-sans tracking-wider rounded-xl flex items-center gap-1.5 font-bold hover:bg-blue-500/20 dark:hover:bg-blue-950/60 transition-all cursor-pointer active:scale-95 shrink-0 shadow-xs"
                 aria-label="Reset to current day"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -373,7 +373,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     style={{ animationDelay: staggerDelay }}
                     className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center transition-all duration-200 relative ${
                       active
-                        ? 'bg-[#123c73] dark:bg-[#bf0202] text-white border-[#123c73] dark:border-[#bf0202] shadow-[0_4px_12px_rgba(18,60,115,0.25)] scale-[1.03] z-10 font-bold'
+                        ? 'bg-(--color-primary) text-white border-(--color-primary) shadow-[0_4px_12px_rgba(37,99,235,0.28)] scale-[1.03] z-10 font-bold'
                         : selectable
                           ? 'bg-slate-50/70 hover:bg-white dark:bg-[#1e232d] dark:hover:bg-[#252b37] border-slate-200/90 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/20 hover:shadow-xs font-bold active:scale-95'
                           : 'bg-transparent border-transparent text-slate-400 dark:text-zinc-600 opacity-40 cursor-not-allowed'
@@ -387,7 +387,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                     </span>
                     {isTodayDate && (
                       <span
-                        className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-[#123c73] dark:bg-red-400'}`}
+                        className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-blue-600 dark:bg-blue-400'}`}
                       />
                     )}
                   </button>
@@ -416,7 +416,7 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] dark:focus:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 focus:border-[#123c73]/40 dark:focus:border-red-500/50 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#123c73]/20 dark:focus:ring-red-500/30 transition-all shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] dark:focus:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 focus:border-blue-500/60 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 {searchQuery && (
                   <button

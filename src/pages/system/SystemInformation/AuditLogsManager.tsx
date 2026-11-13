@@ -95,7 +95,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
         return (
           <div className="space-y-1 py-1 text-left">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-mono text-xs font-black text-blue-600 dark:text-red-400 block">
+              <span className="font-mono text-xs font-black text-blue-600 dark:text-blue-400 block">
                 {item.action}
               </span>
               {isSuperAdminAction && (
@@ -202,7 +202,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">
                   Action
                 </span>
-                <span className="font-mono font-bold text-blue-600 dark:text-red-400">
+                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
                   {selectedLog.action}
                 </span>
               </div>

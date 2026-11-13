@@ -53,7 +53,7 @@ export const SideNavTab: React.FC<SideNavTabProps> = ({
           whileHover={{ scale: 1.05, opacity: 1 }}
           onClick={onClick}
           title={title || `Go to ${label}`}
-          className={`pointer-events-auto ${positionClass} z-[90] bg-white/95 dark:bg-[#161920]/95 backdrop-blur-md ${roundedClass} border-slate-200 dark:border-zinc-800 py-6 px-3.5 shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 transition-all hover:border-blue-500/60 dark:hover:border-red-500/60 hover:bg-white dark:hover:bg-[#1c202a]`}
+          className={`pointer-events-auto ${positionClass} z-[90] bg-white/95 dark:bg-[#161920]/95 backdrop-blur-md ${roundedClass} border-slate-200 dark:border-zinc-800 py-6 px-3.5 shadow-2xl cursor-pointer flex flex-col items-center gap-3.5 transition-all hover:border-blue-500/60 hover:bg-white dark:hover:bg-[#1c202a]`}
         >
           {isLeft && (
             <motion.div
@@ -64,12 +64,12 @@ export const SideNavTab: React.FC<SideNavTabProps> = ({
                 ease: 'easeInOut',
               }}
             >
-              <ChevronLeft className="w-5 h-5 text-blue-600 dark:text-red-500" />
+              <ChevronLeft className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </motion.div>
           )}
 
           <span
-            className={`[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-500 dark:text-zinc-400 group-hover:text-blue-600 dark:group-hover:text-red-500 transition-colors select-none ${
+            className={`[writing-mode:vertical-rl] font-heading text-xs font-black tracking-widest uppercase text-slate-500 dark:text-zinc-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors select-none ${
               isLeft ? 'rotate-180' : ''
             }`}
           >
@@ -85,7 +85,7 @@ export const SideNavTab: React.FC<SideNavTabProps> = ({
                 ease: 'easeInOut',
               }}
             >
-              <ChevronRight className="w-5 h-5 text-blue-600 dark:text-red-500" />
+              <ChevronRight className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </motion.div>
           )}
         </motion.button>

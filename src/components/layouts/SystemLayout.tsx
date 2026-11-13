@@ -448,11 +448,11 @@ export const SystemLayout: React.FC = () => {
                       : 'scale-x-[2.5] sm:scale-x-[8]'
                   }`}
                 >
-                  <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-red-600" />
-                  <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#7a0000] opacity-90" />
-                  <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#295c9a] dark:bg-[#a60303]" />
-                  <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#539cff] dark:bg-[#e60000] shadow-[0_0_10px_rgba(83,156,255,0.8)] sm:shadow-[0_0_20px_rgba(83,156,255,0.8)] dark:shadow-[0_0_10px_rgba(230,0,0,0.8)] dark:sm:shadow-[0_0_20px_rgba(230,0,0,0.8)]" />
-                  <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-red-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(255,100,100,1)] dark:sm:shadow-[0_0_25px_rgba(255,100,100,1)]" />
+                  <div className="absolute top-0 right-8 sm:right-16 h-full w-8 sm:w-16 blur-xl sm:blur-2xl opacity-80 bg-gradient-to-l from-transparent to-blue-600 dark:to-blue-500" />
+                  <div className="absolute top-0 right-5 sm:right-10 h-full w-4 sm:w-8 bg-[#123c73] dark:bg-[#1e3a8a] opacity-90" />
+                  <div className="absolute top-0 right-2.5 sm:right-5 h-full w-3 sm:w-6 bg-[#2563eb] dark:bg-[#2563eb]" />
+                  <div className="absolute top-0 right-1 sm:right-2 h-full w-2 sm:w-4 bg-[#60a5fa] dark:bg-[#3b82f6] shadow-[0_0_10px_rgba(59,130,246,0.8)] sm:shadow-[0_0_20px_rgba(59,130,246,0.8)]" />
+                  <div className="absolute top-0 right-0 h-full w-0.5 sm:w-0.75 bg-white dark:bg-blue-100 shadow-[0_0_15px_rgba(255,255,255,1)] sm:shadow-[0_0_25px_rgba(255,255,255,1)] dark:shadow-[0_0_15px_rgba(147,197,253,1)] dark:sm:shadow-[0_0_25px_rgba(147,197,253,1)]" />
                 </div>
               </div>
             </div>

@@ -675,7 +675,7 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   return (
     <header
-      className={`w-full h-16 border-b border-[#123c73]/20 dark:border-[#bf0202]/45 shadow-[0_2px_8px_rgba(18,60,115,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md relative flex items-center justify-between px-3 sm:px-4 md:px-6 z-30 select-none shrink-0 ${className}`}
+      className={`w-full h-16 border-b border-blue-900/15 dark:border-blue-500/30 shadow-[0_2px_8px_rgba(37,99,235,0.04)] bg-white/95 dark:bg-[var(--bg-card)]/80 backdrop-blur-md relative flex items-center justify-between px-3 sm:px-4 md:px-6 z-30 select-none shrink-0 ${className}`}
     >
       {/* 1. LEFT TITLE & DESKTOP TELEMETRY */}
       <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 mr-2 sm:mr-3 overflow-hidden">

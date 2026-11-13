@@ -100,7 +100,7 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
               font-size: 8px;
               font-weight: 900;
               letter-spacing: 2px;
-              color: #bf0202;
+              color: #1d4ed8;
               margin-bottom: 8px;
             }
             .qr-container img {
@@ -217,7 +217,7 @@ export const MemberQRPrintModal: React.FC<MemberQRPrintModalProps> = ({
           <button
             type="button"
             onClick={executePrint}
-            className="flex-1 py-3 bg-[#1b365d] dark:bg-[#bf0202] text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-md border-none"
+            className="flex-1 py-3 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-md border-none transition-colors"
           >
             <Printer className="w-4 h-4" />
             <span>Generate PDF Layout</span>
