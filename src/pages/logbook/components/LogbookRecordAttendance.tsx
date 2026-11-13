@@ -1777,6 +1777,9 @@ export const LogbookRecordAttendance: React.FC<
                           ? 'TYPE GUEST NAME...'
                           : 'TYPE NAME, PHONE, CARD CODE OR ID...'
                     }
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className={`w-full pl-10 pr-20 py-2.5 sm:py-3 bg-(--bg-input) border border-(--border-color) rounded-xl text-xs sm:text-sm font-bold uppercase transition-all ${
                       showLiveScanner
                         ? 'opacity-50 cursor-not-allowed text-(--color-text)/40'
@@ -2485,6 +2488,9 @@ export const LogbookRecordAttendance: React.FC<
                                   setAmountReceived(e.target.value)
                                 }
                                 placeholder="0.00"
+                                autoComplete="off"
+                                spellCheck={false}
+                                autoCorrect="off"
                                 className="w-full pl-8 pr-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) font-mono font-bold text-sm focus:border-(--color-primary)"
                               />
                             </div>
@@ -2504,6 +2510,9 @@ export const LogbookRecordAttendance: React.FC<
                                 )
                               }
                               placeholder="ENTER 13-DIGIT REFERENCE CODE..."
+                              autoComplete="off"
+                              spellCheck={false}
+                              autoCorrect="off"
                               className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl outline-none text-(--color-text) placeholder:text-(--color-text)/30 font-mono font-bold text-xs focus:border-(--color-primary)"
                             />
                             {/^\d{13}$/.test(referenceNumber.trim()) ? (

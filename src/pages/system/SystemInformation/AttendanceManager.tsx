@@ -452,6 +452,9 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
             </label>
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               required
               value={form.customer_name}
               onChange={(e) =>
@@ -476,6 +479,9 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
                     </span>
                     <input
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={card}
                       onChange={(e) =>
                         handleBatchCardChange(idx, e.target.value)
@@ -515,6 +521,9 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
               </label>
               <input
                 type="text"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 value={form.plan_name}
                 onChange={(e) =>
                   setForm({ ...form, plan_name: e.target.value })
@@ -547,6 +556,9 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
               </label>
               <input
                 type="number"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 min="0"
                 step="any"
                 value={form.entry_fee}

@@ -1560,6 +1560,9 @@ const handleBulkAction = async (
                 placeholder="Search by title, staff name, description..."
                 title="Search reports"
                 onChange={(e) => setSearchQuery(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
@@ -2236,6 +2239,9 @@ const handleBulkAction = async (
                         value={memberSearchTerm}
                         onChange={(e) => setMemberSearchTerm(e.target.value)}
                         placeholder="Search member name, ID, phone..."
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className="w-full pl-9 pr-8 py-2 bg-white dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-emerald-500 outline-none"
                       />
                       {memberSearchTerm && (
@@ -2761,6 +2767,9 @@ const handleBulkAction = async (
                     placeholder="E.g., Power Surge on Treadmill #4"
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                   />
                 </div>
@@ -2834,6 +2843,9 @@ const handleBulkAction = async (
                           handleAddTag(tagInput);
                         }
                       }}
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="flex-1 bg-transparent border-none outline-none text-xs text-slate-900 dark:text-slate-100 min-w-25 p-0.5"
                     />
                   </div>
@@ -2884,6 +2896,9 @@ const handleBulkAction = async (
                     placeholder="Detail exactly what happened, medical/security measures applied, and parties involved..."
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-white/10 rounded-xl text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-blue-500 transition-all resize-none leading-relaxed"
                   />
                 </div>

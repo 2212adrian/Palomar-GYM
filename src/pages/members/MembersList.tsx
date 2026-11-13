@@ -1860,6 +1860,9 @@ const chipCounts = useMemo(() => {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search profiles by Name, ID, Phone, or Email..."
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className="w-full pl-10 pr-10 py-2 border border-(--border-color) bg-(--bg-page) rounded-xl outline-none font-bold text-xs md:text-sm text-(--color-text) focus:border-blue-500 transition-all"
                       />
 
@@ -3350,6 +3353,9 @@ const chipCounts = useMemo(() => {
                   value={batchGcashRef}
                   onChange={(e) => setBatchGcashRef(e.target.value)}
                   placeholder="GCash Reference Number (Optional)"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-xs text-(--color-text) outline-none focus:border-blue-500 transition-colors"
                 />
               </div>

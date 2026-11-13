@@ -124,6 +124,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
                 type="text"
                 value={formMemberId}
                 onChange={(e) => setFormMemberId(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="flex-1 p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none font-mono"
                 required
               />
@@ -146,6 +149,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
               type="text"
               value={formFullName}
               onChange={(e) => setFormFullName(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none uppercase"
               placeholder="e.g. DELA CRUZ, JUAN M."
               required
@@ -160,6 +166,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
               type="text"
               value={formPhone}
               onChange={(e) => setFormPhone(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none"
               placeholder="09XXXXXXXXX"
             />
@@ -173,6 +182,9 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
               type="email"
               value={formEmail}
               onChange={(e) => setFormEmail(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none"
               placeholder="name@email.com"
             />

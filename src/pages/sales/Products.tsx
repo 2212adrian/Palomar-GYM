@@ -1947,6 +1947,9 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search items by name, internal barcode (PR-XXXX), or external barcode..."
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full pl-10 pr-10 py-2 border border-(--border-color) rounded-lg bg-(--bg-input) text-xs text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-blue-500 transition-all font-medium"
           />
           {searchQuery && (

@@ -133,6 +133,9 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
               )
             );
           }}
+          autoComplete="off"
+          spellCheck={false}
+          autoCorrect="off"
           className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
         />
       </td>
@@ -156,6 +159,9 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full pl-6 pr-2 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono text-right"
           />
         </div>
@@ -195,6 +201,9 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono text-center"
           />
         ) : (
@@ -218,6 +227,9 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
                 )
               );
             }}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-mono text-center"
           />
         ) : (
@@ -353,6 +365,9 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
                 )
               );
             }}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full mt-1.5 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
           />
         </div>
@@ -381,6 +396,9 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
                   )
                 );
               }}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full pl-7 pr-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono"
             />
           </div>
@@ -462,6 +480,9 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
                   )
                 );
               }}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-bold font-mono"
             />
           </div>
@@ -483,6 +504,9 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
                   )
                 );
               }}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-mono"
             />
           </div>
@@ -922,6 +946,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search name or barcode..."
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full pl-9 pr-3 py-2 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 transition-all font-medium shadow-xs"
                 />
               </div>
@@ -1025,6 +1052,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                             placeholder="Amount / %"
                             value={priceAdjValue}
                             onChange={(e) => setPriceAdjValue(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs font-mono font-bold outline-none focus:border-blue-500"
                           />
                         </div>

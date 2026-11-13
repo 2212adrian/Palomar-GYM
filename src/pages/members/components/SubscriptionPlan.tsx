@@ -2384,6 +2384,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         value={manualIdInput}
                         onChange={(e) => setManualIdInput(e.target.value)}
                         placeholder="e.g. REG-000001 or MEM-2026-0001"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className="w-full px-3.5 py-2.5 border border-(--border-color) bg-(--bg-card) text-(--color-text) rounded-xl text-xs font-mono uppercase tracking-widest placeholder:text-(--color-text)/30 outline-none focus:border-(--color-primary)"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && manualIdInput.trim()) {
@@ -2565,6 +2568,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           value={memberSearchQuery}
                           onChange={(e) => setMemberSearchQuery(e.target.value)}
                           placeholder="Search by Name, Phone, or Member ID..."
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full pl-10 pr-10 py-3 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-2xl text-xs outline-none focus:border-white focus:ring-2 focus:ring-white/20 font-bold shadow-xs uppercase transition-all"
                           autoFocus
                         />
@@ -2856,6 +2862,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             if (errors.lastName)
                               setErrors((prev) => ({ ...prev, lastName: '' }));
                           }}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold uppercase transition-all outline-none ${
                             isMissing(lastName) || errors.lastName
                               ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
@@ -2888,6 +2897,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             if (errors.firstName)
                               setErrors((prev) => ({ ...prev, firstName: '' }));
                           }}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold uppercase transition-all outline-none ${
                             isMissing(firstName) || errors.firstName
                               ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
@@ -2916,6 +2928,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             disabled={isNameLocked}
                             maxLength={2}
                             onChange={(e) => setMiddleInitials(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full px-3 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) uppercase outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                             placeholder="R."
                           />
@@ -2930,6 +2945,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             value={suffix}
                             disabled={isNameLocked}
                             onChange={(e) => setSuffix(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full px-3 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) uppercase outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                             placeholder="Jr."
                           />
@@ -2960,6 +2978,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             if (errors.phone)
                               setErrors((prev) => ({ ...prev, phone: '' }));
                           }}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold transition-all outline-none ${
                             isMissing(phone) || errors.phone
                               ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
@@ -3046,6 +3067,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 : '--'
                             }
                             disabled
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className={`w-full px-3 py-2 border rounded-xl text-xs font-mono font-bold outline-none cursor-not-allowed ${
                               isRestrictedUnder12
                                 ? 'bg-rose-500/10 border-rose-500/30 text-rose-500'
@@ -3070,6 +3094,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           value={address}
                           disabled={isAddressLocked}
                           onChange={(e) => setAddress(e.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                           placeholder="Barangay, City, Province (optional)"
                         />
@@ -3094,6 +3121,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             value={emergencyName}
                             disabled={isEmergencyNameLocked}
                             onChange={(e) => setEmergencyName(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-blue-500"
                             placeholder="Contact person's full name"
                           />
@@ -3136,6 +3166,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 e.target.value.replace(/\D/g, '')
                               )
                             }
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-mono font-bold text-(--color-text) outline-none focus:border-blue-500"
                             placeholder="0918XXXXXXX"
                           />
@@ -3186,6 +3219,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentName: '',
                                 }));
                             }}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-bold outline-none transition-all ${
                               isParentNameLocked
                                 ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
@@ -3263,6 +3299,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   parentPhone: '',
                                 }));
                             }}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold outline-none transition-all ${
                               isParentPhoneLocked
                                 ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
@@ -3653,6 +3692,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         setGcashReference(e.target.value.replace(/\D/g, '').slice(0, 13))
                       }
                       placeholder="Enter 13-digit Reference Code"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="w-full px-3 py-2 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-xl font-mono text-xs font-bold outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                     />
                     {gcashReference.trim().length > 0 && !isGcashValid && (
@@ -3689,6 +3731,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       value={cashTendered}
                       onChange={(e) => setCashTendered(e.target.value)}
                       placeholder={totalPrice.toLocaleString()}
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="w-full pl-7 pr-3.5 py-2 border border-(--border-color) bg-(--bg-card) text-(--color-text) placeholder:text-(--color-text)/30 rounded-xl font-mono text-xs font-bold outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                     />
                   </div>

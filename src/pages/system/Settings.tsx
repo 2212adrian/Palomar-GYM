@@ -11,6 +11,7 @@ import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
 import { PermissionsSettings } from './PermissionsSettings';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
+import { useHeadingFont } from '../../hooks/useHeadingFont';
 import { isCapacitorApp } from '../../lib/platform';
 import { toast } from 'react-toastify';
 import {
@@ -30,6 +31,7 @@ import {
   RefreshCw,
   Zap,
   WifiOff,
+  Type,
 } from 'lucide-react';
 
 export type TabID =
@@ -206,6 +208,7 @@ export default function Settings() {
     batteryLevel,
     toggleBatterySaver,
   } = useBatterySaver();
+  const { isSystemHeadingFont, toggleHeadingFont } = useHeadingFont();
 
   const [isOffline, setIsOffline] = useState<boolean>(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
@@ -635,6 +638,56 @@ export default function Settings() {
               </div>
             </button>
 
+            {/* Heading Font Toggle in Mobile List */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = toggleHeadingFont();
+                toast.info(
+                  next === 'system'
+                    ? 'Heading font switched to standard system font for easier reading.'
+                    : 'Heading font switched back to Freshman display font.',
+                  { toastId: 'heading-font-toggle' }
+                );
+              }}
+              className={`group/font flex items-center justify-between p-4 rounded-xl border border-dashed transition-colors duration-150 cursor-pointer text-left ${
+                isSystemHeadingFont
+                  ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/15 text-blue-800 dark:text-blue-200'
+                  : 'border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div
+                  className={`p-2 rounded-lg border shadow-xs ${
+                    isSystemHeadingFont
+                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                      : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-blue-600 dark:text-blue-400'
+                  }`}
+                >
+                  <Type className="w-6 h-6 shrink-0" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                    HEADING FONT
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {isSystemHeadingFont
+                      ? 'Standard System Font • Tap for Freshman'
+                      : 'Freshman Display • Tap for System Font'}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-xs font-heading font-bold uppercase tracking-wider shrink-0 border ${
+                  isSystemHeadingFont
+                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40'
+                    : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-700 dark:text-slate-200 border-slate-300/60 dark:border-zinc-700'
+                }`}
+              >
+                {isSystemHeadingFont ? 'SYSTEM' : 'FRESHMAN'}
+              </span>
+            </button>
+
             {/* Power Saving Mode Toggle in Mobile List - Capacitor App Only */}
             {isNativeCapacitor && (
               <button
@@ -793,6 +846,59 @@ export default function Settings() {
                   </>
                 )}
               </div>
+            </button>
+
+            {/* Heading Font Toggle in PC Sidebar */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = toggleHeadingFont();
+                toast.info(
+                  next === 'system'
+                    ? 'Heading font switched to standard system font for easier reading.'
+                    : 'Heading font switched back to Freshman display font.',
+                  { toastId: 'heading-font-toggle' }
+                );
+              }}
+              title={
+                isSystemHeadingFont
+                  ? 'Currently using Standard System Font for headings — Click to switch to Freshman'
+                  : 'Currently using Freshman Display Font for headings — Click to switch to System Font'
+              }
+              className={`w-full flex items-center justify-between p-3 rounded-xl border border-dashed transition-all cursor-pointer ${
+                isSystemHeadingFont
+                  ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/15 text-blue-700 dark:text-blue-200'
+                  : 'border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2 rounded-lg shadow-xs border ${
+                    isSystemHeadingFont
+                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-600 dark:text-blue-400'
+                      : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-blue-600 dark:text-blue-400'
+                  }`}
+                >
+                  <Type className="w-4 h-4 shrink-0" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
+                    HEADING FONT
+                  </span>
+                  <span className="text-[9px] text-slate-500 dark:text-slate-400">
+                    {isSystemHeadingFont ? 'System Font' : 'Freshman'}
+                  </span>
+                </div>
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded-md text-[9px] font-heading font-bold uppercase tracking-wider border ${
+                  isSystemHeadingFont
+                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40'
+                    : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-300/60 dark:border-zinc-700'
+                }`}
+              >
+                {isSystemHeadingFont ? 'SYS' : 'FRM'}
+              </span>
             </button>
 
             {/* Power Saving Mode Toggle in PC Sidebar - Capacitor App Only */}

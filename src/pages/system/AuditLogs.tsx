@@ -961,6 +961,9 @@ export const AuditLogs: React.FC = () => {
           <div className="relative flex-1 max-w-md w-full">
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               placeholder="Search audit logs by actor, action..."
               value={searchQuery}
               onChange={(e) => {

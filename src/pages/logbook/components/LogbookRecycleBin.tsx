@@ -962,6 +962,9 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="field-input pr-10"
           />
           <label className="field-label flex items-center gap-1.5 text-slate-400 uppercase tracking-widest text-[9px]">

@@ -1739,6 +1739,8 @@ export const OnlineRegistrationPage: React.FC = () => {
               name="hp_website_verification"
               tabIndex={-1}
               autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               aria-hidden="true"
               className="hidden opacity-0 absolute -z-50 pointer-events-none"
             />
@@ -1837,6 +1839,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('last_name')}
                         placeholder="e.g. Dela Cruz"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('last_name')}`}
                       />
                     </div>
@@ -1861,6 +1866,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('first_name')}
                         placeholder="e.g. Juan"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('first_name')}`}
                       />
                     </div>
@@ -1888,6 +1896,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         maxLength={2}
                         {...register('middle_initial')}
                         placeholder="e.g. M."
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('middle_initial')}`}
                       />
                     </div>
@@ -1906,6 +1917,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('suffix')}
                         placeholder="e.g. Jr."
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('suffix')}`}
                       />
                     </div>
@@ -1930,6 +1944,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                           },
                         })}
                         placeholder="09171234567"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('phone')}`}
                       />
                     </div>
@@ -1957,6 +1974,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="email"
                         {...register('email')}
                         placeholder="juan@example.com"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('email')}`}
                       />
                     </div>
@@ -2085,6 +2105,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         rows={2}
                         {...register('address')}
                         placeholder="Barangay, City, Province (optional)..."
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors resize-none ${getFieldBorderClass('address')}`}
                       />
                     </div>
@@ -2119,6 +2142,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('parent_name')}
                         placeholder="e.g. Roberto Dela Cruz"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_name')}`}
                       />
                       {errors.parent_name && (
@@ -2165,6 +2191,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                           type="text"
                           {...register('parent_relationship_other')}
                           placeholder="e.g. Aunt / Uncle / Grandparent"
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_relationship_other')}`}
                         />
                         {errors.parent_relationship_other && (
@@ -2191,6 +2220,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                           },
                         })}
                         placeholder="09170000000"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_phone')}`}
                       />
                       {errors.parent_phone && (
@@ -2214,6 +2246,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="email"
                         {...register('parent_email')}
                         placeholder="parent@example.com"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_email')}`}
                       />
                     </div>
@@ -2255,6 +2290,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('emergency_contact_name')}
                         placeholder="e.g. Maria Dela Cruz"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_name')}`}
                       />
                       {errors.emergency_contact_name && (
@@ -2282,6 +2320,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                         type="text"
                         {...register('emergency_contact_relationship')}
                         placeholder="e.g. Spouse / Parent / Sibling"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_relationship')}`}
                       />
                       {errors.emergency_contact_relationship && (
@@ -2318,6 +2359,9 @@ export const OnlineRegistrationPage: React.FC = () => {
                             },
                           })}
                           placeholder="09189876543"
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className={`w-full pl-10 pr-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('emergency_contact_phone')}`}
                         />
                       </div>

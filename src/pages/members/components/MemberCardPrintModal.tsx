@@ -1427,6 +1427,9 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           Math.max(1, parseInt(e.target.value) || 1)
                         )
                       }
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="w-24 p-2 bg-[var(--bg-page)] border border-(--border-color) rounded-xl text-xs font-mono font-bold text-[var(--color-text)] outline-none focus:border-amber-500"
                     />
                     <div className="flex gap-1.5 flex-1 overflow-x-auto">
@@ -1511,6 +1514,9 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by Name or Member ID..."
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full pl-9 pr-3 py-1.5 border border-(--border-color) rounded-xl bg-[var(--bg-page)] text-xs text-[var(--color-text)] outline-none focus:border-blue-500 transition-all font-medium"
                   />
                 </div>
@@ -1607,6 +1613,9 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
                           readOnly
                           disabled
                           tabIndex={-1}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2 bg-[var(--bg-page)]/50 border border-(--border-color) rounded-xl text-xs font-mono font-bold text-slate-500 cursor-not-allowed outline-none select-none pointer-events-none"
                         />
                       </div>

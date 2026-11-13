@@ -1349,6 +1349,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             <div className="space-y-1">
                               <input
                                 type="text"
+                                autoComplete="off"
+                                spellCheck={false}
+                                autoCorrect="off"
                                 maxLength={13}
                                 value={referenceNumber}
                                 onChange={(e) =>
@@ -1883,6 +1886,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                       type="text"
                       autoFocus={false}
                       autoComplete="off"
+                      spellCheck={false}
                       autoCorrect="off"
                       autoCapitalize="off"
                       value={manualCode}
@@ -2072,6 +2076,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                                     </span>
                                     <input
                                       type="number"
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      autoCorrect="off"
                                       value={saleAmountReceived}
                                       onChange={(e) =>
                                         setSaleAmountReceived(e.target.value)
@@ -2101,6 +2108,9 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                                   </label>
                                   <input
                                     type="text"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    autoCorrect="off"
                                     maxLength={13}
                                     value={saleReferenceNumber}
                                     onChange={(e) =>

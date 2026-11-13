@@ -891,6 +891,9 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                   setMobilePage(1);
                 }}
                 placeholder="Search pre-registrations..."
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-10 pr-9 py-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-(--color-text)"
               />
               {mobileSearchQuery && (

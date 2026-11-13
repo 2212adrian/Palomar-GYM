@@ -359,6 +359,9 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
           {supplierMode === 'global' ? (
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               placeholder="e.g. PO #1084 - San Miguel Brewery, Delivery Receipt #540"
               value={globalSupplierNote}
               onChange={(e) => setGlobalSupplierNote(e.target.value)}
@@ -377,6 +380,9 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
             <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               placeholder="Search products by name or barcode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -457,6 +463,9 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       maxLength={3}
                       value={item.incoming_qty}
                       placeholder="0"
@@ -484,6 +493,9 @@ export const RestockProductsModal: React.FC<RestockProductsModalProps> = ({
                   <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-white/5 animate-fade-in">
                     <input
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       placeholder="Supplier / PO delivery memo..."
                       value={item.supplier_note}
                       onChange={(e) => handleUpdateNote(item.id, e.target.value)}

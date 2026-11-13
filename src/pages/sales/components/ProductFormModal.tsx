@@ -966,6 +966,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <input
                   id="modal-product-name"
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   required={!isMultiAddMode || stagedItems.length === 0}
                   maxLength={100}
                   placeholder="e.g. Bottled Water 500ml, Whey Protein"
@@ -998,6 +1001,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   <input
                     id="modal-product-price"
                     type="number"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     step="1"
                     min="0"
                     required={!isMultiAddMode || stagedItems.length === 0}
@@ -1073,6 +1079,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       <input
                         id="modal-stock-qty"
                         type="number"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         min="0"
                         placeholder="0"
                         value={formStockQuantity}
@@ -1092,6 +1101,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       <input
                         id="modal-low-stock"
                         type="number"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         min="0"
                         placeholder="e.g. 5"
                         value={formLowStockAlert}
@@ -1187,6 +1199,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   <div className="relative min-w-0">
                     <input
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       placeholder="Paste external barcode or image URL..."
                       value={combinedInput}
                       onChange={(e) =>

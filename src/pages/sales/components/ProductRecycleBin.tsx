@@ -444,6 +444,9 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
         <div className="field-wrap">
           <input
             type="text"
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             placeholder=" "
             disabled={loading}
             value={searchQuery}

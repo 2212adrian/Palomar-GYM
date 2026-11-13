@@ -534,6 +534,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="monthlyRateInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={monthlyRate}
                       onChange={(e) =>
                         setMonthlyRate(
@@ -562,6 +565,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="yearlyRateInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={yearlyRate}
                       onChange={(e) =>
                         setYearlyRate(
@@ -599,6 +605,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="regularWalkInInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={regularWalkIn}
                       onChange={(e) =>
                         setRegularWalkIn(
@@ -627,6 +636,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="studentWalkInInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={studentWalkIn}
                       onChange={(e) =>
                         setStudentWalkIn(
@@ -655,6 +667,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="yearlyWalkInInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={yearlyWalkIn}
                       onChange={(e) =>
                         setYearlyWalkIn(
@@ -692,6 +707,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="gcashFeeInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={gcashFee}
                       onChange={(e) =>
                         setGcashFee(Math.max(0, parseInt(e.target.value) || 0))
@@ -718,6 +736,9 @@ export const RatesPayments: React.FC = () => {
                     <input
                       id="newCardFeeInput"
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={newCardFee}
                       onChange={(e) =>
                         setNewCardFee(
@@ -770,6 +791,9 @@ export const RatesPayments: React.FC = () => {
                   <input
                     id="vatPercentageInput"
                     type="number"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     disabled={!vatEnabled}
                     value={vatPercentage}
                     onChange={(e) =>

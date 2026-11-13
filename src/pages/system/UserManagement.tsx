@@ -1353,6 +1353,9 @@ export const UserManagement: React.FC = () => {
         <div className="relative w-full">
           <input
             type="text"
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             value={mobileSearch}
             onChange={(e) => setMobileSearch(e.target.value)}
             placeholder="Search accounts by name, email, or role..."
@@ -1744,6 +1747,9 @@ export const UserManagement: React.FC = () => {
             <input
               type="text"
               id="editTargetUsername"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               placeholder=" "
               required
               value={editUsername}
@@ -1821,6 +1827,9 @@ export const UserManagement: React.FC = () => {
                 <input
                   id="deleteConfirmInput"
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   value={deleteConfirmText}
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
                   placeholder="Type username to verify"
@@ -1932,6 +1941,9 @@ export const UserManagement: React.FC = () => {
             <input
               type="text"
               id="newUserName"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               placeholder=" "
               required
               value={newUserName}
@@ -1951,6 +1963,9 @@ export const UserManagement: React.FC = () => {
               <input
                 type="email"
                 id="newUserEmail"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 placeholder=" "
                 required
                 value={newUserEmail}
@@ -1967,6 +1982,9 @@ export const UserManagement: React.FC = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   id="newUserPassword"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   placeholder=" "
                   required
                   value={newUserPassword}

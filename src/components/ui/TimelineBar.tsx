@@ -416,6 +416,9 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
                   value={searchQuery}
                   onChange={(e) => onSearchQueryChange(e.target.value)}
                   placeholder={searchPlaceholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 bg-slate-50/70 focus:bg-white dark:bg-[#1e232d] dark:focus:bg-[#1e232d] border border-slate-200/90 dark:border-white/10 focus:border-blue-500/60 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 {searchQuery && (

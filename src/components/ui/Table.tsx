@@ -191,6 +191,9 @@ export function Table<T>({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={searchPlaceholder}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className="w-full pl-9 pr-4 py-2.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-slate-100 dark:bg-[#13161a] text-slate-900 dark:text-slate-100 outline-none focus:ring-1 focus:ring-(--color-primary)"
           />
         </div>

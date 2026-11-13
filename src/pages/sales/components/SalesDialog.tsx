@@ -611,6 +611,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500" />
                 <input
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   placeholder={
                     showLiveScanner
                       ? 'CAMERA SCANNER ACTIVE...'
@@ -871,6 +874,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                           type="text"
                           inputMode="numeric"
                           pattern="[0-9]*"
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           maxLength={3}
                           value={item.quantity === '' ? '' : item.quantity}
                           placeholder="1"
@@ -963,6 +969,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                         type="text"
                         inputMode="decimal"
                         pattern="[0-9]*\.?[0-9]*"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         placeholder="0.00"
                         disabled={isSubmitting}
                         value={amountReceived}
@@ -996,6 +1005,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       placeholder="Enter 13-digit reference code..."
                       maxLength={13}
                       disabled={isSubmitting}

@@ -180,6 +180,9 @@ const handleSelectTopic = (id: Parameters<typeof setTopic>[0]) => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search topics (e.g., barcode, cash)..."
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 outline-none focus:border-blue-500 transition-all font-medium"
                   />
                   {searchQuery && (

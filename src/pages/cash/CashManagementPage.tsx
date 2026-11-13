@@ -652,6 +652,9 @@ export const CashManagementPage: React.FC = () => {
                 placeholder="e.g. Unverified receipt, wrong amount, customer payment should be in Logbook..."
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-rose-500 resize-none"
               />
             </div>
@@ -816,6 +819,9 @@ export const CashManagementPage: React.FC = () => {
                             const val = e.target.value.replace(/[^0-9.]/g, '');
                             setOpeningFloatInput(val);
                           }}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full pl-10 pr-4 py-3 sm:py-3.5 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -864,6 +870,9 @@ export const CashManagementPage: React.FC = () => {
                         placeholder="e.g. Morning shift opener, change fund replenished..."
                         value={openingNotes}
                         onChange={(e) => setOpeningNotes(e.target.value)}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0c0e12] border border-slate-200 dark:border-white/10 rounded-2xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                       />
                     </div>

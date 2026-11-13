@@ -26,6 +26,7 @@ import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import { OfflineStatus } from './components/common/OfflineStatus';
 import { VersionUpdateManager } from './components/common/VersionUpdateManager';
 import { useBatterySaver } from './hooks/useBatterySaver';
+import { useHeadingFont } from './hooks/useHeadingFont';
 import { useNotificationStore } from './stores/useNotificationStore';
 import pkg from '../package.json';
 
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
   const forceSessionLogout = useAuthStore((state) => state.forceSessionLogout);
   const user = useAuthStore((state) => state.user);
   const { isBatterySaver, isAutoTriggered, batteryLevel } = useBatterySaver();
+  useHeadingFont();
   const autoBatteryNotifiedRef = useRef(false);
 
   // Notify once when Power Saving Mode is automatically turned on at 20% or under battery

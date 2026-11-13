@@ -565,6 +565,9 @@ export const LegacyDataMigrationModal: React.FC<LegacyDataMigrationModalProps> =
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       placeholder="SuperAdmin password..."
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-(--border-color) bg-(--bg-page) text-xs text-(--color-text) outline-none focus:border-amber-500 transition-colors font-mono"
                       autoFocus
                     />
@@ -730,6 +733,9 @@ export const LegacyDataMigrationModal: React.FC<LegacyDataMigrationModalProps> =
                             updateRow(row.tempId, { fullName: e.target.value })
                           }
                           placeholder="e.g. Angeles, Adrian"
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full px-3 py-2 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-bold uppercase text-(--color-text) outline-none focus:border-blue-500"
                         />
                       </div>

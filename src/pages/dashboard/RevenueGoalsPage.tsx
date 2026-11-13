@@ -593,6 +593,9 @@ export const RevenueGoalsPage: React.FC = () => {
                     daily: Number(e.target.value) || 0,
                   }))
                 }
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
@@ -627,6 +630,9 @@ export const RevenueGoalsPage: React.FC = () => {
                     weekly: Number(e.target.value) || 0,
                   }))
                 }
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
@@ -661,6 +667,9 @@ export const RevenueGoalsPage: React.FC = () => {
                     monthly: Number(e.target.value) || 0,
                   }))
                 }
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
@@ -695,6 +704,9 @@ export const RevenueGoalsPage: React.FC = () => {
                     yearly: Number(e.target.value) || 0,
                   }))
                 }
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-7 pr-3 py-2 text-base font-bold bg-white dark:bg-[#161920] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white outline-none shadow-2xs focus:ring-1 focus:ring-amber-500 disabled:bg-slate-100 disabled:dark:bg-[#12151c] disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>

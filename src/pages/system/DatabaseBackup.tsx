@@ -1802,6 +1802,9 @@ export const DatabaseBackup: React.FC = () => {
           <div className="relative w-full md:max-w-xs">
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               value={mobileBackupSearch}
               onChange={(e) => setMobileBackupSearch(e.target.value)}
               placeholder="Search backups..."
@@ -2144,6 +2147,9 @@ export const DatabaseBackup: React.FC = () => {
                 <div className="relative flex-1 min-w-0">
                   <input
                     type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     value={subscriptionSearch}
                     onChange={(e) => setSubscriptionSearch(e.target.value)}
                     placeholder="Search member by name, phone, or plan..."
@@ -2401,6 +2407,9 @@ export const DatabaseBackup: React.FC = () => {
               <input
                 id="dropReasonInput"
                 type="text"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 disabled={isDropping}
                 value={dropReason}
                 onChange={(e) => setDropReason(e.target.value)}
@@ -2540,6 +2549,9 @@ export const DatabaseBackup: React.FC = () => {
             <input
               id="notesInput"
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               maxLength={120}
               placeholder="Write a custom description..."
               value={backupNotes}
@@ -2648,6 +2660,9 @@ export const DatabaseBackup: React.FC = () => {
                 <input
                   id="verifyPasswordInput"
                   type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   disabled={isRestoring}
                   placeholder="Enter your password to authorize rollback..."
                   value={verifyPassword}
@@ -2674,6 +2689,9 @@ export const DatabaseBackup: React.FC = () => {
                 <input
                   id="restoreConfirmPhraseInput"
                   type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   disabled={isRestoring}
                   value={restoreConfirmText}
                   onChange={(e) => setRestoreConfirmText(e.target.value)}

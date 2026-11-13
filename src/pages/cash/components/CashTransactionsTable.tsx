@@ -189,6 +189,9 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
               placeholder="Search items, ref..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-neutral-900 border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
@@ -537,6 +540,9 @@ export const CashTransactionsTable: React.FC<CashTransactionsTableProps> = ({
               placeholder="e.g. Typo in amount, entered by mistake, wrong category..."
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value.slice(0, 300))}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full px-3 py-2 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
             />
           </div>

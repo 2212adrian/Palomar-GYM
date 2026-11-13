@@ -227,6 +227,9 @@ export const CashFloatModal: React.FC = () => {
                 value={openingFloatInput}
                 onChange={(e) => setOpeningFloatInput(e.target.value)}
                 placeholder="0.00"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800/80 rounded-2xl text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -282,6 +285,9 @@ export const CashFloatModal: React.FC = () => {
               placeholder="e.g. Added extra small bills for change"
               value={openingNotes}
               onChange={(e) => setOpeningNotes(e.target.value.slice(0, 300))}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-[#1e232d] border border-slate-200 dark:border-slate-800/80 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>

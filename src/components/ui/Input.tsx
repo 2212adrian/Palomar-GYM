@@ -24,6 +24,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       className = '',
       onChange,
       autoCapitalize = 'none',
+      autoComplete = 'off',
       autoCorrect = 'off',
       spellCheck = false,
       ...props
@@ -70,6 +71,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           placeholder=" "
           autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
           autoCorrect={autoCorrect}
           spellCheck={spellCheck}
           onChange={handleChange}

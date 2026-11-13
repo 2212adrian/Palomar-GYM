@@ -325,6 +325,9 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                     const val = e.target.value.replace(/[^0-9.]/g, '');
                     setDirectCashInput(val);
                   }}
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-slate-50 dark:bg-[#1e232d] border border-slate-200/80 dark:border-slate-800/80 rounded-xl text-xl sm:text-2xl font-heading font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
                 />
@@ -408,6 +411,9 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                                 parseInt(e.target.value, 10)
                               )
                             }
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-12 text-center py-1 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
                           />
                           <button
@@ -480,6 +486,9 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                               const num = parseInt(val.replace(/\D/g, ''), 10);
                               handleDenomChange(key, isNaN(num) ? 0 : num);
                             }}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-12 text-center py-1 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-lg text-xs font-bold font-mono text-slate-900 dark:text-white"
                           />
                           <button
@@ -555,6 +564,9 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                 }
                 value={notes}
                 onChange={(e) => setNotes(e.target.value.slice(0, 300))}
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className={`w-full px-3 py-2 bg-white dark:bg-[#161920] border rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 resize-none ${
                   discrepancy !== 0 && (!notes.trim() || notes.trim().length < 5)
                     ? 'border-rose-400 dark:border-rose-500/50 focus:ring-rose-500'

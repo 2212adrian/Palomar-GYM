@@ -2076,6 +2076,9 @@ setSheetHeightPercent((current) => {
                             type="text"
                             value={editLastName}
                             onChange={(e) => setEditLastName(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. DELA CRUZ"
                           />
@@ -2088,6 +2091,9 @@ setSheetHeightPercent((current) => {
                             type="text"
                             value={editFirstName}
                             onChange={(e) => setEditFirstName(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. JUAN"
                           />
@@ -2104,6 +2110,9 @@ setSheetHeightPercent((current) => {
                             maxLength={2}
                             value={editMiddleInitial}
                             onChange={(e) => setEditMiddleInitial(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. M."
                           />
@@ -2116,6 +2125,9 @@ setSheetHeightPercent((current) => {
                             type="text"
                             value={editSuffix}
                             onChange={(e) => setEditSuffix(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            autoCorrect="off"
                             className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none uppercase"
                             placeholder="e.g. JR."
                           />
@@ -2159,6 +2171,9 @@ setSheetHeightPercent((current) => {
                             setEditPhone(e.target.value.replace(/\D/g, ''))
                           }
                           maxLength={11}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           placeholder="09171234567"
                         />
@@ -2171,6 +2186,9 @@ setSheetHeightPercent((current) => {
                           type="email"
                           value={editEmail}
                           onChange={(e) => setEditEmail(e.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
@@ -2182,6 +2200,9 @@ setSheetHeightPercent((current) => {
                           type="text"
                           value={editAddress}
                           onChange={(e) => setEditAddress(e.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs outline-none"
                         />
                       </div>
@@ -2227,6 +2248,9 @@ setSheetHeightPercent((current) => {
                           type="text"
                           value={editEmergencyName}
                           onChange={(e) => setEditEmergencyName(e.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-bold text-xs outline-none"
                         />
                       </div>
@@ -2285,6 +2309,9 @@ setSheetHeightPercent((current) => {
                             )
                           }
                           maxLength={11}
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
                           className="w-full p-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl font-mono text-xs outline-none"
                           placeholder="09181234567"
                         />
@@ -3281,6 +3308,9 @@ setSheetHeightPercent((current) => {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={4}
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full p-3.5 border border-(--border-color) bg-(--bg-card) rounded-xl text-(--color-text) outline-none focus:border-blue-500 text-xs font-semibold leading-relaxed"
                   placeholder="Enter internal notes, medical remarks, or receptionist staff notes..."
                 />
@@ -3789,6 +3819,9 @@ setSheetHeightPercent((current) => {
                 onChange={(e) => setVoidNotes(e.target.value)}
                 rows={2}
                 placeholder="Enter internal explanation..."
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-medium"
               />
             </div>
@@ -3804,6 +3837,9 @@ setSheetHeightPercent((current) => {
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     placeholder="Re-enter your account password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full p-2.5 pr-10 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono"
                   />
                   <button
@@ -3833,6 +3869,9 @@ setSheetHeightPercent((current) => {
                   value={voidConfirmText}
                   onChange={(e) => setVoidConfirmText(e.target.value)}
                   placeholder='Type "CONFIRM VOID" to proceed'
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl text-xs text-(--color-text) outline-none font-mono uppercase"
                 />
                 <p className="text-[10px] text-slate-500">
@@ -3982,6 +4021,9 @@ setSheetHeightPercent((current) => {
                       setPayCardAmountPaid(Number(e.target.value) || 0)
                     }
                     min={cardFeeAmount}
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-sm text-(--color-text) outline-none"
                   />
                   {payCardAmountPaid > cardFeeAmount && (
@@ -4000,6 +4042,9 @@ setSheetHeightPercent((current) => {
                     value={payCardGcashRef}
                     onChange={(e) => setPayCardGcashRef(e.target.value)}
                     placeholder="e.g. 100234589"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     className="w-full p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl font-mono text-xs text-(--color-text) outline-none"
                   />
                 </div>

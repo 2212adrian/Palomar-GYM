@@ -437,6 +437,9 @@ export const LogbookScannerView: React.FC<LogbookScannerViewProps> = ({
                   </label>
                   <input
                     type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     maxLength={13}
                     value={referenceNumber}
                     onChange={(e) =>

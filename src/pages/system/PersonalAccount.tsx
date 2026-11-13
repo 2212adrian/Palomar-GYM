@@ -1329,7 +1329,9 @@ export const PersonalAccount: React.FC = () => {
                           : 'border-(--border-color) focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary)'
                     }`}
                     placeholder="Enter unique username"
-                    autoComplete="username"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     required
                   />
 
@@ -1617,7 +1619,9 @@ export const PersonalAccount: React.FC = () => {
                         onChange={(e) => setCurrentPassword(e.target.value)}
                         className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                         placeholder="Enter current password"
-                        autoComplete="current-password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         required
                       />
                       <button
@@ -1659,7 +1663,9 @@ export const PersonalAccount: React.FC = () => {
                         onChange={(e) => setNewPassword(e.target.value)}
                         className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                         placeholder="Minimum 6 characters"
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         required
                       />
                       <button
@@ -1696,7 +1702,9 @@ export const PersonalAccount: React.FC = () => {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className="w-full pl-3 pr-10 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-1 focus:ring-(--color-primary) focus:border-(--color-primary) transition-all"
                         placeholder="Re-type password"
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         required
                       />
                       <button
@@ -1875,6 +1883,9 @@ export const PersonalAccount: React.FC = () => {
               <input
                 id="verifyUsernamePasswordInput"
                 type="password"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 disabled={isUpdatingProfile}
                 placeholder="Enter your password to authorize change..."
                 value={verifyPassword}
@@ -1961,6 +1972,9 @@ export const PersonalAccount: React.FC = () => {
                 <input
                   id="verifyDisable2FAPasswordInput"
                   type={showDisable2FAPassword ? 'text' : 'password'}
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   disabled={isToggling2FA}
                   placeholder="Enter your current password..."
                   value={disable2FAPassword}

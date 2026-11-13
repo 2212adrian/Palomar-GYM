@@ -352,6 +352,9 @@ export const MemberRecycleBin: React.FC<MemberRecycleBinProps> = ({
               disabled={loading}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="field-input pr-10"
             />
             <label className="field-label flex items-center gap-1.5 text-slate-455 uppercase tracking-widest text-[9px]">

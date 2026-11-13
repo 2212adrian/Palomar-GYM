@@ -363,6 +363,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                     </span>
                     <input
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       required
                       placeholder="e.g. Whey Scoop"
                       value={item.productName}
@@ -379,6 +382,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                     </span>
                     <input
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       min="1"
                       required
                       value={item.quantity}
@@ -399,6 +405,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                     </span>
                     <input
                       type="number"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       min="0"
                       step="any"
                       required
@@ -444,6 +453,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
               </label>
               <input
                 type="number"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 min="0"
                 step="any"
                 required
@@ -459,6 +471,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
               </label>
               <input
                 type="number"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
                 min="0"
                 step="any"
                 value={amountReceived}
@@ -474,6 +489,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
             </label>
             <input
               type="text"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               value={referenceNo}
               onChange={(e) => setReferenceNo(e.target.value)}
               placeholder="e.g. 25357342"

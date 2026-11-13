@@ -539,6 +539,9 @@ export const GymProfile: React.FC = () => {
                     <input
                       id="gymNameInput"
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={gymName}
                       placeholder="Enter business name"
                       title="Gym Name"
@@ -562,6 +565,9 @@ export const GymProfile: React.FC = () => {
                     <input
                       id="emailAddressInput"
                       type="email"
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       value={emailAddress}
                       placeholder="Enter support email"
                       title="Business Email"
@@ -585,6 +591,9 @@ export const GymProfile: React.FC = () => {
                 ) : (
                   <textarea
                     id="gymDescriptionInput"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     value={gymDescription}
                     placeholder="Enter gym bio or access protocol description (displays on login screen)..."
                     title="Gym Description"
@@ -609,6 +618,9 @@ export const GymProfile: React.FC = () => {
                   <input
                     id="gymAddressInput"
                     type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    autoCorrect="off"
                     value={gymAddress}
                     placeholder="Enter street, city, province"
                     title="Physical Address"
@@ -635,6 +647,9 @@ export const GymProfile: React.FC = () => {
                       <input
                         id="contactName1Input"
                         type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         value={contactName1}
                         placeholder="GYM Contact 1"
                         title="Contact Name 1"
@@ -658,6 +673,9 @@ export const GymProfile: React.FC = () => {
                       <input
                         id="contactNumber1Input"
                         type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         value={contactNumber1}
                         placeholder="09762607481"
                         title="Contact Number 1"
@@ -683,6 +701,9 @@ export const GymProfile: React.FC = () => {
                       <input
                         id="contactName2Input"
                         type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         value={contactName2}
                         placeholder="GYM Contact 2"
                         title="Contact Name 2"
@@ -706,6 +727,9 @@ export const GymProfile: React.FC = () => {
                       <input
                         id="contactNumber2Input"
                         type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
                         value={contactNumber2}
                         placeholder="09123456789"
                         title="Contact Number 2"

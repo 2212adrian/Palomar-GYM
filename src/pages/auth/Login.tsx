@@ -1806,7 +1806,7 @@ export const Login: React.FC = () => {
             {...registerLogin('usernameOrEmail')}
             type="text"
             label="Username / Email Address"
-            autoComplete="username"
+            autoComplete="off"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -1826,7 +1826,7 @@ export const Login: React.FC = () => {
             {...registerLogin('password')}
             type={showPassword ? 'text' : 'password'}
             label="Password"
-            autoComplete="current-password"
+            autoComplete="off"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -2021,7 +2021,7 @@ export const Login: React.FC = () => {
                   {...registerRecovery('email')}
                   type="email"
                   label="Email Address"
-                  autoComplete="email"
+                  autoComplete="off"
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
@@ -2102,6 +2102,9 @@ export const Login: React.FC = () => {
                       onKeyDown={(e) => handleRecoveryDigitKeyDown(idx, e)}
                       onPaste={idx === 0 ? handleRecoveryDigitPaste : undefined}
                       disabled={isVerifyingRecovery}
+                      autoComplete="off"
+                      spellCheck={false}
+                      autoCorrect="off"
                       className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/95 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none shadow-sm"
                       autoFocus={idx === 0}
                     />
@@ -2326,6 +2329,9 @@ export const Login: React.FC = () => {
                   onKeyDown={(e) => handleDigitKeyDown(idx, e)}
                   onPaste={idx === 0 ? handleDigitPaste : undefined}
                   disabled={isVerifying2FA}
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCorrect="off"
                   className="w-9.5 h-12 sm:w-11 sm:h-13 text-base sm:text-lg text-center font-bold font-mono rounded-xl bg-white/95 dark:bg-[#161920] border-2 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white focus:border-blue-600 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none shadow-sm"
                   autoFocus={idx === 0}
                 />

@@ -271,6 +271,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
                 const val = e.target.value.replace(/[^0-9.]/g, '');
                 setAmount(val);
               }}
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className={`w-full pl-8 pr-4 py-3 bg-white dark:bg-[#111] border rounded-xl text-lg font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${
                 exceedsDrawerCash
                   ? 'border-rose-500 text-rose-600 focus:ring-rose-500'
@@ -310,6 +313,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
               onChange={(e) =>
                 setReferenceNumber(e.target.value.replace(/\D/g, '').slice(0, 13))
               }
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
               className="w-full px-3.5 py-2.5 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold"
               required
             />
@@ -344,6 +350,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
             }
             value={reason}
             onChange={(e) => setReason(e.target.value.slice(0, 300))}
+            autoComplete="off"
+            spellCheck={false}
+            autoCorrect="off"
             className={`w-full px-3.5 py-2.5 bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${config.ringClass} resize-none`}
             required
           />
