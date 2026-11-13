@@ -12,6 +12,11 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
   },
+  plugins: {
+    SystemBars: {
+      insetsHandling: 'disable',
+    },
+  },
 };
 
 export default config;

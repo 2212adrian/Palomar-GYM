@@ -15,7 +15,7 @@ import { Button } from './components/ui/Button';
 
 // Capacitor and Supabase Imports
 import { App as CapApp } from '@capacitor/app';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { supabase } from './lib/supabase/client';
 
@@ -201,7 +201,7 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Global Theme Initialization
+  // Global Theme Initialization & Native System Bars Sync
   useEffect(() => {
     const saved = localStorage.getItem('theme');
     const systemPrefersDark = window.matchMedia(
@@ -217,6 +217,40 @@ export const App: React.FC = () => {
     const root = document.documentElement;
     root.classList.toggle('dark', activeTheme === 'dark');
     root.classList.toggle('light', activeTheme === 'light');
+
+    const syncNativeSystemBars = async () => {
+      if (!Capacitor.isNativePlatform()) return;
+      const isDark = root.classList.contains('dark');
+      try {
+        await SystemBars.setStyle({
+          style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+        });
+      } catch {
+        // Ignore if SystemBars style is unavailable on older platform
+      }
+      try {
+        const bridge = (
+          window as unknown as {
+            NativeThemeBridge?: { setBackgroundColor?: (hex: string) => void };
+          }
+        ).NativeThemeBridge;
+        bridge?.setBackgroundColor?.(isDark ? '#161920' : '#ffffff');
+      } catch {
+        // Ignore if bridge is unavailable
+      }
+    };
+
+    syncNativeSystemBars();
+
+    const observer = new MutationObserver(() => {
+      syncNativeSystemBars();
+    });
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
