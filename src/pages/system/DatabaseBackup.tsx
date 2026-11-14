@@ -1,5 +1,5 @@
 // src/pages/system/DatabaseBackup.tsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { clearAppCaches } from '../../lib/cacheUtils';
@@ -9,19 +9,11 @@ import { isSuperAdmin } from '../../constants/auth';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { createPortal } from 'react-dom';
-import { SalesDialog } from '../sales/components/SalesDialog';
-import { LogbookRecordAttendance } from '../logbook/components/LogbookRecordAttendance';
-import { SalesManager } from './SystemInformation/SalesManager';
-import { AttendanceManager } from './SystemInformation/AttendanceManager';
-import { AuditLogsManager } from './SystemInformation/AuditLogsManager';
-import { CsvDataMigrationModal } from './components/CsvDataMigrationModal';
-import { DatabaseMigrationManager } from './components/DatabaseMigrationManager';
 import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import type { Column } from '../../components/ui/Table';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
-import { subscriptionService } from '../members/memberService';
 import { toast } from 'react-toastify';
 import {
   Database,
@@ -37,21 +29,8 @@ import {
   ShieldCheck,
   Trash2,
   Loader2,
-  UserX,
-  Search,
   AlertTriangle,
-  FileSpreadsheet,
 } from 'lucide-react';
-
-const MIN_ALLOWED_DATE = '2024-01-01';
-
-const getTodayDateString = (): string => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 interface BackupItem {
   id: string;
@@ -69,16 +48,9 @@ export const DatabaseBackup: React.FC = () => {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('auto');
   const [mobileBackupSearch, setMobileBackupSearch] = useState<string>('');
 
-  // Mobile Top-level Tab View: 'backups' | 'terminal'
-  const [mobileMainTab, setMobileMainTab] = useState<'backups' | 'terminal'>(
-    'backups'
-  );
-
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [backupNotes, setBackupNotes] = useState<string>('');
-  const [isCsvMigrationModalOpen, setIsCsvMigrationModalOpen] =
-    useState<boolean>(false);
 
   // Restore Modal State
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState<boolean>(false);
@@ -141,392 +113,12 @@ export const DatabaseBackup: React.FC = () => {
     };
   }, [user, isGoogleOnly]);
 
-  const todayStr = useMemo(() => getTodayDateString(), []);
-  const [startDate, setStartDate] = useState<string>(MIN_ALLOWED_DATE);
-  const [endDate, setEndDate] = useState<string>(todayStr);
-  const [activeTab, setActiveTab] = useState<
-    'attendance' | 'sales' | 'subscriptions' | 'audit_logs' | 'migration'
-  >('attendance');
-  const [tabLoading, setTabLoading] = useState<boolean>(false);
-  const [attendanceList, setAttendanceList] = useState<any[]>([]);
-  const [salesList, setSalesList] = useState<any[]>([]);
-  const [auditLogsList, setAuditLogsList] = useState<any[]>([]);
-  const [subscriptionsList, setSubscriptionsList] = useState<any[]>([]);
-  const [, setAllMembersList] = useState<any[]>([]);
-  const [subscriptionSearch, setSubscriptionSearch] = useState<string>('');
-  const [products, setProducts] = useState<any[]>([]);
-  const [isSalesDialogOpen, setIsSalesDialogOpen] = useState<boolean>(false);
-  const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] =
-    useState<boolean>(false);
-
-  // Drop Subscription Modal States
-  const [isDropModalOpen, setIsDropModalOpen] = useState<boolean>(false);
-  const [dropTarget, setDropTarget] = useState<any | null>(null);
-  const [dropReason, setDropReason] = useState<string>('');
-  const [isDropping, setIsDropping] = useState<boolean>(false);
-
   // Global Safety Store state hook
   const safetyBackup = useBackupSafetyStore((s) => s?.safetyBackup ?? null);
   const isVerifying = useBackupSafetyStore((s) => s?.isVerifying ?? false);
   const revertRestoration = useBackupSafetyStore((s) => s?.revertRestoration);
   const commitRestoration = useBackupSafetyStore((s) => s?.commitRestoration);
   const fetchSafetyBackup = useBackupSafetyStore((s) => s?.fetchSafetyBackup);
-
-  const fetchProducts = useCallback(async () => {
-    try {
-      const { data } = await supabase
-        .from('products')
-        .select('*')
-        .is('deleted_at', null)
-        .order('product_name', { ascending: true });
-      setProducts(data || []);
-    } catch (e) {
-      console.warn('Error loading products for sales dialog:', e);
-    }
-  }, []);
-
-  const fetchTabData = useCallback(async () => {
-    if (!isSuperAdminOnly) return;
-    setTabLoading(true);
-
-    const startIso = new Date(`${startDate}T00:00:00+08:00`).toISOString();
-    const endIso = new Date(`${endDate}T23:59:59.999+08:00`).toISOString();
-
-    try {
-      if (activeTab === 'attendance') {
-        const { data, error } = await supabase
-          .from('attendance')
-          .select('*')
-          .is('deleted_at', null)
-          .gte('check_in_time', startIso)
-          .lte('check_in_time', endIso)
-          .order('check_in_time', { ascending: false });
-
-        if (error) throw error;
-        setAttendanceList(data || []);
-      } else if (activeTab === 'sales') {
-        const { data, error } = await supabase
-          .from('sales')
-          .select('*')
-          .is('deleted_at', null)
-          .gte('created_at', startIso)
-          .lte('created_at', endIso)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        const normalized = (data || []).map((s: any) => {
-          const parsedItems: Array<{
-            productName: string;
-            quantity: number;
-            price: number;
-          }> = [];
-          if (s.items && Array.isArray(s.items) && s.items.length > 0) {
-            s.items.forEach((it: any) => {
-              parsedItems.push({
-                productName: it.productName || it.product_name || 'Item',
-                quantity: Number(it.quantity || 1),
-                price: Number(it.price || 0),
-              });
-            });
-          } else if (s.product_name) {
-            parsedItems.push({
-              productName: s.product_name,
-              quantity: 1,
-              price: Number(s.total_amount || 0),
-            });
-          }
-
-          const itemsText = parsedItems
-            .map((i) => `${i.quantity}x ${i.productName}`)
-            .join(', ');
-
-          return {
-            ...s,
-            parsed_items: parsedItems,
-            searchable_items: `${s.product_name || ''} ${itemsText} ${s.receipt_no || ''}`,
-            total_amount: Number(s.total_amount || 0),
-            amount_received: Number(s.amount_received || s.total_amount || 0),
-            payment_method: s.payment_method || 'Cash',
-          };
-        });
-
-        setSalesList(normalized);
-      } else if (activeTab === 'audit_logs') {
-        const { data, error } = await supabase
-          .from('audit_logs')
-          .select('*')
-          .gte('created_at', startIso)
-          .lte('created_at', endIso)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setAuditLogsList(data || []);
-      } else if (activeTab === 'subscriptions') {
-        // 1. Fetch all members
-        let mems: any[] = [];
-        const { data: fetchedMems, error: memsErr } = await supabase
-          .from('members')
-          .select('*')
-          .order('full_name', { ascending: true });
-
-        if (!memsErr && fetchedMems) {
-          mems = fetchedMems;
-          setAllMembersList(mems);
-        }
-
-        // Build multi-key index for fast and resilient lookup
-        const memberLookup = new Map<string, any>();
-        mems.forEach((m: any) => {
-          const name =
-            m.full_name ||
-            [m.first_name, m.last_name].filter(Boolean).join(' ') ||
-            [m.last_name, m.first_name].filter(Boolean).join(', ') ||
-            m.name ||
-            '';
-
-          const normalizedMember = {
-            ...m,
-            computed_name: name,
-          };
-
-          const registerKey = (val: any) => {
-            if (val !== undefined && val !== null && String(val).trim() !== '') {
-              const k = String(val).trim();
-              memberLookup.set(k, normalizedMember);
-              memberLookup.set(k.toLowerCase(), normalizedMember);
-            }
-          };
-
-          registerKey(m.id);
-          registerKey(m.member_id);
-          registerKey(m.yearly_member_id);
-          registerKey(m.user_id);
-          registerKey(m.membership_id);
-          registerKey(m.custom_id);
-          registerKey(m.card_number);
-          registerKey(m.qr_code);
-          registerKey(m.email);
-          registerKey(m.phone);
-        });
-
-        // 2. Fetch subscriptions (try joined query first, fallback to raw)
-        let subsRaw: any[] = [];
-        try {
-          const { data: joinedData, error: joinErr } = await supabase
-            .from('subscriptions')
-            .select('*, members(*)')
-            .order('created_at', { ascending: false });
-
-          if (!joinErr && joinedData && joinedData.length > 0) {
-            subsRaw = joinedData;
-          }
-        } catch {
-          // Fallback to standard query
-        }
-
-        if (!subsRaw || subsRaw.length === 0) {
-          const { data: rawData, error: rawErr } = await supabase
-            .from('subscriptions')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (rawErr) throw rawErr;
-          subsRaw = rawData || [];
-        }
-
-        // 3. Resolve member names for each subscription
-        const combined = subsRaw.map((s: any) => {
-          let m = s.members || s.member || null;
-          if (Array.isArray(m) && m.length > 0) {
-            m = m[0];
-          }
-
-          if (!m || !m.full_name) {
-            const candidateKeys = [
-              s.member_id,
-              s.user_id,
-              s.members_id,
-              s.member_uuid,
-              s.memberId,
-              s.userId,
-              s.card_number,
-              s.qr_code,
-            ];
-            for (const key of candidateKeys) {
-              if (key !== undefined && key !== null) {
-                const found =
-                  memberLookup.get(String(key).trim()) ||
-                  memberLookup.get(String(key).trim().toLowerCase());
-                if (found) {
-                  m = found;
-                  break;
-                }
-              }
-            }
-          }
-
-          const memberName =
-            m?.computed_name ||
-            m?.full_name ||
-            (m?.first_name || m?.last_name
-              ? [m.first_name, m.last_name].filter(Boolean).join(' ')
-              : '') ||
-            s.member_name ||
-            s.full_name ||
-            s.customer_name ||
-            s.name ||
-            'Unknown Member';
-
-          const memberPhone = m?.phone || s.phone || s.member_phone || '—';
-          const memberEmail = m?.email || s.email || s.member_email || '—';
-          const memberStatus =
-            m?.membership_status || m?.status || s.status || 'inactive';
-
-          return {
-            ...s,
-            member_id: s.member_id || m?.id || m?.member_id,
-            resolved_member: m,
-            member_name: memberName,
-            member_email: memberEmail,
-            member_phone: memberPhone,
-            member_status: memberStatus,
-          };
-        });
-
-        const nowMs = Date.now();
-        const seenSubKeys = new Set<string>();
-
-        const activeOnly = combined.filter((s: any) => {
-          const statusLower = String(s.status || '').toLowerCase();
-          if (
-            statusLower === 'cancelled' ||
-            statusLower === 'voided' ||
-            s.deleted_at
-          ) {
-            return false;
-          }
-
-          if (s.end_date) {
-            const endMs = new Date(s.end_date).getTime();
-            if (!isNaN(endMs) && endMs <= nowMs) {
-              return false;
-            }
-          }
-
-          const memberKey = String(
-            s.member_id || s.resolved_member?.id || s.member_name || ''
-          )
-            .trim()
-            .toLowerCase();
-          const planKey = String(s.plan_type || '').trim().toLowerCase();
-          const dateKey = s.end_date
-            ? new Date(s.end_date).toISOString().slice(0, 10)
-            : '';
-          const dedupKey = `${memberKey}_${planKey}_${dateKey}`;
-
-          if (seenSubKeys.has(dedupKey)) {
-            return false;
-          }
-          seenSubKeys.add(dedupKey);
-
-          return true;
-        });
-
-        setSubscriptionsList(activeOnly);
-      }
-    } catch (err: any) {
-      toast.error(
-        `Error loading ${activeTab}: ` + (err.message || 'Database error')
-      );
-    } finally {
-      setTabLoading(false);
-    }
-  }, [activeTab, isSuperAdminOnly, startDate, endDate]);
-
-  useEffect(() => {
-    if (isSuperAdminOnly) {
-      fetchProducts();
-      fetchTabData();
-    }
-  }, [isSuperAdminOnly, activeTab, fetchProducts, fetchTabData]);
-
-  const handleExistingSaleSuccess = async (
-    newTx: any,
-    updatedProducts: any[]
-  ) => {
-    try {
-      const { data: insertedSale, error } = await supabase
-        .from('sales')
-        .insert([
-          {
-            items: newTx.items,
-            product_name: newTx.productName,
-            payment_method: newTx.paymentMethod,
-            amount_received: newTx.amountReceived,
-            change_calculated: newTx.changeCalculated,
-            total_amount: newTx.totalAmount,
-            reference_number: newTx.referenceNumber || null,
-            cash_session_id: activeSession?.id || null,
-            created_at: newTx.createdAt || new Date().toISOString(),
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      if (updatedProducts && Array.isArray(updatedProducts)) {
-        for (const p of updatedProducts) {
-          if (p.has_stock_limit) {
-            await supabase
-              .from('products')
-              .update({
-                stock_quantity: p.stock_quantity,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', p.id);
-          }
-        }
-      }
-
-      await logAudit(
-        'SUPERADMIN_TERMINAL_SALE_CREATED',
-        `SuperAdmin Terminal created sale: ₱${newTx.totalAmount.toFixed(2)} via ${newTx.paymentMethod} — Items: ${newTx.productName}`,
-        insertedSale?.id || newTx.id
-      );
-
-      toast.success('Sale successfully logged!');
-      fetchProducts();
-      fetchTabData();
-      setIsSalesDialogOpen(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save sale transaction');
-    }
-  };
-
-  const handlePresetDate = (preset: 'today' | '7days' | 'month' | 'all') => {
-    if (preset === 'today') {
-      setStartDate(todayStr);
-      setEndDate(todayStr);
-    } else if (preset === '7days') {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      const s = d.toISOString().split('T')[0];
-      setStartDate(s < MIN_ALLOWED_DATE ? MIN_ALLOWED_DATE : s);
-      setEndDate(todayStr);
-    } else if (preset === 'month') {
-      const d = new Date();
-      const startOfMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-      setStartDate(
-        startOfMonth < MIN_ALLOWED_DATE ? MIN_ALLOWED_DATE : startOfMonth
-      );
-      setEndDate(todayStr);
-    } else {
-      setStartDate(MIN_ALLOWED_DATE);
-      setEndDate(todayStr);
-    }
-  };
 
   const enforceAutoBackupRetention = async (items: BackupItem[]) => {
     const autoItems = items
@@ -1035,92 +627,6 @@ export const DatabaseBackup: React.FC = () => {
     }
   };
 
-  const handleOpenDropModal = (item: any, isFromRow: boolean = false) => {
-    setDropTarget({
-      ...item,
-      fromRow: isFromRow,
-    });
-    setDropReason('');
-    setIsDropModalOpen(true);
-  };
-
-  const handleConfirmDropSubscription = async () => {
-    if (!dropTarget) return;
-
-    try {
-      setIsDropping(true);
-      const nowIso = new Date().toISOString();
-      const memberId =
-        dropTarget.resolved_member?.id ||
-        dropTarget.member_id ||
-        dropTarget.id;
-      const memberName =
-        dropTarget.member_name ||
-        dropTarget.full_name ||
-        dropTarget.display_name ||
-        'Member';
-
-      if (dropTarget.id) {
-        await subscriptionService.drop(
-          dropTarget.id,
-          dropReason.trim() || 'Immediate Administrative Termination',
-          user?.email || profile?.username || 'SuperAdmin'
-        );
-      }
-
-      const memberKeys = [
-        memberId,
-        dropTarget.member_id,
-        dropTarget.resolved_member?.id,
-        dropTarget.resolved_member?.member_id,
-      ].filter(Boolean);
-
-      for (const mKey of memberKeys) {
-        await supabase
-          .from('subscriptions')
-          .delete()
-          .eq('member_id', mKey)
-          .in('status', ['cancelled', 'Voided', 'voided']);
-
-        await supabase
-          .from('members')
-          .update({
-            status: 'Expired',
-            membership_status: 'expired',
-            expiry_date: null,
-            updated_at: nowIso,
-          })
-          .or(`id.eq.${mKey},member_id.eq.${mKey}`);
-      }
-
-      try {
-        sessionStorage.removeItem('members_sanitized_cache');
-        localStorage.removeItem('members_sanitized_cache');
-        Object.keys(sessionStorage).forEach((k) => {
-          if (k.startsWith('logbook_sanitized_')) sessionStorage.removeItem(k);
-        });
-      } catch {}
-
-      window.dispatchEvent(new Event('member-refresh'));
-      window.dispatchEvent(new Event('palomar_logbook_updated'));
-
-      toast.success(
-        `Subscription dropped and member record updated successfully for ${memberName}.`
-      );
-      setIsDropModalOpen(false);
-      setDropTarget(null);
-      setDropReason('');
-      setSubscriptionsList((prev) =>
-        prev.filter((s) => s.id !== dropTarget.id)
-      );
-      await fetchTabData();
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to drop member subscription.');
-    } finally {
-      setIsDropping(false);
-    }
-  };
-
   const formatSize = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
     if (bytes < 1024) return `${bytes} B`;
@@ -1486,6 +992,26 @@ export const DatabaseBackup: React.FC = () => {
     },
   ];
 
+  const responsiveItemsPerPage = useResponsiveItemsPerPage();
+
+  if (!isSuperAdminOnly) {
+    return (
+      <div className="p-6 sm:p-8 rounded-2xl bg-(--bg-card) border border-rose-500/30 text-center space-y-3 shadow-xs">
+        <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="font-heading font-black text-base uppercase tracking-wider text-(--color-text)">
+          SuperAdmin Clearance Required
+        </h3>
+        <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+          Database Backup &amp; Terminal controls belong exclusively to the
+          Superadmin Console. Regular Admin and Staff accounts cannot access
+          this section.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 sm:space-y-8 font-body text-(--color-text) rounded-3xl pb-28 sm:pb-16">
       {/* ACTIVE CASH SESSION NOTICE BANNER */}
@@ -1546,44 +1072,8 @@ export const DatabaseBackup: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Responsive Top Tabs: Backups vs Terminal */}
-      {isSuperAdminOnly && (
-        <div className="sm:hidden flex items-center p-1 bg-(--bg-card) border border-(--border-color) rounded-2xl shadow-xs">
-          <button
-            type="button"
-            onClick={() => setMobileMainTab('backups')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer ${
-              mobileMainTab === 'backups'
-                ? 'bg-(--color-primary) text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-(--color-text)'
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            <span>Backups</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileMainTab('terminal')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer ${
-              mobileMainTab === 'terminal'
-                ? 'bg-(--color-primary) text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-(--color-text)'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4" />
-            <span>Terminal</span>
-          </button>
-        </div>
-      )}
-
-      {/* BACKUPS VIEW CONTAINER (Controlled on mobile, always visible on sm:) */}
-      <div
-        className={
-          mobileMainTab === 'backups'
-            ? 'space-y-6 sm:space-y-8 block'
-            : 'space-y-6 sm:space-y-8 hidden sm:block'
-        }
-      >
+      {/* BACKUPS VIEW CONTAINER */}
+      <div className="space-y-6 sm:space-y-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -1597,31 +1087,6 @@ export const DatabaseBackup: React.FC = () => {
           </div>
 
           <div className="hidden sm:flex items-center gap-3">
-            {isSuperAdminOnly && (
-              <button
-                type="button"
-                disabled={!!activeSession}
-                onClick={() => {
-                  if (activeSession) {
-                    toast.error(
-                      'Please close the active cash session before opening CSV Data Migration.'
-                    );
-                    return;
-                  }
-                  setIsCsvMigrationModalOpen(true);
-                }}
-                title={
-                  activeSession
-                    ? 'Close the active cash session before running CSV Data Migration'
-                    : 'SuperAdmin Secure Two-Group CSV Data Migration'
-                }
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-500 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-blue-600/15 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                CSV DATA MIGRATION
-              </button>
-            )}
-
             <button
               disabled={!!activeSession}
               onClick={() => {
@@ -1853,7 +1318,7 @@ export const DatabaseBackup: React.FC = () => {
             searchPlaceholder="Search saved backups history..."
             defaultSortKey="created_at"
             defaultSortDirection="desc"
-            itemsPerPage={useResponsiveItemsPerPage()}
+            itemsPerPage={responsiveItemsPerPage}
             loading={isLoading}
             loadingLabel="Loading backup records..."
           />
@@ -2026,534 +1491,10 @@ export const DatabaseBackup: React.FC = () => {
             </p>
           </div>
         </div>
-
-        {/* SuperAdmin-Exclusive CSV Legacy Data Migration Panel */}
-        {isSuperAdminOnly && (
-          <div className="p-4 sm:p-5 rounded-2xl bg-(--bg-card) border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left shadow-xs">
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-blue-600 dark:text-blue-400 shrink-0">
-                <FileSpreadsheet className="w-5 h-5" />
-              </div>
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider text-(--color-text)">
-                    Unified CSV Data Migration (Products &amp; Members)
-                  </h3>
-                  <span className="text-[10px] font-mono font-bold uppercase text-blue-600 dark:text-blue-400">
-                    • SuperAdmin Exclusive
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Download the two-group CSV template, validate every row against database rules, seal with AES-GCM &amp; SHA-256, and audit historical migrations. Best used when Products and Members lists are empty while cash drawer is closed.
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={!!activeSession}
-              onClick={() => {
-                if (activeSession) {
-                  toast.error(
-                    'Cannot open CSV Data Migration while a cash session is open.'
-                  );
-                  return;
-                }
-                setIsCsvMigrationModalOpen(true);
-              }}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-black text-xs uppercase tracking-wider cursor-pointer transition-colors inline-flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Open CSV Migration</span>
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* SuperAdmin Master Terminal (Controlled on mobile, always visible on sm:) */}
-      {isSuperAdminOnly && (
-        <div
-          className={
-            mobileMainTab === 'terminal'
-              ? 'p-3.5 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-4 text-left block'
-              : 'p-3.5 sm:p-5 rounded-2xl bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 shadow-xs space-y-4 text-left hidden sm:block'
-          }
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-white/5">
-            <div className="flex items-center gap-2.5">
-              <ShieldAlert className="w-5 h-5 text-red-500 shrink-0" />
-              <div>
-                <h3 className="font-heading font-black text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-                  SUPERADMIN TERMINAL
-                </h3>
-                <p className="text-[10px] text-slate-400">
-                  Full CRUD database control, subscriptions, multi-product &amp;
-                  batch card tracking.
-                </p>
-              </div>
-            </div>
-
-            <div className="w-full sm:w-auto flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 overflow-x-auto">
-              {(
-                [
-                  'attendance',
-                  'sales',
-                  'subscriptions',
-                  'audit_logs',
-                  'migration',
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-lg text-xs font-heading font-bold uppercase tracking-wider cursor-pointer transition-all shrink-0 ${
-                    activeTab === tab
-                      ? 'bg-(--color-primary) text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  {tab === 'subscriptions'
-                    ? 'Subscriptions'
-                    : tab === 'migration'
-                      ? 'Data Migration'
-                      : tab.replace('_', ' ')}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Date Filter Bar for Attendance, Sales, and Audit Logs */}
-          {activeTab !== 'subscriptions' && activeTab !== 'migration' && (
-            <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-black/25 border border-slate-200 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs font-heading font-bold uppercase tracking-wider w-full sm:w-auto">
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span>Range:</span>
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <input
-                    type="date"
-                    min={MIN_ALLOWED_DATE}
-                    max={todayStr}
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="flex-1 sm:flex-initial w-full sm:w-auto px-2 py-1.5 sm:py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-800 text-xs font-mono"
-                  />
-                  <span className="text-slate-400 font-normal lowercase">to</span>
-                  <input
-                    type="date"
-                    min={MIN_ALLOWED_DATE}
-                    max={todayStr}
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="flex-1 sm:flex-initial w-full sm:w-auto px-2 py-1.5 sm:py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-neutral-800 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 sm:flex items-center gap-1.5 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => handlePresetDate('all')}
-                  className="px-2 py-1.5 sm:py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer text-center"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePresetDate('month')}
-                  className="px-2 py-1.5 sm:py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer text-center whitespace-nowrap"
-                >
-                  Month
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePresetDate('7days')}
-                  className="px-2 py-1.5 sm:py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer text-center whitespace-nowrap"
-                >
-                  7 Days
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePresetDate('today')}
-                  className="px-2 py-1.5 sm:py-1 rounded-lg text-[10px] font-heading font-bold uppercase bg-white dark:bg-neutral-800 border border-slate-200 dark:border-white/10 cursor-pointer text-center"
-                >
-                  Today
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Active Tab Managers */}
-          {activeTab === 'sales' && (
-            <SalesManager
-              sales={salesList}
-              loading={tabLoading}
-              isSuperAdmin={isSuperAdminOnly}
-              onRefresh={fetchTabData}
-              onOpenNewModal={() => setIsSalesDialogOpen(true)}
-            />
-          )}
-
-          {activeTab === 'attendance' && (
-            <AttendanceManager
-              attendanceList={attendanceList}
-              loading={tabLoading}
-              isSuperAdmin={isSuperAdminOnly}
-              onRefresh={fetchTabData}
-              onOpenNewModal={() => setIsAttendanceDialogOpen(true)}
-            />
-          )}
-
-          {activeTab === 'audit_logs' && (
-            <AuditLogsManager
-              auditLogsList={auditLogsList}
-              loading={tabLoading}
-              isSuperAdmin={isSuperAdminOnly}
-              onRefresh={fetchTabData}
-            />
-          )}
-
-          {activeTab === 'migration' && (
-            <DatabaseMigrationManager
-              embedded
-              onSuccess={() => {
-                fetchProducts();
-                fetchTabData();
-              }}
-            />
-          )}
-
-          {/* Subscriptions Tab: Drop Member Subscription Options */}
-          {activeTab === 'subscriptions' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2.5 sm:gap-3 bg-slate-50 dark:bg-black/25 p-2.5 sm:p-3.5 rounded-xl border border-slate-200 dark:border-white/5">
-                <div className="relative flex-1 min-w-0">
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    spellCheck={false}
-                    autoCorrect="off"
-                    value={subscriptionSearch}
-                    onChange={(e) => setSubscriptionSearch(e.target.value)}
-                    placeholder="Search member by name, phone, or plan..."
-                    className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-white/10 rounded-xl bg-white dark:bg-neutral-800 text-xs text-(--color-text) placeholder:text-slate-400 outline-none focus:border-red-500 transition-all font-medium"
-                  />
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={fetchTabData}
-                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg bg-white dark:bg-neutral-800 text-slate-600 dark:text-slate-300 hover:text-(--color-text) cursor-pointer shrink-0"
-                  title="Refresh subscriptions"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 ${tabLoading ? 'animate-spin' : ''}`}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (subscriptionsList.length > 0) {
-                      setDropTarget({ ...subscriptionsList[0], fromRow: false });
-                    } else {
-                      setDropTarget({ member_name: 'Manual Drop', fromRow: false });
-                    }
-                    setDropReason('');
-                    setIsDropModalOpen(true);
-                  }}
-                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0"
-                  title="Drop a member subscription immediately"
-                >
-                  <UserX className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Drop Subscription</span>
-                  <span className="sm:hidden">Drop Sub</span>
-                </button>
-              </div>
-
-              {/* Subscriptions List - Responsive Card Per Row */}
-              <div className="space-y-3 sm:space-y-2.5">
-                {tabLoading ? (
-                  <div className="p-8 text-center text-xs text-slate-400 font-mono flex items-center justify-center gap-2 bg-(--bg-card) rounded-xl border border-(--border-color)">
-                    <Loader2 className="w-4 h-4 animate-spin text-red-500" />
-                    <span>Loading subscriptions and member plans...</span>
-                  </div>
-                ) : (
-                  (() => {
-                    const filteredSubs = subscriptionsList.filter((s) => {
-                      if (!subscriptionSearch.trim()) return true;
-                      const q = subscriptionSearch.toLowerCase().trim();
-                      return (
-                        s.member_name?.toLowerCase().includes(q) ||
-                        s.member_email?.toLowerCase().includes(q) ||
-                        s.member_phone?.toLowerCase().includes(q) ||
-                        s.plan_type?.toLowerCase().includes(q)
-                      );
-                    });
-
-                    if (filteredSubs.length === 0) {
-                      return (
-                        <div className="p-8 text-center text-xs text-slate-400 font-mono bg-slate-50 dark:bg-black/20 rounded-xl border border-slate-200 dark:border-white/5">
-                          No active subscriptions found.
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="space-y-2.5">
-                        {filteredSubs.map((sub) => {
-                          return (
-                            <div
-                              key={sub.id}
-                              className="p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/25 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:border-slate-300 dark:hover:border-white/20 transition-all"
-                            >
-                              <div className="min-w-0 space-y-1.5 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-heading font-black text-xs sm:text-sm uppercase text-slate-900 dark:text-white truncate">
-                                    {sub.member_name}
-                                  </span>
-                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-heading font-black uppercase tracking-wider border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                                    Active Plan
-                                  </span>
-                                  {sub.plan_type && (
-                                    <span className="px-2 py-0.5 rounded-md text-[9px] font-mono uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                      {sub.plan_type}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                                  {sub.member_phone && (
-                                    <span>Phone: {sub.member_phone}</span>
-                                  )}
-                                  {sub.member_email && sub.member_email !== '—' && (
-                                    <span className="truncate max-w-[200px]">
-                                      Email: {sub.member_email}
-                                    </span>
-                                  )}
-                                  {sub.end_date && (
-                                    <span>
-                                      Ends:{' '}
-                                      {new Date(
-                                        sub.end_date
-                                      ).toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric',
-                                        timeZone: 'Asia/Manila',
-                                      })}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-white/5 shrink-0 flex items-center justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDropModal(sub, true)}
-                                  className="w-full sm:w-auto px-3.5 py-2 sm:py-1.5 rounded-lg text-xs font-heading font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 border bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-xs"
-                                >
-                                  <UserX className="w-3.5 h-3.5" />
-                                  <span>Drop Subscription Now</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Modal: Drop Member Subscription */}
-      <Modal
-        isOpen={isDropModalOpen}
-        onClose={() => {
-          if (!isDropping) {
-            setIsDropModalOpen(false);
-            setDropTarget(null);
-            setDropReason('');
-          }
-        }}
-        title="Drop Member's Subscription Immediately"
-      >
-        {dropTarget && (
-          <div className="space-y-4 font-body text-left">
-            <div className="p-4 bg-red-500/10 dark:bg-red-500/5 border border-red-500/30 rounded-xl flex items-start gap-3.5 text-xs font-bold leading-snug">
-              <AlertTriangle className="w-6 h-6 shrink-0 text-red-600 dark:text-red-500 mt-0.5" />
-              <div className="space-y-1">
-                <span className="block font-heading tracking-wider uppercase text-[10px] text-red-700 dark:text-red-400 font-extrabold">
-                  SUPERADMIN TERMINATION WARNING
-                </span>
-                <span className="block text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                  Dropping this subscription may affect the member's check-in
-                  eligibility. Existing logbook records will not be deleted or
-                  changed, and cash management session records remain kept as
-                  before.
-                </span>
-              </div>
-            </div>
-
-            {/* Direct Confirmation Card (When clicked from row button) or Deduplicated Selection (When clicked from top) */}
-            {dropTarget.fromRow ? (
-              <div className="p-3.5 rounded-xl bg-(--bg-page) border border-(--border-color) space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-heading uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400">
-                    Target Member
-                  </span>
-                  {dropTarget.plan_type && (
-                    <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md uppercase">
-                      {dropTarget.plan_type}
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm font-heading font-black text-(--color-text) uppercase">
-                  {dropTarget.member_name || dropTarget.full_name || 'Member'}
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-500 font-mono">
-                  {dropTarget.member_phone && (
-                    <span>Phone: {dropTarget.member_phone}</span>
-                  )}
-                  {dropTarget.end_date && (
-                    <span>
-                      Expires:{' '}
-                      {new Date(dropTarget.end_date).toLocaleDateString(
-                        'en-US',
-                        {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          timeZone: 'Asia/Manila',
-                        }
-                      )}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="targetMemberSelect"
-                  className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-                >
-                  Select Active Subscription
-                </label>
-                {subscriptionsList.length > 0 ? (
-                  <select
-                    id="targetMemberSelect"
-                    value={dropTarget.id}
-                    onChange={(e) => {
-                      const found = subscriptionsList.find(
-                        (s) => s.id === e.target.value
-                      );
-                      if (found) {
-                        setDropTarget({ ...found, fromRow: true });
-                      }
-                    }}
-                    className="w-full px-3 py-2.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-sm font-semibold text-(--color-text)"
-                  >
-                    {subscriptionsList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.member_name} — {s.plan_type?.toUpperCase()} (Ends:{' '}
-                        {s.end_date
-                          ? new Date(s.end_date).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                              timeZone: 'Asia/Manila',
-                            })
-                          : 'N/A'}
-                        )
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="p-2.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-xs font-bold text-(--color-text)">
-                    {dropTarget.member_name || dropTarget.full_name}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label
-                htmlFor="dropReasonInput"
-                className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300"
-              >
-                Reason for Immediate Drop (Optional)
-              </label>
-              <input
-                id="dropReasonInput"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                autoCorrect="off"
-                disabled={isDropping}
-                value={dropReason}
-                onChange={(e) => setDropReason(e.target.value)}
-                placeholder="e.g. Refund issued, violation of gym terms, requested early exit..."
-                className="w-full px-3.5 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 outline-none focus:border-red-500 transition-all font-medium disabled:opacity-50"
-              />
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
-              <Button
-                variant="secondary"
-                disabled={isDropping}
-                className="w-full sm:w-auto !py-2.5 !px-5 justify-center text-xs font-heading tracking-wider"
-                onClick={() => {
-                  setIsDropModalOpen(false);
-                  setDropTarget(null);
-                  setDropReason('');
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleConfirmDropSubscription}
-                loading={isDropping}
-                loadingLabel="DROPPING SUBSCRIPTION..."
-                className="w-full sm:w-auto !py-2.5 !px-5 justify-center !bg-red-600 hover:!bg-red-700 font-heading text-xs tracking-wider uppercase text-white shadow-md cursor-pointer !border-red-600"
-              >
-                Drop Subscription Now
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-      
-      {/* Shared Modals for SuperAdmin Terminal */}
-      {isSalesDialogOpen && (
-        <SalesDialog
-          isOpen={isSalesDialogOpen}
-          onClose={() => setIsSalesDialogOpen(false)}
-          products={products}
-          onSaleSuccess={handleExistingSaleSuccess}
-        />
-      )}
-
-      {isAttendanceDialogOpen && (
-        <LogbookRecordAttendance
-          isOpen={isAttendanceDialogOpen}
-          onClose={() => setIsAttendanceDialogOpen(false)}
-          onCheckInSuccess={() => {
-            fetchTabData();
-            setIsAttendanceDialogOpen(false);
-          }}
-        />
-      )}
-
       {/* MOBILE STICKY BOTTOM DOCK ABOVE NAVBAR */}
-      {mobileMainTab === 'backups' &&
-        createPortal(
+      {createPortal(
           <div
             style={{ position: 'fixed' }}
             className={`md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3.5 z-[195] shadow-2xl transition-all duration-300 ease-in-out ${
@@ -2837,18 +1778,6 @@ export const DatabaseBackup: React.FC = () => {
           </div>
         )}
       </Modal>
-
-      {/* SuperAdmin-Exclusive Two-Group CSV Data Migration Console */}
-      {isSuperAdminOnly && (
-        <CsvDataMigrationModal
-          isOpen={isCsvMigrationModalOpen}
-          onClose={() => setIsCsvMigrationModalOpen(false)}
-          onSuccess={() => {
-            fetchProducts();
-            fetchTabData();
-          }}
-        />
-      )}
     </div>
   );
 };

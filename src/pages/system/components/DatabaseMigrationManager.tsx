@@ -24,6 +24,9 @@ import {
   History,
   Copy,
   Check,
+  GitCompare,
+  RotateCcw,
+  Clock,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../../lib/supabase/client';
@@ -37,8 +40,10 @@ import {
   MAX_CSV_FILE_BYTES,
   PRODUCT_HEADERS,
   MEMBER_HEADERS,
+  type DuplicateAction,
   type ExistingDbSnapshot,
   type ParsedMigrationResult,
+  type ResolvedMigrationPlan,
   type SealedMigrationBatch,
   type MigrationExecutionSummary,
   type MigrationAuditLogEntry,
@@ -47,12 +52,29 @@ import {
   fetchMigrationDbSnapshot,
   verifyLiveCashSessionClosed,
   parseAndValidateMigrationCsv,
+  resolveMigrationBatch,
   sealMigrationBatch,
   clearEphemeralSeal,
   executeSecuredCsvMigration,
   recordMigrationAttempt,
   fetchMigrationAuditLogs,
+  fetchRecentRevertibleMigrations,
+  getUndoRemainingMs,
+  formatRemainingUndoTime,
+  revertMigrationByBatchId,
+  normalizeDateWithFlexibleRegex,
 } from '../utils/csvDataMigration';
+
+/**
+ * Utility helper exposed directly from DatabaseMigrationManager that normalizes
+ * varied date string formats (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, etc.) into
+ * a validated standard UTC JS Date object before schema validation.
+ */
+export function normalizeDateInputToJsDate(
+  rawInput: string | Date
+): Date | null {
+  return normalizeDateWithFlexibleRegex(rawInput).date;
+}
 
 export interface DatabaseMigrationManagerProps {
   onSuccess?: () => void;
@@ -100,12 +122,21 @@ export const DatabaseMigrationManager: React.FC<
   const [isValidatingFile, setIsValidatingFile] = useState<boolean>(false);
   const [parsedResult, setParsedResult] =
     useState<ParsedMigrationResult | null>(null);
+  const [duplicateResolutions, setDuplicateResolutions] = useState<
+    Record<string, DuplicateAction>
+  >({});
+  const [resolvedPlan, setResolvedPlan] =
+    useState<ResolvedMigrationPlan | null>(null);
   const [sealedBatch, setSealedBatch] = useState<SealedMigrationBatch | null>(
     null
   );
+  const [isResealing, setIsResealing] = useState<boolean>(false);
   const [inspectTab, setInspectTab] = useState<
-    'issues' | 'products' | 'members'
+    'issues' | 'duplicates' | 'products' | 'members'
   >('issues');
+  const [issueFilter, setIssueFilter] = useState<'all' | 'error' | 'warning'>(
+    'all'
+  );
 
   // Execution States
   const [isMigrating, setIsMigrating] = useState<boolean>(false);
@@ -113,14 +144,23 @@ export const DatabaseMigrationManager: React.FC<
   const [migrationStage, setMigrationStage] = useState<string>('');
   const [executionSummary, setExecutionSummary] =
     useState<MigrationExecutionSummary | null>(null);
+  const [lastCompletedLog, setLastCompletedLog] =
+    useState<MigrationAuditLogEntry | null>(null);
 
-  // Dedicated `migration_audit_logs` History States
+  // Audit Logs & 24h Undo/Revert States
   const [auditLogs, setAuditLogs] = useState<MigrationAuditLogEntry[]>([]);
+  const [recentRevertibleBatches, setRecentRevertibleBatches] = useState<
+    MigrationAuditLogEntry[]
+  >([]);
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [auditTableUnavailable, setAuditTableUnavailable] =
     useState<boolean>(false);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [copiedHashId, setCopiedHashId] = useState<string | null>(null);
+  const [confirmUndoLogId, setConfirmUndoLogId] = useState<string | null>(null);
+  const [undoingLogId, setUndoingLogId] = useState<string | null>(null);
+  const [undoStage, setUndoStage] = useState<string>('');
+  const [nowTickMs, setNowTickMs] = useState<number>(() => Date.now());
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sealedIdRef = useRef<string | null>(null);
@@ -128,13 +168,26 @@ export const DatabaseMigrationManager: React.FC<
   const effectiveSessionOpen =
     isSessionOpen || Boolean(activeSession) || !liveSessionClosed;
 
+  // Live ticker for 24-hour undo countdown windows
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTickMs(Date.now());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const loadMigrationHistory = useCallback(async () => {
     if (!isSuper) return;
     setLoadingLogs(true);
     try {
-      const res = await fetchMigrationAuditLogs(50);
+      const [res, revertibleRes] = await Promise.all([
+        fetchMigrationAuditLogs(50),
+        fetchRecentRevertibleMigrations(),
+      ]);
       setAuditLogs(res.logs);
+      setRecentRevertibleBatches(revertibleRes.logs);
       setAuditTableUnavailable(res.tableUnavailable);
+      return res.logs;
     } finally {
       setLoadingLogs(false);
     }
@@ -221,9 +274,7 @@ export const DatabaseMigrationManager: React.FC<
       if (!authError && typeof isValidPassword === 'boolean') {
         return isValidPassword;
       }
-    } catch {
-      // Fallback to direct signIn check
-    }
+    } catch {}
 
     if (actorEmail) {
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -329,6 +380,52 @@ export const DatabaseMigrationManager: React.FC<
     }
   };
 
+  // Recomputes resolved plan and refreshes the AES-GCM-256 cryptographic seal whenever duplicate choices change
+  const applyResolutionsAndReseal = async (
+    result: ParsedMigrationResult,
+    nextResolutions: Record<string, DuplicateAction>
+  ) => {
+    setDuplicateResolutions(nextResolutions);
+    if (!result.isValid || result.errorCount > 0) return;
+
+    setIsResealing(true);
+    try {
+      if (sealedIdRef.current) {
+        clearEphemeralSeal(sealedIdRef.current);
+        sealedIdRef.current = null;
+      }
+      const [plan, sealed] = await Promise.all([
+        resolveMigrationBatch(result, nextResolutions),
+        sealMigrationBatch(result, nextResolutions),
+      ]);
+      sealedIdRef.current = sealed.sealId;
+      setResolvedPlan(plan);
+      setSealedBatch(sealed);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update migration seal.');
+    } finally {
+      setIsResealing(false);
+    }
+  };
+
+  const handleConflictResolutionChange = async (
+    conflictKey: string,
+    action: DuplicateAction
+  ) => {
+    if (!parsedResult || isMigrating || isResealing) return;
+    const next = { ...duplicateResolutions, [conflictKey]: action };
+    await applyResolutionsAndReseal(parsedResult, next);
+  };
+
+  const handleResolveAllConflicts = async (action: DuplicateAction) => {
+    if (!parsedResult || isMigrating || isResealing) return;
+    const next: Record<string, DuplicateAction> = {};
+    parsedResult.conflicts.forEach((c) => {
+      next[c.conflictKey] = action;
+    });
+    await applyResolutionsAndReseal(parsedResult, next);
+  };
+
   const processCsvFile = async (file: File) => {
     if (!isSuper || !isAuthenticated) return;
 
@@ -391,7 +488,10 @@ export const DatabaseMigrationManager: React.FC<
     }
     setSealedBatch(null);
     setParsedResult(null);
+    setResolvedPlan(null);
+    setDuplicateResolutions({});
     setExecutionSummary(null);
+    setLastCompletedLog(null);
     setSelectedFileName(file.name);
     setSelectedFileBytes(file.size);
     setIsValidatingFile(true);
@@ -403,9 +503,11 @@ export const DatabaseMigrationManager: React.FC<
       const text = await file.text();
       const result = await parseAndValidateMigrationCsv(text, freshSnapshot);
       setParsedResult(result);
+      setDuplicateResolutions(result.defaultResolutions);
 
       if (result.errorCount > 0) {
         setInspectTab('issues');
+        setIssueFilter('error');
         const validationErrorList = result.issues.filter(
           (i) => i.severity === 'error'
         );
@@ -431,13 +533,31 @@ export const DatabaseMigrationManager: React.FC<
           `Validation stopped: Found ${result.errorCount} error(s). Logged attempt and blocked insert.`
         );
       } else {
-        const sealed = await sealMigrationBatch(result);
+        const [plan, sealed] = await Promise.all([
+          resolveMigrationBatch(result, result.defaultResolutions),
+          sealMigrationBatch(result, result.defaultResolutions),
+        ]);
         sealedIdRef.current = sealed.sealId;
+        setResolvedPlan(plan);
         setSealedBatch(sealed);
-        setInspectTab(result.warningCount > 0 ? 'issues' : 'products');
-        toast.success(
-          `CSV validated & AES-GCM sealed! Ready to import ${result.products.length} product(s) and ${result.members.length} member(s).`
-        );
+
+        if (result.conflicts.length > 0) {
+          setInspectTab('duplicates');
+          toast.info(
+            `Detected ${result.conflicts.length} duplicate(s) in CSV/Database. Choose Overwrite or Ignore before executing.`
+          );
+        } else if (result.warningCount > 0) {
+          setInspectTab('issues');
+          setIssueFilter('all');
+          toast.success(
+            `CSV validated & AES-GCM sealed! Ready to import ${plan.productsToInsert.length} product(s) and ${plan.membersToInsert.length} member(s).`
+          );
+        } else {
+          setInspectTab('products');
+          toast.success(
+            `CSV validated & AES-GCM sealed! Ready to import ${plan.productsToInsert.length} product(s) and ${plan.membersToInsert.length} member(s).`
+          );
+        }
       }
     } catch (err: any) {
       const msg = err?.message || 'Failed to parse CSV migration file.';
@@ -479,10 +599,22 @@ export const DatabaseMigrationManager: React.FC<
     );
   }, [dbSnapshot]);
 
+  const totalActionableOps = useMemo(() => {
+    if (!resolvedPlan) return 0;
+    return (
+      resolvedPlan.productsToInsert.length +
+      resolvedPlan.productsToOverwrite.length +
+      resolvedPlan.membersToInsert.length +
+      resolvedPlan.membersToOverwrite.length
+    );
+  }, [resolvedPlan]);
+
   const canExecuteMigration = useMemo(() => {
     if (!isSuper || !isAuthenticated || effectiveSessionOpen) return false;
-    if (!parsedResult || !parsedResult.isValid || !sealedBatch) return false;
-    if (isMigrating || isValidatingFile) return false;
+    if (!parsedResult || !parsedResult.isValid || !sealedBatch || !resolvedPlan)
+      return false;
+    if (totalActionableOps === 0) return false;
+    if (isMigrating || isValidatingFile || isResealing) return false;
     if (!isDbClean && !nonEmptyOverrideAck) return false;
     return true;
   }, [
@@ -491,14 +623,18 @@ export const DatabaseMigrationManager: React.FC<
     effectiveSessionOpen,
     parsedResult,
     sealedBatch,
+    resolvedPlan,
+    totalActionableOps,
     isMigrating,
     isValidatingFile,
+    isResealing,
     isDbClean,
     nonEmptyOverrideAck,
   ]);
 
   const handleExecuteMigration = async () => {
-    if (!canExecuteMigration || !sealedBatch || !parsedResult) return;
+    if (!canExecuteMigration || !sealedBatch || !parsedResult || !resolvedPlan)
+      return;
 
     try {
       setIsMigrating(true);
@@ -516,7 +652,8 @@ export const DatabaseMigrationManager: React.FC<
         },
       });
 
-      await recordMigrationAttempt({
+      const attemptRes = await recordMigrationAttempt({
+        batchId: summary.batchId,
         superadminId: actorId,
         superadminEmail: actorEmail,
         fileName: selectedFileName || 'csv_batch.csv',
@@ -528,20 +665,56 @@ export const DatabaseMigrationManager: React.FC<
         membersCount: summary.membersInserted,
         subscriptionsCount: summary.subscriptionsInserted,
         cardsCount: summary.cardsIssued,
+        overwrittenCount:
+          summary.productsOverwritten + summary.membersOverwritten,
+        ignoredCount: summary.ignoredCount,
         errorCount: 0,
         warningCount: parsedResult.warningCount,
         validationErrors: parsedResult.issues.filter(
           (i) => i.severity === 'warning'
         ),
         nonEmptyOverride: nonEmptyOverrideAck,
-        notes: 'Batch migration committed and verified cleanly.',
+        notes: `Batch ${summary.batchId} committed: ${summary.productsInserted} new / ${summary.productsOverwritten} overwritten product(s), ${summary.membersInserted} new / ${summary.membersOverwritten} overwritten member(s), ${summary.ignoredCount} ignored.`,
+        rollbackManifest: summary.rollbackManifest,
+        rollbackExpiresAt: summary.rollbackExpiresAt,
       });
 
       sealedIdRef.current = null;
       setSealedBatch(null);
       setExecutionSummary(summary);
+      setNowTickMs(Date.now());
+
+      const synthesizedLogEntry: MigrationAuditLogEntry = {
+        id: attemptRes.auditLogId || `local_${Date.now()}`,
+        batch_id: summary.batchId,
+        created_at: summary.executedAt,
+        superadmin_id: actorId,
+        superadmin_email: actorEmail || 'SuperAdmin',
+        file_name: selectedFileName || 'csv_batch.csv',
+        file_size_bytes: selectedFileBytes,
+        file_hash: summary.rawCsvSha256,
+        payload_hash: summary.canonicalSha256,
+        status: 'success',
+        products_count: summary.productsInserted,
+        members_count: summary.membersInserted,
+        subscriptions_count: summary.subscriptionsInserted,
+        cards_count: summary.cardsIssued,
+        overwritten_count:
+          summary.productsOverwritten + summary.membersOverwritten,
+        ignored_count: summary.ignoredCount,
+        error_count: 0,
+        warning_count: parsedResult.warningCount,
+        validation_errors: [],
+        error_message: null,
+        non_empty_override: nonEmptyOverrideAck,
+        notes: null,
+        rollback_manifest: summary.rollbackManifest,
+        rollback_expires_at: summary.rollbackExpiresAt,
+      };
+      setLastCompletedLog(synthesizedLogEntry);
+
       toast.success(
-        `Migration complete! Imported ${summary.productsInserted} product(s) and ${summary.membersInserted} member(s).`
+        `Migration complete! +${summary.productsInserted} new / ${summary.productsOverwritten} updated products, +${summary.membersInserted} new / ${summary.membersOverwritten} updated members.`
       );
       await Promise.all([refreshDbReadiness(), loadMigrationHistory()]);
       onSuccess?.();
@@ -569,6 +742,42 @@ export const DatabaseMigrationManager: React.FC<
     }
   };
 
+  const handleConfirmUndo = async (entry: MigrationAuditLogEntry) => {
+    if (!isSuper || undoingLogId) return;
+    setUndoingLogId(entry.id);
+    setUndoStage('Verifying 24h rollback window & batch_id...');
+    try {
+      const res = await revertMigrationByBatchId({
+        batchId: entry.batch_id || null,
+        logEntry: entry,
+        actorEmail,
+        actorId,
+        onProgress: (_pct, label) => setUndoStage(label),
+      });
+
+      setConfirmUndoLogId(null);
+      if (lastCompletedLog && lastCompletedLog.id === entry.id) {
+        setLastCompletedLog({
+          ...lastCompletedLog,
+          status: 'REVERTED',
+          reverted_at: new Date().toISOString(),
+          reverted_by_email: actorEmail,
+        });
+      }
+
+      toast.success(
+        `Migration${res.batchId ? ` (${res.batchId})` : ''} reverted! Removed ${res.deletedProducts} product(s), ${res.deletedMembers} member(s), ${res.deletedSubscriptions} subscription(s), ${res.deletedCards} card(s), and restored ${res.restoredProducts + res.restoredMembers} overwritten record(s).`
+      );
+      await Promise.all([refreshDbReadiness(), loadMigrationHistory()]);
+      onSuccess?.();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to revert migration batch.');
+    } finally {
+      setUndoingLogId(null);
+      setUndoStage('');
+    }
+  };
+
   const handleCopyHash = async (id: string, hash: string) => {
     try {
       await navigator.clipboard.writeText(hash);
@@ -578,6 +787,12 @@ export const DatabaseMigrationManager: React.FC<
       toast.info(`SHA-256: ${hash}`);
     }
   };
+
+  const filteredIssues = useMemo(() => {
+    if (!parsedResult) return [];
+    if (issueFilter === 'all') return parsedResult.issues;
+    return parsedResult.issues.filter((i) => i.severity === issueFilter);
+  }, [parsedResult, issueFilter]);
 
   if (!isSuper) {
     return (
@@ -620,11 +835,7 @@ export const DatabaseMigrationManager: React.FC<
               </span>
             </div>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
-              Unified two-group CSV migration (Products + Members) with SHA-256 verification, AES-GCM seal, and{' '}
-              <code className="font-mono text-(--color-text)">
-                migration_audit_logs
-              </code>{' '}
-              accountability.
+              Smart CSV validation, Duplicate Detector (Overwrite / Ignore), SHA-256 AES-GCM sealing, and 24-hour safe Undo/Revert.
             </p>
           </div>
         </div>
@@ -664,8 +875,8 @@ export const DatabaseMigrationManager: React.FC<
           {onClose && (
             <button
               type="button"
-              onClick={() => !isMigrating && onClose()}
-              disabled={isMigrating}
+              onClick={() => !isMigrating && !undoingLogId && onClose()}
+              disabled={isMigrating || Boolean(undoingLogId)}
               className="w-8 h-8 rounded-xl bg-(--bg-input) hover:bg-(--bg-page) text-slate-500 dark:text-slate-400 hover:text-(--color-text) border border-(--border-color) flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 shrink-0"
               title="Close Migration Console"
             >
@@ -692,7 +903,7 @@ export const DatabaseMigrationManager: React.FC<
               Cash Drawer Session Is Open
             </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-              CSV Data Migration is strictly disabled while a cash drawer session is active. Close the cash session in Cash Management first to protect inventory and ledger integrity.
+              CSV Data Migration and 24-hour Rollback are strictly disabled while a cash drawer session is active. Close the cash session in Cash Management first.
             </p>
           </div>
           <div className="flex items-center justify-center gap-2.5">
@@ -725,7 +936,7 @@ export const DatabaseMigrationManager: React.FC<
                 Restricted SuperAdmin Authentication
               </span>
               <p className="leading-relaxed text-slate-600 dark:text-slate-300 font-medium">
-                Every CSV migration attempt (success or validation failure) is permanently recorded with your SuperAdmin ID, SHA-256 file hash, and timestamp.
+                Every migration, duplicate resolution, and 24-hour revert is permanently recorded with your SuperAdmin ID, SHA-256 hash, and timestamp.
               </p>
             </div>
           </div>
@@ -830,26 +1041,26 @@ export const DatabaseMigrationManager: React.FC<
           </form>
         </div>
       ) : portalTab === 'audit_logs' ? (
-        /* PORTAL TAB 2: MIGRATION AUDIT LOGS (`migration_audit_logs`) */
+        /* PORTAL TAB 2: MIGRATION AUDIT LOGS + 24H UNDO CONTROLS */
         <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 text-left">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
               <h4 className="font-heading font-black text-xs sm:text-sm uppercase tracking-wider text-(--color-text)">
-                Migration Attempt Audit Trail
+                Migration Audit Trail &amp; 24-Hour Undo Window
               </h4>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Append-only Supabase ledger (
+                Executed migrations remain reversible for strictly 24 hours via{' '}
                 <code className="font-mono text-(--color-text)">
                   migration_audit_logs
                 </code>
-                ) recording every validation failure, block, and completed batch.
+                . Once 24 hours elapse, undo closes permanently.
               </p>
             </div>
             <button
               type="button"
               onClick={loadMigrationHistory}
-              disabled={loadingLogs}
-              className="self-start sm:self-auto px-3 py-2 rounded-xl border border-(--border-color) bg-(--bg-page) hover:bg-(--bg-input) text-xs font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5"
+              disabled={loadingLogs || Boolean(undoingLogId)}
+              className="self-start sm:self-auto px-3 py-2 rounded-xl border border-(--border-color) bg-(--bg-page) hover:bg-(--bg-input) text-xs font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-40"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin' : ''}`}
@@ -866,11 +1077,103 @@ export const DatabaseMigrationManager: React.FC<
                   Dedicated Table Pending Migration
                 </strong>
                 <span>
-                  The SQL migration for{' '}
-                  <code className="font-mono">public.migration_audit_logs</code>{' '}
-                  has not yet been pushed to this Supabase project. Attempts are still mirrored in general{' '}
-                  <code className="font-mono">audit_logs</code>.
+                  Push the SQL files in{' '}
+                  <code className="font-mono">
+                    src/lib/supabase/migrations/ready/
+                  </code>{' '}
+                  to enable full multi-device audit &amp; rollback tracking.
                 </span>
+              </div>
+            </div>
+          )}
+
+          {recentRevertibleBatches.length > 0 && (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <h5 className="font-heading font-black text-xs uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                    Revert Migration (Last 24h Active Batches)
+                  </h5>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-400 uppercase">
+                  {recentRevertibleBatches.length} Reversible Batch(es)
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {recentRevertibleBatches.map((batch) => {
+                  const batchRemainingMs = getUndoRemainingMs(batch, nowTickMs);
+                  const isBatchConfirming = confirmUndoLogId === batch.id;
+                  const isBatchUndoing = undoingLogId === batch.id;
+                  return (
+                    <div
+                      key={`quick_${batch.id}`}
+                      className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap font-mono text-[11px]">
+                          <strong className="text-blue-600 dark:text-blue-400">
+                            {batch.batch_id || `ID:${batch.id.slice(0, 8)}`}
+                          </strong>
+                          <span className="text-(--color-text) font-sans font-semibold truncate max-w-[200px]">
+                            {batch.file_name || 'CSV Batch'}
+                          </span>
+                          <span className="text-amber-600 dark:text-amber-400 font-bold">
+                            • {formatRemainingUndoTime(batchRemainingMs)} left
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                          +{batch.products_count} Products, +{batch.members_count} Members,{' '}
+                          {batch.subscriptions_count} Plans, {batch.cards_count} Cards
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isBatchConfirming ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmUndoLogId(null)}
+                              disabled={isBatchUndoing}
+                              className="px-2.5 py-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-[11px] font-bold cursor-pointer disabled:opacity-40"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmUndo(batch)}
+                              disabled={isBatchUndoing}
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {isBatchUndoing ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <span>{undoStage || 'Reverting...'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Confirm Revert</span>
+                                </>
+                              )}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmUndoLogId(batch.id)}
+                            disabled={Boolean(undoingLogId)}
+                            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-40"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Revert Migration</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -891,6 +1194,14 @@ export const DatabaseMigrationManager: React.FC<
                 const valErrors = Array.isArray(entry.validation_errors)
                   ? entry.validation_errors
                   : [];
+                const statusUpper = String(entry.status || '').toUpperCase();
+                const remainingMs = getUndoRemainingMs(entry, nowTickMs);
+                const canUndoEntry =
+                  statusUpper === 'SUCCESS' && remainingMs > 0;
+                const isUndoClosed =
+                  statusUpper === 'SUCCESS' && remainingMs <= 0;
+                const isConfirmingThisUndo = confirmUndoLogId === entry.id;
+                const isUndoingThis = undoingLogId === entry.id;
 
                 return (
                   <div
@@ -899,12 +1210,17 @@ export const DatabaseMigrationManager: React.FC<
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {entry.status === 'success' ? (
+                        {statusUpper === 'SUCCESS' ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-mono font-black uppercase text-emerald-600 dark:text-emerald-400">
                             <CheckCircle2 className="w-4 h-4" />
                             Success
                           </span>
-                        ) : entry.status === 'blocked' ? (
+                        ) : statusUpper === 'REVERTED' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-mono font-black uppercase text-amber-600 dark:text-amber-400">
+                            <RotateCcw className="w-4 h-4" />
+                            REVERTED
+                          </span>
+                        ) : statusUpper === 'BLOCKED' ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-mono font-black uppercase text-amber-600 dark:text-amber-400">
                             <Lock className="w-4 h-4" />
                             Blocked
@@ -936,7 +1252,29 @@ export const DatabaseMigrationManager: React.FC<
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] font-mono">
+                      <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono">
+                        {canUndoEntry && !isConfirmingThisUndo && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmUndoLogId(entry.id)}
+                            disabled={Boolean(undoingLogId)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-40"
+                            title="Revert this migration batch within the 24-hour rollback window"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>
+                              Undo ({formatRemainingUndoTime(remainingMs)})
+                            </span>
+                          </button>
+                        )}
+
+                        {isUndoClosed && (
+                          <span className="px-2.5 py-1 rounded-lg bg-(--bg-card) border border-(--border-color) text-slate-400 inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>24h Undo Closed</span>
+                          </span>
+                        )}
+
                         <button
                           type="button"
                           onClick={() =>
@@ -977,17 +1315,86 @@ export const DatabaseMigrationManager: React.FC<
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                      <span>
-                        Actor: <strong className="text-(--color-text)">{entry.superadmin_email}</strong>
-                      </span>
-                      {entry.superadmin_id && (
-                        <span>ID: {entry.superadmin_id.slice(0, 8)}...</span>
+                      {entry.batch_id && (
+                        <span>
+                          Batch:{' '}
+                          <strong className="text-blue-600 dark:text-blue-400">
+                            {entry.batch_id}
+                          </strong>
+                        </span>
                       )}
+                      <span>
+                        Actor:{' '}
+                        <strong className="text-(--color-text)">
+                          {entry.superadmin_email}
+                        </strong>
+                      </span>
                       <span>Products: {entry.products_count}</span>
                       <span>Members: {entry.members_count}</span>
+                      {(entry.overwritten_count ?? 0) > 0 && (
+                        <span className="text-blue-600 dark:text-blue-400 font-bold">
+                          Overwritten: {entry.overwritten_count}
+                        </span>
+                      )}
+                      {(entry.ignored_count ?? 0) > 0 && (
+                        <span>Ignored: {entry.ignored_count}</span>
+                      )}
                       <span>Errors: {entry.error_count}</span>
                       <span>Warnings: {entry.warning_count}</span>
+                      {entry.reverted_at && (
+                        <span className="text-amber-600 dark:text-amber-400 font-bold">
+                          Reverted:{' '}
+                          {new Date(entry.reverted_at).toLocaleString('en-US', {
+                            timeZone: 'Asia/Manila',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      )}
                     </div>
+
+                    {isConfirmingThisUndo && (
+                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                        <div className="space-y-0.5">
+                          <strong className="font-heading uppercase text-[11px] text-rose-600 dark:text-rose-400 block">
+                            Confirm 24-Hour Migration Revert
+                          </strong>
+                          <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                            Deletes newly inserted items from this batch and restores overwritten products/members to their exact pre-migration state.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmUndoLogId(null)}
+                            disabled={isUndoingThis}
+                            className="px-3 py-1.5 rounded-lg border border-(--border-color) bg-(--bg-card) text-xs font-bold cursor-pointer disabled:opacity-40"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmUndo(entry)}
+                            disabled={isUndoingThis}
+                            className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isUndoingThis ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>{undoStage || 'Reverting...'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Confirm Undo</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {isExpanded && (
                       <div className="pt-2 border-t border-(--border-color) space-y-2">
@@ -1025,39 +1432,141 @@ export const DatabaseMigrationManager: React.FC<
       ) : (
         /* PORTAL TAB 1: AUTHENTICATED TWO-GROUP CSV MIGRATION WORKSPACE */
         <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 text-left">
-          {/* COMPLETION BANNER (IF JUST EXECUTED) */}
+          {/* COMPLETION BANNER + IMMEDIATE 24-HOUR UNDO/REVERT CONTROL */}
           {executionSummary && (
             <div className="p-4 sm:p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-3">
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <div className="space-y-1 min-w-0">
-                  <h4 className="font-heading font-black text-sm uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                    CSV Migration Executed &amp; Audited
-                  </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Successfully imported{' '}
-                    <strong className="font-mono tabular-nums text-(--color-text)">
-                      {executionSummary.productsInserted}
-                    </strong>{' '}
-                    product(s),{' '}
-                    <strong className="font-mono tabular-nums text-(--color-text)">
-                      {executionSummary.membersInserted}
-                    </strong>{' '}
-                    member(s),{' '}
-                    <strong className="font-mono tabular-nums text-(--color-text)">
-                      {executionSummary.subscriptionsInserted}
-                    </strong>{' '}
-                    subscription(s), and{' '}
-                    <strong className="font-mono tabular-nums text-(--color-text)">
-                      {executionSummary.cardsIssued}
-                    </strong>{' '}
-                    member card(s).
-                  </p>
-                  <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 break-all">
-                    File SHA-256: {executionSummary.rawCsvSha256}
-                  </p>
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1 min-w-0">
+                    <h4 className="font-heading font-black text-sm uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      CSV Migration Executed &amp; Audited
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Products:{' '}
+                      <strong className="font-mono text-(--color-text)">
+                        +{executionSummary.productsInserted} new
+                      </strong>
+                      {executionSummary.productsOverwritten > 0 && (
+                        <strong className="font-mono text-blue-600 dark:text-blue-400">
+                          {' '}
+                          / {executionSummary.productsOverwritten} overwritten
+                        </strong>
+                      )}
+                      {' • '}Members:{' '}
+                      <strong className="font-mono text-(--color-text)">
+                        +{executionSummary.membersInserted} new
+                      </strong>
+                      {executionSummary.membersOverwritten > 0 && (
+                        <strong className="font-mono text-blue-600 dark:text-blue-400">
+                          {' '}
+                          / {executionSummary.membersOverwritten} overwritten
+                        </strong>
+                      )}
+                      {executionSummary.ignoredCount > 0 && (
+                        <span>
+                          {' • '}Ignored:{' '}
+                          <strong className="font-mono">
+                            {executionSummary.ignoredCount}
+                          </strong>
+                        </span>
+                      )}
+                      {' • '}Plans:{' '}
+                      <strong className="font-mono text-(--color-text)">
+                        {executionSummary.subscriptionsInserted}
+                      </strong>
+                      {' • '}Cards:{' '}
+                      <strong className="font-mono text-(--color-text)">
+                        {executionSummary.cardsIssued}
+                      </strong>
+                      .
+                    </p>
+                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 break-all">
+                      Batch ID:{' '}
+                      <strong className="text-blue-600 dark:text-blue-400">
+                        {executionSummary.batchId}
+                      </strong>{' '}
+                      • File SHA-256: {executionSummary.rawCsvSha256}
+                    </p>
+                  </div>
                 </div>
+
+                {lastCompletedLog && (
+                  <div className="shrink-0">
+                    {String(lastCompletedLog.status || '').toUpperCase() ===
+                    'REVERTED' ? (
+                      <span className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-mono font-bold inline-flex items-center gap-1.5">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Batch REVERTED</span>
+                      </span>
+                    ) : getUndoRemainingMs(lastCompletedLog, nowTickMs) > 0 ? (
+                      confirmUndoLogId !== lastCompletedLog.id && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmUndoLogId(lastCompletedLog.id)
+                          }
+                          disabled={Boolean(undoingLogId)}
+                          className="px-3.5 py-2 rounded-xl bg-(--bg-card) hover:bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-40"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>
+                            Revert Migration (
+                            {formatRemainingUndoTime(
+                              getUndoRemainingMs(lastCompletedLog, nowTickMs)
+                            )}
+                            )
+                          </span>
+                        </button>
+                      )
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl bg-(--bg-card) border border-(--border-color) text-slate-400 text-xs font-mono inline-flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>24h Revert Window Closed</span>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {lastCompletedLog &&
+                confirmUndoLogId === lastCompletedLog.id &&
+                String(lastCompletedLog.status || '').toUpperCase() ===
+                  'SUCCESS' && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    <span className="text-slate-700 dark:text-slate-200 font-medium">
+                      Confirm reverting this migration? All inserted products, members, subscriptions, and cards will be removed, and overwritten records restored.
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmUndoLogId(null)}
+                        disabled={undoingLogId === lastCompletedLog.id}
+                        className="px-3 py-1.5 rounded-lg border border-(--border-color) bg-(--bg-card) text-xs font-bold cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmUndo(lastCompletedLog)}
+                        disabled={undoingLogId === lastCompletedLog.id}
+                        className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-heading font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {undoingLogId === lastCompletedLog.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>{undoStage || 'Reverting...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Confirm Undo</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
           )}
 
@@ -1086,13 +1595,13 @@ export const DatabaseMigrationManager: React.FC<
                   >
                     {isDbClean
                       ? 'Empty Database Verified — Ideal for Migration'
-                      : 'Non-Empty Database Detected — Caution Advised'}
+                      : 'Non-Empty Database Detected — Duplicate Detector Active'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isDbClean
                     ? 'Both Products and Members tables currently have 0 active records. Clean-slate CSV migration is optimal.'
-                    : 'CSV Legacy Data Migration is highly recommended when Products and Members tables are empty. Existing records are cross-checked to block duplicates, and explicit acknowledgement is required below.'}
+                    : 'Matching Products or Members already in Supabase will be flagged by the Duplicate Detector so you can Overwrite or Ignore each item.'}
                 </p>
               </div>
             </div>
@@ -1145,10 +1654,14 @@ export const DatabaseMigrationManager: React.FC<
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                   Download the official single-file CSV containing both{' '}
-                  <code className="font-mono text-(--color-text)">[PRODUCTS]</code>{' '}
+                  <code className="font-mono text-(--color-text)">
+                    [PRODUCTS]
+                  </code>{' '}
                   and{' '}
-                  <code className="font-mono text-(--color-text)">[MEMBERS]</code>{' '}
-                  groups. Open in Excel or Google Sheets, replace sample rows, and save as CSV UTF-8.
+                  <code className="font-mono text-(--color-text)">
+                    [MEMBERS]
+                  </code>{' '}
+                  groups. Supports YYYY-MM-DD and Excel MM/DD/YYYY dates cleanly.
                 </p>
               </div>
 
@@ -1204,7 +1717,7 @@ export const DatabaseMigrationManager: React.FC<
                   <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Drop a CSV file here or browse. Every row is checked against Supabase constraints; validation failures are logged automatically.
+                  Smart validation catches subtle errors (Excel scientific barcodes, swapped dates) while auto-normalizing safe formats to keep logs clean.
                 </p>
               </div>
 
@@ -1225,7 +1738,7 @@ export const DatabaseMigrationManager: React.FC<
                   {isValidatingFile ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                      <span>Deep-Validating CSV &amp; Sealing...</span>
+                      <span>Smart-Validating &amp; Detecting Duplicates...</span>
                     </>
                   ) : (
                     <>
@@ -1255,9 +1768,9 @@ export const DatabaseMigrationManager: React.FC<
                     {PRODUCT_HEADERS.join(', ')}
                   </div>
                   <ul className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5 list-disc pl-4">
-                    <li>selling_price: positive number (&gt; 0, max 2 decimals)</li>
+                    <li>selling_price: positive amount (₱ / commas normalized)</li>
                     <li>has_stock_limit: true / false; integer stock_quantity if true</li>
-                    <li>manufacturer_barcode: optional, max 32 chars, unique</li>
+                    <li>manufacturer_barcode: format as Text in Excel to avoid E+12</li>
                     <li>status: Active or Inactive</li>
                   </ul>
                 </div>
@@ -1272,7 +1785,7 @@ export const DatabaseMigrationManager: React.FC<
                   </div>
                   <ul className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5 list-disc pl-4">
                     <li>plan_type: monthly (max 31d), yearly (max 366d), or none</li>
-                    <li>start_date / end_date: YYYY-MM-DD required if plan != none</li>
+                    <li>birthday / start_date / end_date: normalized automatically to JS Date from YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, DD.MM.YYYY, or named months</li>
                     <li>issue_card: true / false; card_type: QR or Manual if true</li>
                     <li>gender: Male / Female / Other; status: Active / Suspended</li>
                   </ul>
@@ -1281,41 +1794,46 @@ export const DatabaseMigrationManager: React.FC<
             </div>
           )}
 
-          {/* 3. VALIDATION TELEMETRY & CRYPTOGRAPHIC SEAL STATUS */}
+          {/* 3. VALIDATION TELEMETRY, DUPLICATE DETECTOR & SEAL STATUS */}
           {parsedResult && (
             <div className="space-y-3.5">
               {/* Summary Bar */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
                 <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color)">
                   <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500 block">
-                    Products
+                    New Inserts
                   </span>
-                  <span className="text-lg font-mono font-black tabular-nums text-(--color-text)">
-                    {parsedResult.products.length}
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color)">
-                  <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500 block">
-                    Members
-                  </span>
-                  <span className="text-lg font-mono font-black tabular-nums text-(--color-text)">
-                    {parsedResult.members.length}
+                  <span className="text-lg font-mono font-black tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {resolvedPlan
+                      ? resolvedPlan.insertedCount
+                      : parsedResult.products.length +
+                        parsedResult.members.length}
                   </span>
                 </div>
                 <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color)">
                   <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500 block">
-                    Plans
+                    Overwrites
                   </span>
                   <span className="text-lg font-mono font-black tabular-nums text-blue-600 dark:text-blue-400">
-                    {parsedResult.subscriptionCount}
+                    {resolvedPlan ? resolvedPlan.overwrittenCount : 0}
                   </span>
                 </div>
                 <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color)">
                   <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500 block">
-                    Cards
+                    Ignored Dups
+                  </span>
+                  <span className="text-lg font-mono font-black tabular-nums text-slate-500 dark:text-slate-300">
+                    {resolvedPlan ? resolvedPlan.ignoredCount : 0}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color)">
+                  <span className="text-[10px] font-heading font-bold uppercase tracking-wider text-slate-500 block">
+                    Plans / Cards
                   </span>
                   <span className="text-lg font-mono font-black tabular-nums text-sky-600 dark:text-sky-400">
-                    {parsedResult.cardCount}
+                    {resolvedPlan
+                      ? `${resolvedPlan.subscriptionCount} / ${resolvedPlan.cardCount}`
+                      : `${parsedResult.subscriptionCount} / ${parsedResult.cardCount}`}
                   </span>
                 </div>
                 <div
@@ -1351,19 +1869,24 @@ export const DatabaseMigrationManager: React.FC<
               {/* Cryptographic Integrity Strip */}
               <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono">
                 <div className="flex items-center gap-2 min-w-0">
-                  {sealedBatch ? (
+                  {isResealing ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
+                  ) : sealedBatch ? (
                     <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
                   )}
                   <span className="font-bold text-(--color-text) truncate">
-                    {sealedBatch
-                      ? 'AES-GCM-256 Sealed & SHA-256 Verified'
-                      : 'Integrity Seal Blocked (Attempt Logged)'}
+                    {isResealing
+                      ? 'Re-computing SHA-256 & AES-GCM-256 seal...'
+                      : sealedBatch
+                        ? 'AES-GCM-256 Sealed & SHA-256 Verified'
+                        : 'Integrity Seal Blocked (Fix Errors & Re-Upload)'}
                   </span>
                 </div>
                 <div className="text-slate-500 dark:text-slate-400 truncate">
-                  File SHA-256: {parsedResult.rawCsvSha256.slice(0, 20).toUpperCase()}...
+                  File SHA-256:{' '}
+                  {parsedResult.rawCsvSha256.slice(0, 20).toUpperCase()}...
                 </div>
               </div>
 
@@ -1380,6 +1903,20 @@ export const DatabaseMigrationManager: React.FC<
                     }`}
                   >
                     Validation Log ({parsedResult.issues.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectTab('duplicates')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-heading font-bold uppercase tracking-wider cursor-pointer shrink-0 transition-colors inline-flex items-center gap-1.5 ${
+                      inspectTab === 'duplicates'
+                        ? 'bg-blue-600 text-white'
+                        : parsedResult.conflicts.length > 0
+                          ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-(--color-text)'
+                    }`}
+                  >
+                    <GitCompare className="w-3.5 h-3.5" />
+                    <span>Duplicates ({parsedResult.conflicts.length})</span>
                   </button>
                   <button
                     type="button"
@@ -1405,18 +1942,43 @@ export const DatabaseMigrationManager: React.FC<
                   </button>
                 </div>
 
-                <div className="max-h-64 overflow-y-auto p-3 space-y-2">
+                <div className="max-h-72 overflow-y-auto p-3 space-y-2.5">
                   {inspectTab === 'issues' && (
                     <>
-                      {parsedResult.issues.length === 0 ? (
+                      {parsedResult.issues.length > 0 && (
+                        <div className="flex items-center gap-1.5 pb-1">
+                          {(['all', 'error', 'warning'] as const).map((f) => (
+                            <button
+                              key={f}
+                              type="button"
+                              onClick={() => setIssueFilter(f)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider cursor-pointer border ${
+                                issueFilter === f
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-(--bg-card) text-slate-500 dark:text-slate-400 border-(--border-color)'
+                              }`}
+                            >
+                              {f === 'all'
+                                ? `All (${parsedResult.issues.length})`
+                                : f === 'error'
+                                  ? `Errors (${parsedResult.errorCount})`
+                                  : `Warnings (${parsedResult.warningCount})`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {filteredIssues.length === 0 ? (
                         <div className="py-6 text-center text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-2">
                           <CheckCircle2 className="w-4 h-4" />
                           <span>
-                            Zero errors and zero warnings. All records passed strict schema &amp; collision validation.
+                            {parsedResult.issues.length === 0
+                              ? 'Zero errors and zero warnings. All records passed smart schema validation.'
+                              : 'No matching issues in this filter.'}
                           </span>
                         </div>
                       ) : (
-                        parsedResult.issues.map((iss, idx) => (
+                        filteredIssues.map((iss, idx) => (
                           <div
                             key={idx}
                             className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 ${
@@ -1451,6 +2013,139 @@ export const DatabaseMigrationManager: React.FC<
                     </>
                   )}
 
+                  {inspectTab === 'duplicates' && (
+                    <>
+                      {parsedResult.conflicts.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-2">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>
+                            No duplicate products or members detected inside this CSV or against the live Supabase database.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {/* Bulk Duplicate Controls */}
+                          <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              Detected{' '}
+                              <strong className="font-mono text-(--color-text)">
+                                {parsedResult.conflicts.length}
+                              </strong>{' '}
+                              duplicate match(es). Choose <strong>Ignore</strong> (keep existing) or <strong>Overwrite</strong> (update with CSV).
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleResolveAllConflicts('ignore')
+                                }
+                                disabled={isResealing || isMigrating}
+                                className="px-2.5 py-1.5 rounded-lg bg-(--bg-page) hover:bg-(--bg-input) border border-(--border-color) text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer disabled:opacity-40"
+                              >
+                                Ignore All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleResolveAllConflicts('overwrite')
+                                }
+                                disabled={isResealing || isMigrating}
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer disabled:opacity-40"
+                              >
+                                Overwrite All
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Individual Duplicate Cards */}
+                          {parsedResult.conflicts.map((c) => {
+                            const action =
+                              duplicateResolutions[c.conflictKey] ??
+                              c.defaultResolution;
+                            return (
+                              <div
+                                key={c.conflictKey}
+                                className="p-3 rounded-xl bg-(--bg-card) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                              >
+                                <div className="min-w-0 space-y-1 text-xs">
+                                  <div className="flex items-center gap-1.5 flex-wrap font-mono text-[10px] font-bold">
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      [{c.group}]
+                                    </span>
+                                    <span className="text-amber-600 dark:text-amber-400 uppercase">
+                                      {c.scope === 'database'
+                                        ? '• Exists in Supabase DB'
+                                        : `• Duplicate inside CSV (Line ${c.earlierCsvLine})`}
+                                    </span>
+                                    <span className="text-slate-400">
+                                      • Matched on {c.matchedBy} (Line {c.line})
+                                    </span>
+                                  </div>
+                                  <div className="font-bold text-(--color-text) truncate">
+                                    {c.identifier}
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                    <div>
+                                      <span className="font-mono uppercase text-[10px] text-slate-400">
+                                        Existing:{' '}
+                                      </span>
+                                      <span>{c.existingSummary}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-mono uppercase text-[10px] text-blue-500">
+                                        Incoming CSV:{' '}
+                                      </span>
+                                      <span className="text-(--color-text)">
+                                        {c.incomingSummary}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center p-1 rounded-xl bg-(--bg-page) border border-(--border-color) shrink-0 self-start sm:self-center">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleConflictResolutionChange(
+                                        c.conflictKey,
+                                        'ignore'
+                                      )
+                                    }
+                                    disabled={isResealing || isMigrating}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                                      action === 'ignore'
+                                        ? 'bg-slate-700 text-white shadow-xs'
+                                        : 'text-slate-500 dark:text-slate-400 hover:text-(--color-text)'
+                                    }`}
+                                  >
+                                    Ignore
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleConflictResolutionChange(
+                                        c.conflictKey,
+                                        'overwrite'
+                                      )
+                                    }
+                                    disabled={isResealing || isMigrating}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-heading font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+                                      action === 'overwrite'
+                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        : 'text-slate-500 dark:text-slate-400 hover:text-(--color-text)'
+                                    }`}
+                                  >
+                                    Overwrite
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   {inspectTab === 'products' && (
                     <div className="overflow-x-auto">
                       {parsedResult.products.length === 0 ? (
@@ -1466,32 +2161,63 @@ export const DatabaseMigrationManager: React.FC<
                               <th className="py-2 pr-3">Price</th>
                               <th className="py-2 pr-3">Stock</th>
                               <th className="py-2 pr-3">Barcode</th>
-                              <th className="py-2">Status</th>
+                              <th className="py-2">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-(--border-color)">
-                            {parsedResult.products.map((p) => (
-                              <tr key={p.lineNumber}>
-                                <td className="py-2 pr-3 font-mono text-slate-400">
-                                  {p.lineNumber}
-                                </td>
-                                <td className="py-2 pr-3 font-bold text-(--color-text)">
-                                  {p.product_name}
-                                </td>
-                                <td className="py-2 pr-3 font-mono tabular-nums">
-                                  ₱{p.selling_price.toFixed(2)}
-                                </td>
-                                <td className="py-2 pr-3 font-mono tabular-nums">
-                                  {p.has_stock_limit
-                                    ? `${p.stock_quantity} (Alert: ${p.low_stock_alert ?? 'None'})`
-                                    : 'Unlimited'}
-                                </td>
-                                <td className="py-2 pr-3 font-mono text-slate-500">
-                                  {p.manufacturer_barcode || 'Auto PR-XXXX'}
-                                </td>
-                                <td className="py-2 font-mono">{p.status}</td>
-                              </tr>
-                            ))}
+                            {parsedResult.products.map((p) => {
+                              const conflict = parsedResult.conflicts.find(
+                                (c) =>
+                                  c.group === 'PRODUCTS' &&
+                                  c.line === p.lineNumber
+                              );
+                              const action = conflict
+                                ? (duplicateResolutions[
+                                    conflict.conflictKey
+                                  ] ?? conflict.defaultResolution)
+                                : 'insert';
+                              return (
+                                <tr
+                                  key={p.lineNumber}
+                                  className={
+                                    action === 'ignore' ? 'opacity-50' : ''
+                                  }
+                                >
+                                  <td className="py-2 pr-3 font-mono text-slate-400">
+                                    {p.lineNumber}
+                                  </td>
+                                  <td className="py-2 pr-3 font-bold text-(--color-text)">
+                                    {p.product_name}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono tabular-nums">
+                                    ₱{p.selling_price.toFixed(2)}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono tabular-nums">
+                                    {p.has_stock_limit
+                                      ? `${p.stock_quantity} (Alert: ${p.low_stock_alert ?? 'None'})`
+                                      : 'Unlimited'}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono text-slate-500">
+                                    {p.manufacturer_barcode || 'Auto PR-XXXX'}
+                                  </td>
+                                  <td className="py-2 font-mono text-[11px] font-bold uppercase">
+                                    {action === 'insert' ? (
+                                      <span className="text-emerald-600 dark:text-emerald-400">
+                                        Insert
+                                      </span>
+                                    ) : action === 'overwrite' ? (
+                                      <span className="text-blue-600 dark:text-blue-400">
+                                        Overwrite
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">
+                                        Ignored
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
@@ -1513,34 +2239,67 @@ export const DatabaseMigrationManager: React.FC<
                               <th className="py-2 pr-3">Phone</th>
                               <th className="py-2 pr-3">Plan</th>
                               <th className="py-2 pr-3">Term</th>
-                              <th className="py-2">Card</th>
+                              <th className="py-2 pr-3">Card</th>
+                              <th className="py-2">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-(--border-color)">
-                            {parsedResult.members.map((m) => (
-                              <tr key={m.lineNumber}>
-                                <td className="py-2 pr-3 font-mono text-slate-400">
-                                  {m.lineNumber}
-                                </td>
-                                <td className="py-2 pr-3 font-bold text-(--color-text)">
-                                  {m.full_name}
-                                </td>
-                                <td className="py-2 pr-3 font-mono">
-                                  {m.phone}
-                                </td>
-                                <td className="py-2 pr-3 font-mono uppercase">
-                                  {m.plan_type}
-                                </td>
-                                <td className="py-2 pr-3 font-mono tabular-nums text-slate-500">
-                                  {m.plan_type !== 'none'
-                                    ? `${m.start_date} -> ${m.end_date}`
-                                    : 'Profile Only'}
-                                </td>
-                                <td className="py-2 font-mono">
-                                  {m.issue_card ? m.card_type : 'None'}
-                                </td>
-                              </tr>
-                            ))}
+                            {parsedResult.members.map((m) => {
+                              const conflict = parsedResult.conflicts.find(
+                                (c) =>
+                                  c.group === 'MEMBERS' &&
+                                  c.line === m.lineNumber
+                              );
+                              const action = conflict
+                                ? (duplicateResolutions[
+                                    conflict.conflictKey
+                                  ] ?? conflict.defaultResolution)
+                                : 'insert';
+                              return (
+                                <tr
+                                  key={m.lineNumber}
+                                  className={
+                                    action === 'ignore' ? 'opacity-50' : ''
+                                  }
+                                >
+                                  <td className="py-2 pr-3 font-mono text-slate-400">
+                                    {m.lineNumber}
+                                  </td>
+                                  <td className="py-2 pr-3 font-bold text-(--color-text)">
+                                    {m.full_name}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono">
+                                    {m.phone}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono uppercase">
+                                    {m.plan_type}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono tabular-nums text-slate-500">
+                                    {m.plan_type !== 'none'
+                                      ? `${m.start_date} -> ${m.end_date}`
+                                      : 'Profile Only'}
+                                  </td>
+                                  <td className="py-2 pr-3 font-mono">
+                                    {m.issue_card ? m.card_type : 'None'}
+                                  </td>
+                                  <td className="py-2 font-mono text-[11px] font-bold uppercase">
+                                    {action === 'insert' ? (
+                                      <span className="text-emerald-600 dark:text-emerald-400">
+                                        Insert
+                                      </span>
+                                    ) : action === 'overwrite' ? (
+                                      <span className="text-blue-600 dark:text-blue-400">
+                                        Overwrite
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">
+                                        Ignored
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
@@ -1550,22 +2309,52 @@ export const DatabaseMigrationManager: React.FC<
               </div>
 
               {/* Explicit Confirmation Checkbox when DB is non-empty */}
-              {!isDbClean && parsedResult.isValid && !executionSummary && (
-                <label className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={nonEmptyOverrideAck}
-                    onChange={(e) => setNonEmptyOverrideAck(e.target.checked)}
-                    disabled={isMigrating}
-                    className="mt-0.5 w-4 h-4 accent-amber-500 cursor-pointer shrink-0"
-                  />
-                  <span className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
-                    I understand this database already has{' '}
-                    <strong>{dbSnapshot?.activeProductCount} product(s)</strong> and{' '}
-                    <strong>{dbSnapshot?.activeMemberCount} member(s)</strong>, and I confirm importing this verified CSV batch anyway.
-                  </span>
-                </label>
-              )}
+              {!isDbClean &&
+                parsedResult.isValid &&
+                totalActionableOps > 0 &&
+                !executionSummary && (
+                  <label className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={nonEmptyOverrideAck}
+                      onChange={(e) => setNonEmptyOverrideAck(e.target.checked)}
+                      disabled={isMigrating}
+                      className="mt-0.5 w-4 h-4 accent-amber-500 cursor-pointer shrink-0"
+                    />
+                    <span className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+                      I understand this database already has{' '}
+                      <strong>
+                        {dbSnapshot?.activeProductCount} product(s)
+                      </strong>{' '}
+                      and{' '}
+                      <strong>
+                        {dbSnapshot?.activeMemberCount} member(s)
+                      </strong>
+                      , and I confirm executing{' '}
+                      <strong>
+                        {resolvedPlan?.insertedCount ?? 0} insert(s)
+                      </strong>
+                      ,{' '}
+                      <strong>
+                        {resolvedPlan?.overwrittenCount ?? 0} overwrite(s)
+                      </strong>
+                      , and skipping{' '}
+                      <strong>
+                        {resolvedPlan?.ignoredCount ?? 0} ignored duplicate(s)
+                      </strong>
+                      .
+                    </span>
+                  </label>
+                )}
+
+              {/* Zero-action hint if all rows were ignored */}
+              {parsedResult.isValid &&
+                totalActionableOps === 0 &&
+                !executionSummary && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300 font-medium">
+                    Every row in this file matched an existing record and is currently set to Ignore. Switch at least one duplicate to Overwrite or upload new records to run migration.
+                  </div>
+                )}
 
               {/* Progress Indicator */}
               {isMigrating && (
@@ -1601,14 +2390,14 @@ export const DatabaseMigrationManager: React.FC<
               <button
                 type="button"
                 onClick={onClose}
-                disabled={isMigrating}
+                disabled={isMigrating || Boolean(undoingLogId)}
                 className="px-4 py-2.5 bg-(--bg-input) hover:bg-(--bg-page) text-(--color-text) rounded-xl text-xs font-heading font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-colors disabled:opacity-40 text-center"
               >
                 {executionSummary ? 'Done' : 'Close'}
               </button>
             ) : (
               <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                Audited via public.migration_audit_logs
+                Audited via public.migration_audit_logs • 24h Undo enabled
               </span>
             )}
 
@@ -1628,8 +2417,8 @@ export const DatabaseMigrationManager: React.FC<
                   <ShieldCheck className="w-4 h-4" />
                   <span>
                     Execute Verified Migration
-                    {parsedResult && parsedResult.isValid
-                      ? ` (${parsedResult.products.length} Products, ${parsedResult.members.length} Members)`
+                    {resolvedPlan && parsedResult?.isValid
+                      ? ` (${resolvedPlan.insertedCount} Insert, ${resolvedPlan.overwrittenCount} Overwrite, ${resolvedPlan.ignoredCount} Ignored)`
                       : ''}
                   </span>
                 </>

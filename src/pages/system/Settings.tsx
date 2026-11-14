@@ -6,6 +6,8 @@ import { GymProfile } from './GymProfile';
 import { RatesPayments } from './RatesPayments';
 import { UserManagement } from './UserManagement';
 import { DatabaseBackup } from './DatabaseBackup';
+import { DatabaseManager } from './DatabaseManager';
+import { DataMigration } from './DataMigration';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
@@ -20,6 +22,7 @@ import {
   CreditCard,
   Users,
   Database,
+  HardDrive,
   FileText,
   Camera,
   ChevronRight,
@@ -32,6 +35,7 @@ import {
   Zap,
   WifiOff,
   Type,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export type TabID =
@@ -41,6 +45,8 @@ export type TabID =
   | 'rates'
   | 'users'
   | 'backup'
+  | 'db-manager'
+  | 'migration'
   | 'audit'
   | 'info';
 
@@ -51,8 +57,10 @@ export const SETTINGS_TAB_ORDER: TabID[] = [
   'gym-profile',
   'rates',
   'users',
-  'backup',
   'audit',
+  'backup',
+  'db-manager',
+  'migration',
 ];
 
 export const getSettingsTabVerticalIndex = (tabId: TabID): number => {
@@ -65,6 +73,7 @@ export interface TabItem {
   description: string;
   icon: React.ComponentType<any>;
   adminOnly: boolean;
+  superAdminOnly?: boolean;
 }
 
 export const TABS: TabItem[] = [
@@ -111,18 +120,35 @@ export const TABS: TabItem[] = [
     adminOnly: true,
   },
   {
-    id: 'backup',
-    label: 'Database Backup',
-    description: 'Backup and restore data',
-    icon: Database,
-    adminOnly: true,
-  },
-  {
     id: 'audit',
     label: 'Audit Logs',
     description: 'View security history',
     icon: FileText,
     adminOnly: true,
+  },
+  {
+    id: 'backup',
+    label: 'Database Backup',
+    description: 'Backup and restore data',
+    icon: Database,
+    adminOnly: true,
+    superAdminOnly: true,
+  },
+  {
+    id: 'db-manager',
+    label: 'Database Manager',
+    description: 'SuperAdmin terminal & storage cleanup',
+    icon: HardDrive,
+    adminOnly: true,
+    superAdminOnly: true,
+  },
+  {
+    id: 'migration',
+    label: 'Data Migration',
+    description: 'CSV import, validation & rollback',
+    icon: FileSpreadsheet,
+    adminOnly: true,
+    superAdminOnly: true,
   },
 ];
 
@@ -133,6 +159,8 @@ export const TAB_URL_MAP: Record<TabID, string> = {
   rates: 'rates-and-payments',
   users: 'user-management',
   backup: 'database-backup',
+  'db-manager': 'database-manager',
+  migration: 'data-migration',
   audit: 'audit-logs',
   info: 'system-updates',
 };
@@ -145,6 +173,8 @@ const URL_TAB_MAP: Record<string, TabID> = {
   'rates-and-payments': 'rates',
   'user-management': 'users',
   'database-backup': 'backup',
+  'database-manager': 'db-manager',
+  'data-migration': 'migration',
   'audit-logs': 'audit',
   'system-updates': 'info',
   'system-information': 'info',
@@ -310,8 +340,34 @@ export default function Settings() {
   const isAdmin = userRole === 'admin' || isSuperAdminUser;
 
   const visibleTabs: TabItem[] = useMemo(() => {
-    return TABS.filter((tab: TabItem) => !tab.adminOnly || isAdmin);
-  }, [isAdmin]);
+    return TABS.filter(
+      (tab: TabItem) =>
+        (!tab.adminOnly || isAdmin) &&
+        (!tab.superAdminOnly || isSuperAdminUser)
+    );
+  }, [isAdmin, isSuperAdminUser]);
+
+  // Redirect away if a user directly accesses an Admin or SuperAdmin-only Settings URL without permission
+  useEffect(() => {
+    if (!urlTabParam) return;
+    const targetTab = TABS.find((t) => t.id === activeTabId);
+    if (!targetTab) return;
+
+    if (targetTab.superAdminOnly && !isSuperAdminUser) {
+      toast.error('Access denied: SuperAdmin clearance is required.', {
+        toastId: 'settings-superadmin-denied',
+      });
+      navigate('/settings/personal-account', { replace: true });
+      return;
+    }
+
+    if (targetTab.adminOnly && !isAdmin) {
+      toast.error('Access denied: Admin privileges are required.', {
+        toastId: 'settings-admin-denied',
+      });
+      navigate('/settings/personal-account', { replace: true });
+    }
+  }, [urlTabParam, activeTabId, isAdmin, isSuperAdminUser, navigate]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
@@ -538,61 +594,99 @@ export default function Settings() {
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
           } xl:hidden w-full shrink-0 pb-16`}
         >
-          <nav className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 sm:px-0">
-            {visibleTabs.map((tab: TabItem) => {
-              const Icon = tab.icon;
-              const isActive = activeTabId === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabClick(tab.id)}
-                  className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left ${
-                    isActive
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                      : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 hover:bg-blue-500/5 dark:hover:bg-blue-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`p-2 rounded-lg transition-colors ${
-                        isActive
-                          ? 'bg-white/15 text-white'
-                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400'
-                      }`}
-                    >
-                      <Icon className="w-6 h-6 shrink-0" />
-                    </div>
-                    <div>
-                      <h3
-                        className={`font-semibold text-sm xl:text-base transition-colors ${
+          <nav className="space-y-6 px-2 sm:px-0">
+            {[
+              {
+                title: 'Personal Area',
+                tabs: visibleTabs.filter((t) => !t.adminOnly),
+              },
+              ...(isAdmin
+                ? [
+                    {
+                      title: 'Admin Console',
+                      tabs: visibleTabs.filter(
+                        (t) => t.adminOnly && !t.superAdminOnly
+                      ),
+                    },
+                  ]
+                : []),
+              ...(isSuperAdminUser
+                ? [
+                    {
+                      title: 'Superadmin Console',
+                      tabs: visibleTabs.filter((t) => t.superAdminOnly),
+                    },
+                  ]
+                : []),
+            ].map((section) => (
+              <div key={section.title} className="space-y-2.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                  {section.title}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.tabs.map((tab: TabItem) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTabId === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleTabClick(tab.id)}
+                        className={`group flex items-center justify-between p-4 rounded-xl border transition-colors duration-150 cursor-pointer text-left ${
                           isActive
-                            ? 'text-white'
-                            : 'text-slate-800 dark:text-slate-100'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                            : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-zinc-800 hover:border-blue-500 hover:bg-blue-500/5 dark:hover:bg-blue-500/10 active:bg-slate-100 dark:active:bg-zinc-800'
                         }`}
                       >
-                        {tab.label}
-                      </h3>
-                      <p
-                        className={`text-xs transition-colors mt-0.5 ${
-                          isActive
-                            ? 'text-slate-200'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        {tab.description}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight
-                    className={`w-5 h-5 shrink-0 transition-transform ${
-                      isActive
-                        ? 'text-white translate-x-1'
-                        : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400'
-                    }`}
-                  />
-                </button>
-              );
-            })}
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={`p-2 rounded-lg transition-colors ${
+                              isActive
+                                ? 'bg-white/15 text-white'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400'
+                            }`}
+                          >
+                            <Icon className="w-6 h-6 shrink-0" />
+                          </div>
+                          <div>
+                            <h3
+                              className={`font-semibold text-sm xl:text-base transition-colors ${
+                                isActive
+                                  ? 'text-white'
+                                  : 'text-slate-800 dark:text-slate-100'
+                              }`}
+                            >
+                              {tab.label}
+                            </h3>
+                            <p
+                              className={`text-xs transition-colors mt-0.5 ${
+                                isActive
+                                  ? 'text-slate-200'
+                                  : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              {tab.description}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight
+                          className={`w-5 h-5 shrink-0 transition-transform ${
+                            isActive
+                              ? 'text-white translate-x-1'
+                              : 'text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400'
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                Preferences
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
             {/* Dynamic Theme Toggle in Mobile List */}
             <button
@@ -747,6 +841,8 @@ export default function Settings() {
                 </span>
               </button>
             )}
+              </div>
+            </div>
           </nav>
         </div>
 
@@ -787,7 +883,37 @@ export default function Settings() {
               </h4>
               <div className="flex flex-col gap-1">
                 {visibleTabs
-                  .filter((t) => t.adminOnly)
+                  .filter((t) => t.adminOnly && !t.superAdminOnly)
+                  .map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTabId === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => handleTabClick(tab.id)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left cursor-pointer active:scale-98 ${
+                          isActive
+                            ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {isSuperAdminUser && (
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-3 px-4">
+                Superadmin Console
+              </h4>
+              <div className="flex flex-col gap-1">
+                {visibleTabs
+                  .filter((t) => t.superAdminOnly)
                   .map((tab) => {
                     const Icon = tab.icon;
                     const isActive = activeTabId === tab.id;
@@ -1034,11 +1160,23 @@ export default function Settings() {
                     </div>
                   )}
 
-                  {activeTab === 'gym-profile' && <GymProfile />}
-                  {activeTab === 'rates-and-payments' && <RatesPayments />}
-                  {activeTab === 'user-management' && <UserManagement />}
-                  {activeTab === 'database-backup' && <DatabaseBackup />}
-                  {activeTab === 'audit-logs' && <AuditLogs />}
+                  {activeTab === 'gym-profile' && isAdmin && <GymProfile />}
+                  {activeTab === 'rates-and-payments' && isAdmin && (
+                    <RatesPayments />
+                  )}
+                  {activeTab === 'user-management' && isAdmin && (
+                    <UserManagement />
+                  )}
+                  {activeTab === 'audit-logs' && isAdmin && <AuditLogs />}
+                  {activeTab === 'database-backup' && isSuperAdminUser && (
+                    <DatabaseBackup />
+                  )}
+                  {activeTab === 'database-manager' && isSuperAdminUser && (
+                    <DatabaseManager />
+                  )}
+                  {activeTab === 'data-migration' && isSuperAdminUser && (
+                    <DataMigration />
+                  )}
                   {(activeTab === 'system-updates' ||
                     activeTab === 'system-information' ||
                     activeTab === 'updates' ||

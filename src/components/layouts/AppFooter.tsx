@@ -138,6 +138,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     return 'staff';
   }, [user?.email, profile?.role]);
 
+  const isSuperAdminUser = isSuperAdmin(user?.email);
   const isAdmin = userRole === 'admin';
 
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -311,14 +312,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   }, [userRole]);
 
   const settingsNavLinks = useMemo(() => {
-    return SETTINGS_TABS.filter((tab) => !tab.adminOnly || isAdmin).map(
-      (tab) => ({
-        name: toTitleCase(tab.label),
-        path: `/settings/${TAB_URL_MAP[tab.id]}`,
-        description: tab.description,
-      })
-    );
-  }, [isAdmin]);
+    return SETTINGS_TABS.filter(
+      (tab) =>
+        (!tab.adminOnly || isAdmin) && (!tab.superAdminOnly || isSuperAdminUser)
+    ).map((tab) => ({
+      name: toTitleCase(tab.label),
+      path: `/settings/${TAB_URL_MAP[tab.id]}`,
+      description: tab.description,
+    }));
+  }, [isAdmin, isSuperAdminUser]);
 
   const publicPortalLinks = useMemo(() => {
     const links = [
