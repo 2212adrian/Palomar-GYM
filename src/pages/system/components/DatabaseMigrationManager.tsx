@@ -185,7 +185,7 @@ export const DatabaseMigrationManager: React.FC<
         fetchRecentRevertibleMigrations(),
       ]);
       setAuditLogs(res.logs);
-      setRecentRevertibleBatches(revertibleRes.logs);
+      setRecentRevertibleBatches(revertibleRes);
       setAuditTableUnavailable(res.tableUnavailable);
       return res.logs;
     } finally {

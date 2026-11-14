@@ -16,6 +16,28 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.7',
+    date: '2026-11-14',
+    summary:
+      'Super Admin Database & Migration Modules: Introduced DatabaseManager and DataMigration tabs in System Settings with superAdminOnly guards, email-verified SuperAdmin UI restrictions, and rollback manifest support in migration audit logs.',
+    sections: [
+      {
+        type: 'System Settings & SuperAdmin Modules',
+        items: [
+          'DatabaseManager & DataMigration Tabs: Added dedicated DatabaseManager and DataMigration tabs to System Settings for database management and data migration workflows.',
+          'SuperAdmin-Only Access Guard: Implemented the superAdminOnly guard to protect sensitive database and migration tools.',
+          'Email-Verified UI Restrictions: Updated the UI to restrict access strictly to SuperAdmin users based on email verification.',
+        ],
+      },
+      {
+        type: 'Migration Audit Logs & Rollback Support',
+        items: [
+          'Rollback Manifest Support: Expanded migration audit logs to store and support rollback manifests for migration batches.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.6',
     date: '2026-11-13',
     summary:
