@@ -16,6 +16,44 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.8',
+    date: '2026-11-15',
+    summary:
+      'Encrypted AES-256-GCM database backup exports/imports, Online Registration closed-session gate and live portal URL resolution, strict duplicate member name prevention, standardized form character limits, uppercase product normalization, SuperAdmin Google unlink lock, Settings header quick toggles, and removal of GPS/Device Permissions.',
+    sections: [
+      {
+        type: 'Database Backup, Security & Admin Controls',
+        items: [
+          'Encrypted Backup Export & Validated Import: Added password re-authenticated (verify_user_password RPC) Export Data and Import Data workflows in Database Backup using an opaque AES-256-GCM encrypted .wpenc format, strict schema validation, and duplicate resolution prior to batch insertion.',
+          'SuperAdmin Google Unlink Lock: Prevented SuperAdmin accounts from unlinking their connected Google account inside Personal Account settings.',
+          'Database Manager Cleanup: Removed the Sync Conflicts tab along with its client-side state and queries, relying on automated 24-hour pg_cron purges for cleanup.',
+        ],
+      },
+      {
+        type: 'Online Registration & Portal Safeguards',
+        items: [
+          'Closed Cash Session Gate: Added the is_gym_open SECURITY DEFINER RPC checked on initial load, polling, and form submission; when no open cash session exists, Online Registration blocks submissions and displays "Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later."',
+          'Live Portal Domain Resolution: Added buildPublicPortalUrl so Open Form, Copy Link, and QR posters dynamically resolve to the live web domain (or active origin) instead of http://localhost:9999/register.',
+        ],
+      },
+      {
+        type: 'Data Integrity, Validation & Normalization',
+        items: [
+          'Strict Duplicate Full-Name Prevention: Blocked duplicate normalized member full names across memberService (create/update), SubscriptionPlan, MemberProfileView, MemberFormModal, and OnlineRegistrationPage, backed by the check_member_name_exists SECURITY DEFINER RPC.',
+          'Input Validation & Character Limits: Enforced maxLength attributes and validation rules across Online Registration and Subscription/Profile forms—Last/First Name (50), M.I. (5), Suffix (10), Full/Emergency/Parent Name (100), Address (150 with live character counter), Phone Numbers (10–15 numeric digits), and Email (254).',
+          'Uppercase Product Name Normalization: Standardized product names to uppercase across single/bulk creation and editing, product displays, and CSV migration/backup processing.',
+        ],
+      },
+      {
+        type: 'Settings UI & Permissions Cleanup',
+        items: [
+          'Settings Header Quick Toggles: Moved Light Theme, Standard Heading Fonts, and Battery Saving controls to the right side of the Settings header as icon-only buttons featuring an active blue glow, neutral inactive state, and descriptive hover tooltips.',
+          'Location (GPS) & Device Permissions Removal: Stripped @capacitor/geolocation, Android manifest location permissions/features, Gradle references, permission helpers, GPS agreement phrasing, and the Device Permissions settings tab/page.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.7',
     date: '2026-11-14',
     summary:
