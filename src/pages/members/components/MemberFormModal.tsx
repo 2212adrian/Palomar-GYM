@@ -58,9 +58,17 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in font-body text-xs text-(--color-text)">
       <form
         onSubmit={(e) => {
-          const normalized = formFullName.trim().toUpperCase();
+          e.preventDefault();
+          const normalized = formFullName.trim().replace(/\s+/g, ' ').toUpperCase();
           if (normalized !== formFullName) {
             setFormFullName(normalized);
+          }
+          const digitsOnlyPhone = formPhone.replace(/\D/g, '');
+          if (
+            formPhone.trim() &&
+            (digitsOnlyPhone.length < 10 || digitsOnlyPhone.length > 15)
+          ) {
+            return;
           }
           onSave(e);
         }}
@@ -147,6 +155,7 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
             </label>
             <input
               type="text"
+              maxLength={100}
               value={formFullName}
               onChange={(e) => setFormFullName(e.target.value)}
               autoComplete="off"
@@ -163,14 +172,15 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
               Phone Number
             </label>
             <input
-              type="text"
+              type="tel"
+              maxLength={15}
               value={formPhone}
-              onChange={(e) => setFormPhone(e.target.value)}
+              onChange={(e) => setFormPhone(e.target.value.replace(/\D/g, ''))}
               autoComplete="off"
               spellCheck={false}
               autoCorrect="off"
-              className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none"
-              placeholder="09XXXXXXXXX"
+              className="w-full p-2.5 border border-slate-200 dark:border-white/10 rounded-xl bg-(--bg-page) text-slate-900 dark:text-white outline-none font-mono"
+              placeholder="09171234567"
             />
           </div>
 
@@ -180,6 +190,7 @@ export const MemberFormModal: React.FC<MemberFormModalProps> = ({
             </label>
             <input
               type="email"
+              maxLength={254}
               value={formEmail}
               onChange={(e) => setFormEmail(e.target.value)}
               autoComplete="off"

@@ -11,10 +11,8 @@ import { DataMigration } from './DataMigration';
 import { AuditLogs } from './AuditLogs';
 import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
-import { PermissionsSettings } from './PermissionsSettings';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { useHeadingFont } from '../../hooks/useHeadingFont';
-import { isCapacitorApp } from '../../lib/platform';
 import { toast } from 'react-toastify';
 import {
   User as UserIcon,
@@ -24,13 +22,11 @@ import {
   Database,
   HardDrive,
   FileText,
-  Camera,
   ChevronRight,
   ChevronLeft,
   Save,
   Loader2,
   Sun,
-  Moon,
   RefreshCw,
   Zap,
   WifiOff,
@@ -40,7 +36,6 @@ import {
 
 export type TabID =
   | 'account'
-  | 'security-permissions'
   | 'gym-profile'
   | 'rates'
   | 'users'
@@ -52,7 +47,6 @@ export type TabID =
 
 export const SETTINGS_TAB_ORDER: TabID[] = [
   'account',
-  'security-permissions',
   'info',
   'gym-profile',
   'rates',
@@ -82,13 +76,6 @@ export const TABS: TabItem[] = [
     label: 'Personal Account',
     description: 'Update your account credentials',
     icon: UserIcon,
-    adminOnly: false,
-  },
-  {
-    id: 'security-permissions',
-    label: 'Device Permissions',
-    description: 'Hardware, camera & notification access',
-    icon: Camera,
     adminOnly: false,
   },
   {
@@ -154,7 +141,6 @@ export const TABS: TabItem[] = [
 
 export const TAB_URL_MAP: Record<TabID, string> = {
   account: 'personal-account',
-  'security-permissions': 'security-and-permissions',
   'gym-profile': 'gym-profile',
   rates: 'rates-and-payments',
   users: 'user-management',
@@ -167,8 +153,6 @@ export const TAB_URL_MAP: Record<TabID, string> = {
 
 const URL_TAB_MAP: Record<string, TabID> = {
   'personal-account': 'account',
-  'security-and-permissions': 'security-permissions',
-  'device-permissions': 'security-permissions',
   'gym-profile': 'gym-profile',
   'rates-and-payments': 'rates',
   'user-management': 'users',
@@ -257,7 +241,6 @@ export default function Settings() {
     };
   }, []);
 
-  const isNativeCapacitor = useMemo(() => isCapacitorApp(), []);
   const { activeTab: urlTabParam } = useParams<{ activeTab: string }>();
   const navigate = useNavigate();
 
@@ -576,14 +559,95 @@ export default function Settings() {
       `}</style>
 
       {/* Header */}
-      <div className="hidden xl:block mb-6 shrink-0">
-        <h1 className="text-xl font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase">
-          System Settings
-        </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Manage your account security, pre-register staff personnel, and update
-          gym attributes.
-        </p>
+      <div className="hidden xl:flex items-center justify-between gap-4 mb-6 shrink-0">
+        <div>
+          <h1 className="text-xl font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase">
+            System Settings
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Manage your account security, pre-register staff personnel, and
+            update gym attributes.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={
+              theme === 'light'
+                ? 'Light Theme: Active — Click to switch to Dark Theme'
+                : 'Light Theme: Inactive (Dark Mode) — Click to enable Light Theme'
+            }
+            aria-label="Toggle Light Theme"
+            aria-pressed={theme === 'light'}
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+              theme === 'light'
+                ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 hover:border-blue-500/60 hover:text-blue-600 dark:hover:text-blue-400 shadow-none'
+            }`}
+          >
+            <Sun className="w-4 h-4 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = toggleHeadingFont();
+              toast.info(
+                next === 'system'
+                  ? 'Heading font switched to standard system font for easier reading.'
+                  : 'Heading font switched back to Freshman display font.',
+                { toastId: 'heading-font-toggle' }
+              );
+            }}
+            title={
+              isSystemHeadingFont
+                ? 'Standard Heading Font: Active — Click to switch back to Freshman display font'
+                : 'Standard Heading Font: Inactive (Freshman Display Active) — Click to switch to Standard System Font'
+            }
+            aria-label="Toggle Standard Heading Font"
+            aria-pressed={isSystemHeadingFont}
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+              isSystemHeadingFont
+                ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 hover:border-blue-500/60 hover:text-blue-600 dark:hover:text-blue-400 shadow-none'
+            }`}
+          >
+            <Type className="w-4 h-4 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = toggleBatterySaver();
+              toast.info(
+                next
+                  ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
+                  : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
+                { toastId: 'battery-saver-toggle' }
+              );
+            }}
+            title={
+              isBatterySaver
+                ? `Battery Saving Mode: Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
+                : `Battery Saving Mode: Inactive (Auto at ≤20%${batteryLevel !== null ? ` • ${batteryLevel}%` : ''}) — Click to enable`
+            }
+            aria-label="Toggle Battery Saving Mode"
+            aria-pressed={isBatterySaver}
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+              isBatterySaver
+                ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 hover:border-blue-500/60 hover:text-blue-600 dark:hover:text-blue-400 shadow-none'
+            }`}
+          >
+            <Zap
+              className={`w-4 h-4 shrink-0 ${
+                isBatterySaver ? 'fill-white text-white' : ''
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Main Split-View Area */}
@@ -594,6 +658,95 @@ export default function Settings() {
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
           } xl:hidden w-full shrink-0 pb-16`}
         >
+          <div className="flex items-center justify-between gap-3 px-2 sm:px-0 mb-4">
+            <div className="min-w-0">
+              <h1 className="text-base font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase truncate">
+                System Settings
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Quick preferences &amp; modules
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={
+                  theme === 'light'
+                    ? 'Light Theme: Active — Click to switch to Dark Theme'
+                    : 'Light Theme: Inactive (Dark Mode) — Click to enable Light Theme'
+                }
+                aria-label="Toggle Light Theme"
+                aria-pressed={theme === 'light'}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+                  theme === 'light'
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                    : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 shadow-none'
+                }`}
+              >
+                <Sun className="w-4 h-4 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = toggleHeadingFont();
+                  toast.info(
+                    next === 'system'
+                      ? 'Heading font switched to standard system font for easier reading.'
+                      : 'Heading font switched back to Freshman display font.',
+                    { toastId: 'heading-font-toggle' }
+                  );
+                }}
+                title={
+                  isSystemHeadingFont
+                    ? 'Standard Heading Font: Active — Click to switch back to Freshman display font'
+                    : 'Standard Heading Font: Inactive (Freshman Display Active) — Click to switch to Standard System Font'
+                }
+                aria-label="Toggle Standard Heading Font"
+                aria-pressed={isSystemHeadingFont}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+                  isSystemHeadingFont
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                    : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 shadow-none'
+                }`}
+              >
+                <Type className="w-4 h-4 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = toggleBatterySaver();
+                  toast.info(
+                    next
+                      ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
+                      : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
+                    { toastId: 'battery-saver-toggle' }
+                  );
+                }}
+                title={
+                  isBatterySaver
+                    ? `Battery Saving Mode: Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
+                    : `Battery Saving Mode: Inactive (Auto at ≤20%${batteryLevel !== null ? ` • ${batteryLevel}%` : ''}) — Click to enable`
+                }
+                aria-label="Toggle Battery Saving Mode"
+                aria-pressed={isBatterySaver}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 ${
+                  isBatterySaver
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_16px_rgba(37,99,235,0.65)] ring-2 ring-blue-500/35'
+                    : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-800 shadow-none'
+                }`}
+              >
+                <Zap
+                  className={`w-4 h-4 shrink-0 ${
+                    isBatterySaver ? 'fill-white text-white' : ''
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           <nav className="space-y-6 px-2 sm:px-0">
             {[
               {
@@ -682,167 +835,6 @@ export default function Settings() {
               </div>
             ))}
 
-            <div className="space-y-2.5">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
-                Preferences
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-            {/* Dynamic Theme Toggle in Mobile List */}
-            <button
-              onClick={toggleTheme}
-              className="group/theme flex items-center justify-between p-4 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-colors duration-150 cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-2 rounded-lg bg-white dark:bg-[#111315] border border-slate-200/50 dark:border-white/5 shadow-xs">
-                  {theme === 'dark' ? (
-                    <Sun className="w-6 h-6 text-amber-400 shrink-0" />
-                  ) : (
-                    <Moon className="w-6 h-6 text-indigo-400 shrink-0" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                    {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {theme === 'dark'
-                      ? 'Switch to Light Mode layout'
-                      : 'Switch to Dark Mode layout'}
-                  </p>
-                </div>
-              </div>
-              <div
-                className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden"
-                aria-hidden="true"
-              >
-                {theme === 'dark' ? (
-                  <>
-                    <span className="w-3.5 h-3.5 bg-[#f0f4f8]" />
-                    <span className="w-3.5 h-3.5 bg-[#123c73]" />
-                    <span className="w-3.5 h-3.5 bg-[#ffffff]" />
-                  </>
-                ) : (
-                  <>
-                    <span className="w-3.5 h-3.5 bg-[#0c0e12]" />
-                    <span className="w-3.5 h-3.5 bg-[#2563eb]" />
-                    <span className="w-3.5 h-3.5 bg-[#161920]" />
-                  </>
-                )}
-              </div>
-            </button>
-
-            {/* Heading Font Toggle in Mobile List */}
-            <button
-              type="button"
-              onClick={() => {
-                const next = toggleHeadingFont();
-                toast.info(
-                  next === 'system'
-                    ? 'Heading font switched to standard system font for easier reading.'
-                    : 'Heading font switched back to Freshman display font.',
-                  { toastId: 'heading-font-toggle' }
-                );
-              }}
-              className={`group/font flex items-center justify-between p-4 rounded-xl border border-dashed transition-colors duration-150 cursor-pointer text-left ${
-                isSystemHeadingFont
-                  ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/15 text-blue-800 dark:text-blue-200'
-                  : 'border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className={`p-2 rounded-lg border shadow-xs ${
-                    isSystemHeadingFont
-                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-600 dark:text-blue-400'
-                      : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-blue-600 dark:text-blue-400'
-                  }`}
-                >
-                  <Type className="w-6 h-6 shrink-0" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                    HEADING FONT
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {isSystemHeadingFont
-                      ? 'Standard System Font • Tap for Freshman'
-                      : 'Freshman Display • Tap for System Font'}
-                  </p>
-                </div>
-              </div>
-              <span
-                className={`px-2.5 py-1 rounded-lg text-xs font-heading font-bold uppercase tracking-wider shrink-0 border ${
-                  isSystemHeadingFont
-                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40'
-                    : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-700 dark:text-slate-200 border-slate-300/60 dark:border-zinc-700'
-                }`}
-              >
-                {isSystemHeadingFont ? 'SYSTEM' : 'FRESHMAN'}
-              </span>
-            </button>
-
-            {/* Power Saving Mode Toggle in Mobile List - Capacitor App Only */}
-            {isNativeCapacitor && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = toggleBatterySaver();
-                  toast.info(
-                    next
-                      ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
-                      : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
-                    { toastId: 'battery-saver-toggle' }
-                  );
-                }}
-                className={`group/eco flex items-center justify-between p-4 rounded-xl border border-dashed transition-all duration-200 cursor-pointer text-left active:scale-95 ${
-                  isBatterySaver
-                    ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15 text-amber-800 dark:text-amber-300'
-                    : 'border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`p-2 rounded-lg border shadow-xs ${
-                      isBatterySaver
-                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-500'
-                        : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-slate-400'
-                    }`}
-                  >
-                    <Zap
-                      className={`w-6 h-6 shrink-0 ${
-                        isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                      POWER SAVING MODE
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      {isBatterySaver
-                        ? `Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Tap to disable`
-                        : `Auto-turns on at ≤20% battery${batteryLevel !== null ? ` • ${batteryLevel}%` : ''}`}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider shrink-0 border ${
-                    isBatterySaver
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40'
-                      : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-300/60 dark:border-zinc-700'
-                  }`}
-                >
-                  {isBatterySaver
-                    ? isAutoTriggered
-                      ? 'AUTO ON'
-                      : 'ECO ON'
-                    : 'OFF'}
-                </span>
-              </button>
-            )}
-              </div>
-            </div>
           </nav>
         </div>
 
@@ -936,161 +928,6 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Dynamic Theme & Power Saving Toggles in PC Sidebar */}
-          <div className="px-4 pt-4 border-t border-slate-200 dark:border-white/5 mt-2 space-y-2.5 animate-slide-up">
-            <button
-              onClick={toggleTheme}
-              className="w-full flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300 transition-all cursor-pointer group/theme"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-white dark:bg-[#111315] shadow-xs border border-slate-200/50 dark:border-white/5">
-                  {theme === 'dark' ? (
-                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
-                  ) : (
-                    <Moon className="w-4 h-4 text-indigo-500 shrink-0" />
-                  )}
-                </div>
-                <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
-                  {theme === 'dark' ? 'LIGHT THEME' : 'DARK THEME'}
-                </span>
-              </div>
-              <div
-                className="flex border border-slate-300 dark:border-white/15 rounded-sm overflow-hidden scale-90"
-                aria-hidden="true"
-              >
-                {theme === 'dark' ? (
-                  <>
-                    <span className="w-2.5 h-2.5 bg-[#f0f4f8]" />
-                    <span className="w-2.5 h-2.5 bg-[#123c73]" />
-                    <span className="w-2.5 h-2.5 bg-[#ffffff]" />
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2.5 h-2.5 bg-[#0c0e12]" />
-                    <span className="w-2.5 h-2.5 bg-[#2563eb]" />
-                    <span className="w-2.5 h-2.5 bg-[#161920]" />
-                  </>
-                )}
-              </div>
-            </button>
-
-            {/* Heading Font Toggle in PC Sidebar */}
-            <button
-              type="button"
-              onClick={() => {
-                const next = toggleHeadingFont();
-                toast.info(
-                  next === 'system'
-                    ? 'Heading font switched to standard system font for easier reading.'
-                    : 'Heading font switched back to Freshman display font.',
-                  { toastId: 'heading-font-toggle' }
-                );
-              }}
-              title={
-                isSystemHeadingFont
-                  ? 'Currently using Standard System Font for headings — Click to switch to Freshman'
-                  : 'Currently using Freshman Display Font for headings — Click to switch to System Font'
-              }
-              className={`w-full flex items-center justify-between p-3 rounded-xl border border-dashed transition-all cursor-pointer ${
-                isSystemHeadingFont
-                  ? 'border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/15 text-blue-700 dark:text-blue-200'
-                  : 'border-slate-200 dark:border-white/10 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`p-2 rounded-lg shadow-xs border ${
-                    isSystemHeadingFont
-                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-600 dark:text-blue-400'
-                      : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-blue-600 dark:text-blue-400'
-                  }`}
-                >
-                  <Type className="w-4 h-4 shrink-0" />
-                </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
-                    HEADING FONT
-                  </span>
-                  <span className="text-[9px] text-slate-500 dark:text-slate-400">
-                    {isSystemHeadingFont ? 'System Font' : 'Freshman'}
-                  </span>
-                </div>
-              </div>
-              <span
-                className={`px-2 py-0.5 rounded-md text-[9px] font-heading font-bold uppercase tracking-wider border ${
-                  isSystemHeadingFont
-                    ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40'
-                    : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-300/60 dark:border-zinc-700'
-                }`}
-              >
-                {isSystemHeadingFont ? 'SYS' : 'FRM'}
-              </span>
-            </button>
-
-            {/* Power Saving Mode Toggle in PC Sidebar - Capacitor App Only */}
-            {isNativeCapacitor && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = toggleBatterySaver();
-                  toast.info(
-                    next
-                      ? 'Power Saving Mode enabled: global animations, camera FPS, and background polling are optimized.'
-                      : 'Power Saving Mode disabled. Auto-activation remains armed at 20% or under battery.',
-                    { toastId: 'battery-saver-toggle' }
-                  );
-                }}
-                title={
-                  isBatterySaver
-                    ? `Power Saving Active${isAutoTriggered ? ' (Auto ≤20%)' : ''}${batteryLevel !== null ? ` • ${batteryLevel}%` : ''} — Click to disable`
-                    : `Enable Power Saving Mode (Auto-activates at ≤20% battery${batteryLevel !== null ? ` • Current: ${batteryLevel}%` : ''})`
-                }
-                className={`w-full flex items-center justify-between p-3 rounded-xl border border-dashed transition-all cursor-pointer ${
-                  isBatterySaver
-                    ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                    : 'border-slate-200 dark:border-white/10 hover:border-amber-500/60 bg-slate-50/50 dark:bg-neutral-900/20 hover:bg-slate-100 dark:hover:bg-neutral-900/40 text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`p-2 rounded-lg shadow-xs border ${
-                      isBatterySaver
-                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-500'
-                        : 'bg-white dark:bg-[#111315] border-slate-200/50 dark:border-white/5 text-slate-400'
-                    }`}
-                  >
-                    <Zap
-                      className={`w-4 h-4 shrink-0 ${
-                        isBatterySaver ? 'fill-amber-500 text-amber-500' : ''
-                      }`}
-                    />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-[10px] font-heading font-black tracking-widest uppercase text-slate-800 dark:text-slate-200">
-                      POWER SAVING
-                    </span>
-                    <span className="text-[9px] text-slate-500 dark:text-slate-400">
-                      {isBatterySaver
-                        ? isAutoTriggered
-                          ? 'Auto ON (≤20%)'
-                          : 'Optimized'
-                        : 'Auto at ≤20%'}{' '}
-                      {batteryLevel !== null ? `• ${batteryLevel}%` : ''}
-                    </span>
-                  </div>
-                </div>
-                <span
-                  className={`px-2 py-0.5 rounded-md text-[9px] font-heading font-bold uppercase tracking-wider border ${
-                    isBatterySaver
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40'
-                      : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-300/60 dark:border-zinc-700'
-                  }`}
-                >
-                  {isBatterySaver ? 'ECO ON' : 'OFF'}
-                </span>
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Conditional Workspace Frame (h-auto on mobile, h-full on desktop) */}
@@ -1152,13 +989,6 @@ export default function Settings() {
               ) : (
                 <>
                   {activeTab === 'personal-account' && <PersonalAccount />}
-
-                  {(activeTab === 'security-and-permissions' ||
-                    activeTab === 'device-permissions') && (
-                    <div className="w-full">
-                      <PermissionsSettings />
-                    </div>
-                  )}
 
                   {activeTab === 'gym-profile' && isAdmin && <GymProfile />}
                   {activeTab === 'rates-and-payments' && isAdmin && (

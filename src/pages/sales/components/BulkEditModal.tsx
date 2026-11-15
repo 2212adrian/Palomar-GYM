@@ -126,7 +126,7 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           value={p.product_name}
           maxLength={100}
           onChange={(e) => {
-            const val = e.target.value;
+            const val = e.target.value.toUpperCase();
             setEditedProducts((prev) =>
               prev.map((item) =>
                 item.id === p.id ? { ...item, product_name: val } : item
@@ -136,7 +136,7 @@ const BulkEditRow: React.FC<BulkEditRowProps> = ({
           autoComplete="off"
           spellCheck={false}
           autoCorrect="off"
-          className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
+          className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-white dark:bg-[#151922] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold uppercase"
         />
       </td>
 
@@ -358,7 +358,7 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
             value={p.product_name}
             maxLength={100}
             onChange={(e) => {
-              const val = e.target.value;
+              const val = e.target.value.toUpperCase();
               setEditedProducts((prev) =>
                 prev.map((item) =>
                   item.id === p.id ? { ...item, product_name: val } : item
@@ -368,7 +368,7 @@ const BulkEditCard: React.FC<BulkEditCardProps> = ({
             autoComplete="off"
             spellCheck={false}
             autoCorrect="off"
-            className="w-full mt-1.5 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold"
+            className="w-full mt-1.5 px-3 py-1.5 border border-slate-300 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-[#12161f] text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500 font-semibold uppercase"
           />
         </div>
       </div>
@@ -557,7 +557,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     return selectedProducts.map((p) => ({
       id: p.id,
       barcode_id: p.barcode_id,
-      product_name: p.product_name,
+      product_name: (p.product_name || '').toUpperCase(),
       selling_price: p.selling_price.toString(),
       has_stock_limit: p.has_stock_limit,
       stock_quantity: p.stock_quantity.toString(),
@@ -645,7 +645,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         return {
           id: original.id,
           barcode_id: original.barcode_id,
-          product_name: original.product_name,
+          product_name: (original.product_name || '').toUpperCase(),
           selling_price: original.selling_price.toString(),
           has_stock_limit: original.has_stock_limit,
           stock_quantity: original.stock_quantity.toString(),
@@ -662,7 +662,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       selectedProducts.map((p) => ({
         id: p.id,
         barcode_id: p.barcode_id,
-        product_name: p.product_name,
+        product_name: (p.product_name || '').toUpperCase(),
         selling_price: p.selling_price.toString(),
         has_stock_limit: p.has_stock_limit,
         stock_quantity: p.stock_quantity.toString(),
@@ -830,11 +830,12 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       const auditDetails = modifiedItems
         .map((p) => {
           const original = originalMap.get(p.id);
-          if (!original) return `"${p.product_name.trim()}"`;
+          const upperName = p.product_name.trim().toUpperCase();
+          if (!original) return `"${upperName}"`;
 
           const changes: string[] = [];
-          if (p.product_name.trim() !== original.product_name) {
-            changes.push(`Name: "${original.product_name}" -> "${p.product_name.trim()}"`);
+          if (upperName !== original.product_name) {
+            changes.push(`Name: "${original.product_name}" -> "${upperName}"`);
           }
           const priceNum = parseFloat(p.selling_price);
           if (priceNum !== original.selling_price) {
@@ -859,7 +860,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       const updatePromises = modifiedItems.map((p) => {
         const payload = {
-          product_name: p.product_name.trim(),
+          product_name: p.product_name.trim().toUpperCase(),
           selling_price: parseFloat(p.selling_price),
           has_stock_limit: p.has_stock_limit,
           stock_quantity: p.has_stock_limit ? parseInt(p.stock_quantity) || 0 : 0,

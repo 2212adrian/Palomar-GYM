@@ -387,12 +387,12 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
       <p>
         Staff and Administrator accounts are protected by 6-digit Email
         Two-Factor Authentication (2FA), hCaptcha verification, and optional
-        Facility Access Restrictions (GPS geofence radius and authorized
-        Wi-Fi/IP validation). Authorized personnel must never share login
-        credentials, 2FA verification codes, or attempt to spoof geolocation or
-        network restrictions. Administrators and the Superadmin actively monitor
-        terminal sessions and may trigger instant remote session revocation
-        (Force Sign-Out) at any time.
+        Facility Network Validation (authorized Wi-Fi/IP validation).
+        Authorized personnel must never share login credentials, 2FA
+        verification codes, or attempt to bypass network restrictions.
+        Administrators and the Superadmin actively monitor terminal sessions and
+        may trigger instant remote session revocation (Force Sign-Out) at any
+        time.
       </p>
     </Section>
 
@@ -406,10 +406,9 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
       <p>
         When using the Capacitor Android App or Desktop Web App (PWA), camera
         access is used exclusively for scanning member/product barcodes and
-        capturing profile or inventory photos, and geolocation access is used
-        strictly to verify on-site terminal compliance when security
-        restrictions are enabled. Users agree to keep their installed
-        application updated to the latest release published in System
+        capturing profile or inventory photos, and notifications are used strictly
+        for operational alerts and session updates. Users agree to keep their
+        installed application updated to the latest release published in System
         Information or the App Download Portal.
       </p>
     </Section>

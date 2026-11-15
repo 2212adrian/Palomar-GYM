@@ -694,7 +694,19 @@ export const PersonalAccount: React.FC = () => {
     }
   };
 
+  const isSuperAdminAccount =
+    isSuperAdmin(user?.email) ||
+    profile?.role?.toLowerCase() === 'superadmin';
+
   const handleUnlinkGoogle = async () => {
+    if (isSuperAdminAccount) {
+      toast.error(
+        'SuperAdmin accounts cannot unlink their linked Google account.'
+      );
+      setIsUnlinkConfirmOpen(false);
+      return;
+    }
+
     if (!hasPassword) {
       toast.error(
         'You must set an account password first before disconnecting Google to avoid losing account access.'
@@ -1524,17 +1536,27 @@ export const PersonalAccount: React.FC = () => {
                 </div>
 
                 {isGoogleLinked ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUnlinkConfirmOpen(true);
-                    }}
-                    disabled={isUnlinkingGoogle}
-                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    <Unlink className="w-3.5 h-3.5" />
-                    <span>Unlink Google Account</span>
-                  </button>
+                  isSuperAdminAccount ? (
+                    <div
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-semibold select-none"
+                      title="SuperAdmin security policy: Google Sign-In link is permanently locked"
+                    >
+                      <Lock className="w-3.5 h-3.5 shrink-0" />
+                      <span>Locked for SuperAdmin (Cannot Unlink)</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUnlinkConfirmOpen(true);
+                      }}
+                      disabled={isUnlinkingGoogle}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                      <span>Unlink Google Account</span>
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -2042,7 +2064,7 @@ export const PersonalAccount: React.FC = () => {
 
       {/* Unlink Google Confirmation Modal */}
       <Modal
-        isOpen={isUnlinkConfirmOpen}
+        isOpen={isUnlinkConfirmOpen && !isSuperAdminAccount}
         onClose={() => {
           if (!isUnlinkingGoogle) {
             setIsUnlinkConfirmOpen(false);
@@ -2109,7 +2131,7 @@ export const PersonalAccount: React.FC = () => {
             <Button
               onClick={handleUnlinkGoogle}
               loading={isUnlinkingGoogle}
-              disabled={isUnlinkingGoogle || !hasPassword}
+              disabled={isUnlinkingGoogle || !hasPassword || isSuperAdminAccount}
               loadingLabel="DISCONNECTING..."
               className="w-full sm:w-auto !py-2.5 !px-5 justify-center font-heading text-xs tracking-wider uppercase shadow-md transition-colors bg-red-600 hover:bg-red-700 text-white cursor-pointer border-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >

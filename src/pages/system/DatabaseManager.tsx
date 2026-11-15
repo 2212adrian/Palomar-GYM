@@ -29,9 +29,6 @@ import {
   Lock,
   Banknote,
   ArrowUpDown,
-  AlertOctagon,
-  Clock,
-  CheckCircle2,
 } from 'lucide-react';
 
 const MIN_ALLOWED_DATE = '2024-01-01';
@@ -43,8 +40,7 @@ type TerminalTab =
   | 'subscriptions'
   | 'cash_sessions'
   | 'cash_transactions'
-  | 'audit_logs'
-  | 'sync_conflicts';
+  | 'audit_logs';
 
 const getTodayDateString = (): string => {
   const d = new Date();
@@ -105,7 +101,6 @@ export const DatabaseManager: React.FC = () => {
   const [products, setProducts] = useState<any[]>([]);
   const [cashSessionsList, setCashSessionsList] = useState<any[]>([]);
   const [cashTransactionsList, setCashTransactionsList] = useState<any[]>([]);
-  const [syncConflictsList, setSyncConflictsList] = useState<any[]>([]);
 
   // Modal States for Attendance & Sales creation
   const [isSalesDialogOpen, setIsSalesDialogOpen] = useState<boolean>(false);
@@ -118,9 +113,9 @@ export const DatabaseManager: React.FC = () => {
   const [dropReason, setDropReason] = useState<string>('');
   const [isDropping, setIsDropping] = useState<boolean>(false);
 
-  // Single-row Delete Confirmation Modal (cash_sessions / cash_transactions / sync_conflicts)
+  // Single-row Delete Confirmation Modal (cash_sessions / cash_transactions)
   const [deleteTarget, setDeleteTarget] = useState<{
-    table: 'cash_sessions' | 'cash_transactions' | 'sync_conflicts';
+    table: 'cash_sessions' | 'cash_transactions';
     row: any;
     title: string;
     warning: string;
@@ -138,7 +133,6 @@ export const DatabaseManager: React.FC = () => {
   >(null);
   const [purgeOption, setPurgeOption] = useState<string>('90days');
   const [isPurging, setIsPurging] = useState<boolean>(false);
-  const [isPurgingConflicts, setIsPurgingConflicts] = useState<boolean>(false);
 
   const fetchStorageMetrics = useCallback(async () => {
     if (!isSuperAdminOnly) return;
@@ -462,16 +456,6 @@ export const DatabaseManager: React.FC = () => {
           };
         });
         setCashTransactionsList(enriched);
-      } else if (activeTab === 'sync_conflicts') {
-        const { data, error } = await supabase
-          .from('sync_conflicts')
-          .select('*')
-          .gte('created_at', startIso)
-          .lte('created_at', endIso)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setSyncConflictsList(data || []);
       }
     } catch (err: any) {
       toast.error(
@@ -901,55 +885,6 @@ export const DatabaseManager: React.FC = () => {
     }
   };
 
-  const handleRun24hSyncConflictsPurge = async () => {
-    if (!isSuperAdminOnly || isPurgingConflicts) return;
-    setIsPurgingConflicts(true);
-    try {
-      let deletedCount = 0;
-      let usedRpc = false;
-
-      try {
-        const { data, error } = await supabase.rpc(
-          'purge_expired_sync_conflicts'
-        );
-        if (!error && typeof data === 'number') {
-          deletedCount = data;
-          usedRpc = true;
-        }
-      } catch {
-        // Fallback if RPC migration hasn't been pushed yet
-      }
-
-      if (!usedRpc) {
-        const cutoff24h = new Date(
-          Date.now() - 24 * 60 * 60 * 1000
-        ).toISOString();
-        const { data, error } = await supabase
-          .from('sync_conflicts')
-          .delete()
-          .lt('created_at', cutoff24h)
-          .select('id');
-        if (error) throw error;
-        deletedCount = data?.length || 0;
-      }
-
-      await logAudit(
-        'SUPERADMIN_SYNC_CONFLICTS_24H_PURGE',
-        `Executed 24-hour sync_conflicts purge cleanly: removed ${deletedCount} expired conflict record(s).`
-      );
-      toast.success(
-        deletedCount > 0
-          ? `Purged ${deletedCount} expired sync conflict(s) (>24h old).`
-          : 'No sync conflicts older than 24 hours required removal.'
-      );
-      await Promise.all([fetchTabData(), fetchStorageMetrics()]);
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to purge expired sync conflicts.');
-    } finally {
-      setIsPurgingConflicts(false);
-    }
-  };
-
   const cashSessionColumns: Column<any>[] = useMemo(
     () => [
       {
@@ -1171,111 +1106,6 @@ export const DatabaseManager: React.FC = () => {
     []
   );
 
-  const syncConflictColumns: Column<any>[] = useMemo(
-    () => [
-      {
-        key: 'product_name',
-        header: 'Product & Conflict Type',
-        sortable: true,
-        render: (row) => (
-          <div className="space-y-1 text-left py-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-xs text-(--color-text)">
-                {row.product_name || 'Unknown Product'}
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                {row.conflict_type || 'stock_collision'}
-              </span>
-            </div>
-            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              ID: {String(row.id || '').slice(0, 8)}...
-            </div>
-          </div>
-        ),
-      },
-      {
-        key: 'status',
-        header: 'Resolution Status',
-        sortable: true,
-        render: (row) => {
-          const st = String(row.status || 'pending').toLowerCase();
-          return (
-            <div className="space-y-0.5 text-left">
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase border ${
-                  st === 'resolved'
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                }`}
-              >
-                {st === 'resolved' ? (
-                  <CheckCircle2 className="w-3 h-3" />
-                ) : (
-                  <Clock className="w-3 h-3" />
-                )}
-                <span>{st}</span>
-              </span>
-              {row.resolution && (
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {row.resolution}
-                  {row.resolved_by_name ? ` (${row.resolved_by_name})` : ''}
-                </div>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        key: 'created_at',
-        header: 'Created Time (PHT)',
-        sortable: true,
-        render: (row) => {
-          const ageMs = Date.now() - new Date(row.created_at).getTime();
-          const isExpired24h = ageMs >= 24 * 60 * 60 * 1000;
-          return (
-            <div className="text-[11px] font-mono text-left space-y-0.5">
-              <div className="text-slate-600 dark:text-slate-300">
-                {formatPhtDateTime(row.created_at)}
-              </div>
-              {isExpired24h && (
-                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                  &gt;24h (Eligible for Purge)
-                </span>
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        key: 'actions',
-        header: 'Actions',
-        headerClassName: 'text-right',
-        cellClassName: 'text-right',
-        render: (row) => (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() =>
-                setDeleteTarget({
-                  table: 'sync_conflicts',
-                  row,
-                  title: `Sync Conflict (${row.product_name || row.id})`,
-                  warning:
-                    'Permanently removes this offline stock collision record from public.sync_conflicts.',
-                })
-              }
-              title="Delete conflict record"
-              className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ),
-      },
-    ],
-    []
-  );
-
   // Derived quota usage percentage
   const dbQuotaPct = useMemo(() => {
     if (dbSizeBytes === null) return 0;
@@ -1323,9 +1153,8 @@ export const DatabaseManager: React.FC = () => {
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Inspect, manage, and purge high-growth tables (Attendance,
-                Sales, Subscriptions, Cash Sessions, Cash Transactions, Audit
-                Logs, and 24h Sync Conflicts) to keep Postgres storage within
-                quota limits.
+                Sales, Subscriptions, Cash Sessions, Cash Transactions, and
+                Audit Logs) to keep Postgres storage within quota limits.
               </p>
             </div>
           </div>
@@ -1398,7 +1227,6 @@ export const DatabaseManager: React.FC = () => {
               { id: 'cash_sessions', label: 'Cash Sessions' },
               { id: 'cash_transactions', label: 'Cash Transactions' },
               { id: 'audit_logs', label: 'Audit Logs' },
-              { id: 'sync_conflicts', label: 'Sync Conflicts' },
             ] as const
           ).map((t) => (
             <button
@@ -1769,60 +1597,6 @@ export const DatabaseManager: React.FC = () => {
               fetchStorageMetrics();
             }}
           />
-        )}
-
-        {/* TAB 7: SYNC CONFLICTS (WITH 24H AUTOMATED PG_CRON SCHEDULE) */}
-        {activeTab === 'sync_conflicts' && (
-          <div className="space-y-3">
-            <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-2.5 text-xs">
-                <AlertOctagon className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <strong className="font-heading uppercase text-[11px] tracking-wider text-blue-700 dark:text-blue-300 block">
-                    Automated 24-Hour Sync Conflicts Purge Active (pg_cron)
-                  </strong>
-                  <span className="text-slate-600 dark:text-slate-300">
-                    Hourly pg_cron job (
-                    <code className="font-mono">
-                      hourly-purge-sync-conflicts-24h
-                    </code>
-                    ) automatically deletes{' '}
-                    <code className="font-mono">sync_conflicts</code> rows older
-                    than 24 hours. Use the button to trigger an immediate purge.
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRun24hSyncConflictsPurge}
-                disabled={isPurgingConflicts}
-                className="self-start sm:self-center py-2 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-heading font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-all shrink-0 disabled:opacity-50"
-              >
-                {isPurgingConflicts ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
-                )}
-                <span>Run 24h Purge Now</span>
-              </button>
-            </div>
-
-            <Table
-              data={syncConflictsList}
-              columns={syncConflictColumns}
-              searchKeys={[
-                'product_name',
-                'conflict_type',
-                'status',
-                'resolution',
-                'resolved_by_name',
-              ]}
-              searchPlaceholder="Search sync conflicts by product, status, resolution..."
-              loading={tabLoading}
-              itemsPerPage={responsiveItemsPerPage}
-            />
-          </div>
         )}
       </div>
 

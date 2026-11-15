@@ -160,6 +160,87 @@ const isUUID = (str?: string | null): boolean => {
   );
 };
 
+export const normalizeMemberFullName = (name?: string | null): string =>
+  (name || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
+const readCachedActiveMembers = (): Member[] => {
+  try {
+    const cacheKey = 'members_sanitized_cache';
+    const raw =
+      (typeof localStorage !== 'undefined' && localStorage.getItem(cacheKey)) ||
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(cacheKey));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const list: Member[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.members)
+        ? parsed.members
+        : [];
+    return list.filter((m) => !m.deleted_at);
+  } catch {
+    return [];
+  }
+};
+
+const assertUniqueMemberFullName = async (
+  rawFullName: string,
+  excludeIds: string[] = []
+): Promise<void> => {
+  const normalized = normalizeMemberFullName(rawFullName);
+  if (!normalized) {
+    throw new Error('Member full name is required.');
+  }
+
+  const excludedSet = new Set(
+    excludeIds.filter(Boolean).map((v) => String(v).trim().toLowerCase())
+  );
+
+  // Check cached records first (instant offline & online protection)
+  const cachedMatch = readCachedActiveMembers().find((m) => {
+    const idMatch =
+      excludedSet.has(String(m.id || '').trim().toLowerCase()) ||
+      excludedSet.has(String(m.member_id || '').trim().toLowerCase());
+    if (idMatch) return false;
+    return normalizeMemberFullName(m.full_name) === normalized;
+  });
+
+  if (cachedMatch) {
+    throw new Error(
+      `Duplicate full name not allowed: "${cachedMatch.full_name}" (${cachedMatch.member_id}) already exists.`
+    );
+  }
+
+  const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+  if (isOffline) return;
+
+  try {
+    const { data, error } = await supabase
+      .from('members')
+      .select('id, member_id, full_name')
+      .is('deleted_at', null)
+      .ilike('full_name', normalized);
+
+    if (!error && Array.isArray(data)) {
+      const dbMatch = data.find((m: any) => {
+        const idMatch =
+          excludedSet.has(String(m.id || '').trim().toLowerCase()) ||
+          excludedSet.has(String(m.member_id || '').trim().toLowerCase());
+        if (idMatch) return false;
+        return normalizeMemberFullName(m.full_name) === normalized;
+      });
+      if (dbMatch) {
+        throw new Error(
+          `Duplicate full name not allowed: "${dbMatch.full_name}" (${dbMatch.member_id}) already exists.`
+        );
+      }
+    }
+  } catch (err: any) {
+    if (err?.message?.startsWith('Duplicate full name not allowed')) {
+      throw err;
+    }
+  }
+};
+
 /**
  * Generates a high-entropy cryptographically secure UUID token for membership cards.
  */
@@ -354,8 +435,12 @@ export const memberService = {
   ): Promise<Member> => {
     const d = data as any;
     const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    const normalizedName = normalizeMemberFullName(d.full_name);
+
+    await assertUniqueMemberFullName(normalizedName);
+
     const payload = {
-      full_name: (d.full_name || '').trim().toUpperCase(),
+      full_name: normalizedName,
       phone: d.phone,
       email: d.email || null,
       gender: d.gender || 'Male',
@@ -387,12 +472,27 @@ export const memberService = {
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          if (
+            error.code === '23505' ||
+            String(error.message || '').toLowerCase().includes('duplicate')
+          ) {
+            throw new Error(
+              `Duplicate member record detected for "${normalizedName}".`
+            );
+          }
+          throw error;
+        }
         createdMember = {
           ...created,
           avatar_url: created.image_url || created.avatar_url || null,
         };
-      } catch (e) {
+      } catch (e: any) {
+        if (
+          String(e?.message || '').toLowerCase().includes('duplicate')
+        ) {
+          throw e;
+        }
         console.warn('Network error creating member in Supabase, using offline vault:', e);
       }
     }
@@ -497,7 +597,12 @@ export const memberService = {
     const payload: any = { ...updates, updated_at: new Date().toISOString() };
 
     if (payload.full_name) {
-      payload.full_name = String(payload.full_name).trim().toUpperCase();
+      payload.full_name = normalizeMemberFullName(String(payload.full_name));
+      await assertUniqueMemberFullName(payload.full_name, [
+        id,
+        previousData?.id,
+        previousData?.member_id,
+      ]);
     }
 
     if ('avatar_url' in payload) {
@@ -520,12 +625,27 @@ export const memberService = {
         }
 
         const { data: updated, error } = await query.select().single();
-        if (error) throw error;
+        if (error) {
+          if (
+            error.code === '23505' ||
+            String(error.message || '').toLowerCase().includes('duplicate')
+          ) {
+            throw new Error(
+              `Duplicate full name not allowed: "${payload.full_name}" already exists.`
+            );
+          }
+          throw error;
+        }
         memberObj = {
           ...updated,
           avatar_url: updated.image_url || null,
         };
-      } catch (netErr) {
+      } catch (netErr: any) {
+        if (
+          String(netErr?.message || '').toLowerCase().includes('duplicate')
+        ) {
+          throw netErr;
+        }
         console.warn('Network error updating member, staging offline:', netErr);
       }
     }

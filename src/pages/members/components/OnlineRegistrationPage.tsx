@@ -40,6 +40,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Scale,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -94,37 +95,73 @@ const getNextManilaMidnightMs = (): number => {
 // Zod Validation Schema
 const registrationSchema = z
   .object({
-    last_name: z.string().min(1, 'Last name is required'),
-    first_name: z.string().min(1, 'First name is required'),
-    middle_initial: z.string().optional(),
-    suffix: z.string().optional(),
+    last_name: z
+      .string()
+      .trim()
+      .min(1, 'Last name is required')
+      .max(50, 'Last name cannot exceed 50 characters'),
+    first_name: z
+      .string()
+      .trim()
+      .min(1, 'First name is required')
+      .max(50, 'First name cannot exceed 50 characters'),
+    middle_initial: z
+      .string()
+      .trim()
+      .max(5, 'Middle initial cannot exceed 5 characters')
+      .optional(),
+    suffix: z
+      .string()
+      .trim()
+      .max(10, 'Suffix cannot exceed 10 characters')
+      .optional(),
 
     phone: z
       .string()
-      .min(7, 'Please enter a valid phone number')
-      .regex(/^[0-9]+$/, 'Phone number must contain numbers only'),
+      .trim()
+      .regex(/^[0-9]+$/, 'Phone number must contain numbers only')
+      .min(10, 'Phone number must be 10 to 15 digits')
+      .max(15, 'Phone number cannot exceed 15 digits'),
     email: z
       .string()
+      .trim()
+      .max(254, 'Email cannot exceed 254 characters')
       .email('Invalid email address')
       .optional()
       .or(z.literal('')),
     gender: z.string().min(1, 'Please select your gender'),
     birthday: z.string().min(1, 'Please select your birthday'),
 
-    address: z.string().optional().or(z.literal('')),
+    address: z
+      .string()
+      .trim()
+      .max(150, 'Home address cannot exceed 150 characters')
+      .optional()
+      .or(z.literal('')),
 
     same_as_parent: z.boolean().optional(),
-    emergency_contact_name: z.string().optional().or(z.literal('')),
-    emergency_contact_relationship: z.string().optional().or(z.literal('')),
+    emergency_contact_name: z
+      .string()
+      .trim()
+      .max(100, 'Emergency contact name cannot exceed 100 characters')
+      .optional()
+      .or(z.literal('')),
+    emergency_contact_relationship: z
+      .string()
+      .trim()
+      .max(50, 'Relationship cannot exceed 50 characters')
+      .optional()
+      .or(z.literal('')),
     emergency_contact_phone: z
       .string()
+      .trim()
       .optional()
       .or(z.literal(''))
       .refine((val) => !val || /^[0-9]+$/.test(val), {
         message: 'Emergency phone must contain numbers only',
       })
-      .refine((val) => !val || val.length >= 7, {
-        message: 'Emergency contact phone must be at least 7 digits',
+      .refine((val) => !val || (val.length >= 10 && val.length <= 15), {
+        message: 'Emergency contact phone must be 10 to 15 digits',
       }),
 
     preferred_plan: z.enum(['Monthly Membership', 'Yearly Membership'], {
@@ -137,17 +174,31 @@ const registrationSchema = z
     }),
 
     // Minor Fields (12-17 Yrs)
-    parent_name: z.string().optional(),
+    parent_name: z
+      .string()
+      .trim()
+      .max(100, 'Parent name cannot exceed 100 characters')
+      .optional(),
     parent_relationship: z.string().optional(),
-    parent_relationship_other: z.string().optional(),
+    parent_relationship_other: z
+      .string()
+      .trim()
+      .max(50, 'Relationship cannot exceed 50 characters')
+      .optional(),
     parent_phone: z
       .string()
+      .trim()
       .optional()
       .refine((val) => !val || /^[0-9]+$/.test(val), {
         message: 'Parent phone must contain numbers only',
+      })
+      .refine((val) => !val || (val.length >= 10 && val.length <= 15), {
+        message: 'Parent phone must be 10 to 15 digits',
       }),
     parent_email: z
       .string()
+      .trim()
+      .max(254, 'Parent email cannot exceed 254 characters')
       .email('Invalid parent email address')
       .optional()
       .or(z.literal('')),
@@ -235,10 +286,14 @@ const registrationSchema = z
         });
       }
 
-      if (!data.parent_phone || data.parent_phone.trim().length < 7) {
+      if (
+        !data.parent_phone ||
+        data.parent_phone.trim().length < 10 ||
+        data.parent_phone.trim().length > 15
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Parent / Legal Guardian phone number is required',
+          message: 'Parent / Legal Guardian phone must be 10 to 15 digits',
           path: ['parent_phone'],
         });
       }
@@ -268,11 +323,12 @@ const registrationSchema = z
 
         if (
           !data.emergency_contact_phone ||
-          data.emergency_contact_phone.trim().length < 7
+          data.emergency_contact_phone.trim().length < 10 ||
+          data.emergency_contact_phone.trim().length > 15
         ) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'Emergency contact phone is required',
+            message: 'Emergency contact phone must be 10 to 15 digits',
             path: ['emergency_contact_phone'],
           });
         }
@@ -561,6 +617,23 @@ export const OnlineRegistrationPage: React.FC = () => {
   } | null>(null);
   const [isRatesLoading, setIsRatesLoading] = useState<boolean>(true);
   const [ratesError, setRatesError] = useState<boolean>(false);
+  const [isGymOpen, setIsGymOpen] = useState<boolean | null>(null);
+  const [isCheckingGymStatus, setIsCheckingGymStatus] = useState<boolean>(true);
+
+  const checkGymOpenStatus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('is_gym_open');
+      if (!error && typeof data === 'boolean') {
+        setIsGymOpen(data);
+      } else {
+        setIsGymOpen(true);
+      }
+    } catch {
+      setIsGymOpen(true);
+    } finally {
+      setIsCheckingGymStatus(false);
+    }
+  }, []);
 
   const fetchLiveRates = useCallback(async () => {
     setIsRatesLoading(true);
@@ -609,8 +682,15 @@ export const OnlineRegistrationPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    checkGymOpenStatus();
     fetchLiveRates();
-  }, [fetchLiveRates]);
+
+    const statusPoll = setInterval(() => {
+      checkGymOpenStatus();
+    }, 30000);
+
+    return () => clearInterval(statusPoll);
+  }, [checkGymOpenStatus, fetchLiveRates]);
 
   // 3-Second Timer Trigger on Entering Step 4
   useEffect(() => {
@@ -1045,6 +1125,13 @@ export const OnlineRegistrationPage: React.FC = () => {
   ]);
 
   const handleNextStep = async () => {
+    if (isGymOpen === false) {
+      toast.error(
+        'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+      );
+      return;
+    }
+
     if (!rates || ratesError) {
       toast.error(
         'Registration is currently paused while we update our rates. Please try again shortly.'
@@ -1072,6 +1159,27 @@ export const OnlineRegistrationPage: React.FC = () => {
         );
         return;
       }
+
+      const vals = getValues();
+      const mi = vals.middle_initial?.trim()
+        ? ` ${vals.middle_initial.trim().replace('.', '')}.`
+        : '';
+      const suff = vals.suffix?.trim() ? ` ${vals.suffix.trim()}` : '';
+      const formattedCandidate = `${vals.last_name.trim()}, ${vals.first_name.trim()}${mi}${suff}`;
+
+      try {
+        const { data: exists, error: dupErr } = await supabase.rpc(
+          'check_member_name_exists',
+          { p_full_name: formattedCandidate }
+        );
+        if (!dupErr && exists === true) {
+          toast.error(
+            `An existing member profile named "${formattedCandidate.toUpperCase()}" already exists. Duplicate names cannot register as new profiles.`
+          );
+          return;
+        }
+      } catch {}
+
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (isMinor) {
@@ -1118,6 +1226,17 @@ export const OnlineRegistrationPage: React.FC = () => {
       return;
     }
 
+    try {
+      const { data: liveOpen, error: openErr } = await supabase.rpc('is_gym_open');
+      if (!openErr && liveOpen === false) {
+        setIsGymOpen(false);
+        toast.error(
+          'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+        );
+        return;
+      }
+    } catch {}
+
     if (!rates || ratesError) {
       toast.error(
         'Online registration is temporarily unavailable. Please visit the front desk or try again later.'
@@ -1158,6 +1277,20 @@ export const OnlineRegistrationPage: React.FC = () => {
         : '';
       const suff = data.suffix?.trim() ? ` ${data.suffix.trim()}` : '';
       const combinedFullName = `${data.last_name.trim()}, ${data.first_name.trim()}${mi}${suff}`;
+
+      try {
+        const { data: dupExists, error: dupErr } = await supabase.rpc(
+          'check_member_name_exists',
+          { p_full_name: combinedFullName }
+        );
+        if (!dupErr && dupExists === true) {
+          toast.error(
+            `An existing member profile named "${combinedFullName.toUpperCase()}" already exists. Please visit the front desk to renew your existing account.`
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      } catch {}
 
       const finalParentRelationship =
         data.parent_relationship === 'Other'
@@ -1679,59 +1812,104 @@ export const OnlineRegistrationPage: React.FC = () => {
         )}
 
         {/* ================= VIEW 3: WIZARD FORM ================= */}
-        {viewMode === 'form' && isRatesLoading && (
+        {viewMode === 'form' && (isRatesLoading || isCheckingGymStatus) && (
           <div className="py-12 px-4 text-center space-y-4 animate-fade-in select-none">
             <RefreshCw className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
             <div className="space-y-1">
               <h3 className="font-heading text-sm uppercase tracking-wider font-bold text-slate-800 dark:text-slate-100">
-                Checking Gym Membership Rates
+                Checking Gym Availability &amp; Rates
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                Please wait a moment while we prepare current pricing...
+                Please wait a moment while we prepare registration status and pricing...
               </p>
             </div>
           </div>
         )}
 
-        {viewMode === 'form' && !isRatesLoading && (ratesError || !rates) && (
-          <div className="py-8 px-4 text-center space-y-5 animate-fade-in select-none">
-            <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg shadow-amber-500/10">
-              <Clock className="w-8 h-8" />
-            </div>
+        {viewMode === 'form' &&
+          !isCheckingGymStatus &&
+          isGymOpen === false && (
+            <div className="py-10 px-4 text-center space-y-5 animate-fade-in select-none">
+              <div className="w-16 h-16 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center mx-auto border border-blue-500/25 shadow-lg shadow-blue-500/10">
+                <Lock className="w-8 h-8" />
+              </div>
 
-            <div className="space-y-2 max-w-md mx-auto">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 inline-block">
-                Online Registration Temporarily Paused
-              </span>
-              <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                Please Check Back A Little Later
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                We are currently updating our gym membership plans and pricing schedule to ensure everything is accurate for you.
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                You are always welcome to sign up in person at the Wolf Palomar reception desk — our friendly team will gladly assist you right away!
-              </p>
-            </div>
+              <div className="space-y-2 max-w-md mx-auto">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 inline-block">
+                  Registration Currently Closed
+                </span>
+                <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white leading-snug">
+                  Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+                  Online pre-registration reopens automatically as soon as the reception desk opens a new session.
+                </p>
+              </div>
 
-            <div className="pt-2 flex justify-center">
-              <button
-                type="button"
-                onClick={fetchLiveRates}
-                className="py-2.5 px-5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Check Again</span>
-              </button>
+              <div className="pt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    checkGymOpenStatus();
+                    fetchLiveRates();
+                  }}
+                  className="py-2.5 px-5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Check Again</span>
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {viewMode === 'form' && !isRatesLoading && rates && !ratesError && (
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            className="space-y-6 text-left"
-          >
+        {viewMode === 'form' &&
+          !isCheckingGymStatus &&
+          isGymOpen !== false &&
+          !isRatesLoading &&
+          (ratesError || !rates) && (
+            <div className="py-8 px-4 text-center space-y-5 animate-fade-in select-none">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-lg shadow-amber-500/10">
+                <Clock className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2 max-w-md mx-auto">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 inline-block">
+                  Online Registration Temporarily Paused
+                </span>
+                <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                  Please Check Back A Little Later
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  We are currently updating our gym membership plans and pricing schedule to ensure everything is accurate for you.
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+                  You are always welcome to sign up in person at the Wolf Palomar reception desk — our friendly team will gladly assist you right away!
+                </p>
+              </div>
+
+              <div className="pt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={fetchLiveRates}
+                  className="py-2.5 px-5 bg-(--color-primary) hover:bg-(--color-primary-hover) text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Check Again</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+        {viewMode === 'form' &&
+          !isCheckingGymStatus &&
+          isGymOpen !== false &&
+          !isRatesLoading &&
+          rates &&
+          !ratesError && (
+            <form
+              onSubmit={handleSubmit(onSubmit)}
+              className="space-y-6 text-left"
+            >
             {/* Invisible Honeypot Anti-Bot Field */}
             <input
               ref={honeypotRef}
@@ -1837,6 +2015,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
+                        maxLength={50}
                         {...register('last_name')}
                         placeholder="e.g. Dela Cruz"
                         autoComplete="off"
@@ -1864,6 +2043,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
+                        maxLength={50}
                         {...register('first_name')}
                         placeholder="e.g. Juan"
                         autoComplete="off"
@@ -1893,7 +2073,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
-                        maxLength={2}
+                        maxLength={5}
                         {...register('middle_initial')}
                         placeholder="e.g. M."
                         autoComplete="off"
@@ -1915,6 +2095,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
+                        maxLength={10}
                         {...register('suffix')}
                         placeholder="e.g. Jr."
                         autoComplete="off"
@@ -1937,7 +2118,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="tel"
-                        maxLength={11}
+                        maxLength={15}
                         {...register('phone', {
                           onChange: (e) => {
                             e.target.value = e.target.value.replace(/\D/g, '');
@@ -1972,6 +2153,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="email"
+                        maxLength={254}
                         {...register('email')}
                         placeholder="juan@example.com"
                         autoComplete="off"
@@ -2097,12 +2279,18 @@ export const OnlineRegistrationPage: React.FC = () => {
                           (optional)
                         </span>
                       </label>
-                      {renderStatusBadge('address')}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {(watchedValues.address || '').length}/150
+                        </span>
+                        {renderStatusBadge('address')}
+                      </div>
                     </div>
                     <div className="relative">
                       <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                       <textarea
                         rows={2}
+                        maxLength={150}
                         {...register('address')}
                         placeholder="Barangay, City, Province (optional)..."
                         autoComplete="off"
@@ -2111,6 +2299,11 @@ export const OnlineRegistrationPage: React.FC = () => {
                         className={`w-full pl-10 pr-4 py-2.5 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors resize-none ${getFieldBorderClass('address')}`}
                       />
                     </div>
+                    {errors.address && (
+                      <p className="text-[10px] text-red-500 font-medium mt-1">
+                        {errors.address.message}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2140,6 +2333,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
+                        maxLength={100}
                         {...register('parent_name')}
                         placeholder="e.g. Roberto Dela Cruz"
                         autoComplete="off"
@@ -2189,6 +2383,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         </div>
                         <input
                           type="text"
+                          maxLength={50}
                           {...register('parent_relationship_other')}
                           placeholder="e.g. Aunt / Uncle / Grandparent"
                           autoComplete="off"
@@ -2214,6 +2409,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="tel"
+                        maxLength={15}
                         {...register('parent_phone', {
                           onChange: (e) => {
                             e.target.value = e.target.value.replace(/\D/g, '');
@@ -2244,6 +2440,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="email"
+                        maxLength={254}
                         {...register('parent_email')}
                         placeholder="parent@example.com"
                         autoComplete="off"
@@ -2251,6 +2448,11 @@ export const OnlineRegistrationPage: React.FC = () => {
                         autoCorrect="off"
                         className={`w-full px-4 py-2.5 sm:py-3 bg-(--bg-input) border-2 rounded-xl text-xs font-semibold focus:outline-none transition-colors ${getFieldBorderClass('parent_email')}`}
                       />
+                      {errors.parent_email && (
+                        <p className="text-[10px] text-red-500 font-medium mt-1">
+                          {errors.parent_email.message}
+                        </p>
+                      )}
                     </div>
 
                     <div className="sm:col-span-2 p-3 sm:p-3.5 bg-(--bg-input) rounded-2xl border-2 border-slate-300 dark:border-zinc-700 flex items-center justify-between">
@@ -2288,6 +2490,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
+                        maxLength={100}
                         {...register('emergency_contact_name')}
                         placeholder="e.g. Maria Dela Cruz"
                         autoComplete="off"
@@ -2318,6 +2521,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                       </div>
                       <input
                         type="text"
+                        maxLength={50}
                         {...register('emergency_contact_relationship')}
                         placeholder="e.g. Spouse / Parent / Sibling"
                         autoComplete="off"
@@ -2350,6 +2554,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                         <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                         <input
                           type="tel"
+                          maxLength={15}
                           {...register('emergency_contact_phone', {
                             onChange: (e) => {
                               e.target.value = e.target.value.replace(

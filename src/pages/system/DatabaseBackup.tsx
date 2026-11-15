@@ -1,5 +1,5 @@
 // src/pages/system/DatabaseBackup.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
 import { clearAppCaches } from '../../lib/cacheUtils';
@@ -9,12 +9,20 @@ import { isSuperAdmin } from '../../constants/auth';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
 import { createPortal } from 'react-dom';
+import { saveAs } from 'file-saver';
 import { Table } from '../../components/ui/Table';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import type { Column } from '../../components/ui/Table';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
+import {
+  exportEncryptedDatabaseCsv,
+  decryptAndValidateEncryptedBackup,
+  executeValidatedEncryptedImport,
+  type DecryptedValidatedBackup,
+} from './utils/encryptedCsvBackup';
+import type { DuplicateAction } from './utils/csvDataMigration';
 import {
   Database,
   ShieldAlert,
@@ -30,6 +38,11 @@ import {
   Trash2,
   Loader2,
   AlertTriangle,
+  Download,
+  Upload,
+  FileLock2,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 
 interface BackupItem {
@@ -59,6 +72,28 @@ export const DatabaseBackup: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(3);
   const [verifyPassword, setVerifyPassword] = useState<string>('');
   const [restoreConfirmText, setRestoreConfirmText] = useState<string>('');
+
+  // Encrypted Export / Import Data State (Re-auth required)
+  const encryptedFileInputRef = useRef<HTMLInputElement>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [exportPassword, setExportPassword] = useState<string>('');
+  const [isExportingData, setIsExportingData] = useState<boolean>(false);
+
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [importFilename, setImportFilename] = useState<string>('');
+  const [importPreview, setImportPreview] =
+    useState<DecryptedValidatedBackup | null>(null);
+  const [importResolutions, setImportResolutions] = useState<
+    Record<string, DuplicateAction>
+  >({});
+  const [importParseError, setImportParseError] = useState<string | null>(null);
+  const [importPassword, setImportPassword] = useState<string>('');
+  const [isDecodingImport, setIsDecodingImport] = useState<boolean>(false);
+  const [isImportingData, setIsImportingData] = useState<boolean>(false);
+  const [importProgress, setImportProgress] = useState<{
+    percent: number;
+    label: string;
+  } | null>(null);
 
   // SuperAdmin Access Control & Terminal States
   const { user, profile } = useAuthStore() as any;
@@ -994,6 +1029,149 @@ export const DatabaseBackup: React.FC = () => {
 
   const responsiveItemsPerPage = useResponsiveItemsPerPage();
 
+  const handleConfirmEncryptedExport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSuperAdminOnly) return;
+    if (!hasPassword) {
+      toast.error(
+        'Password re-authentication is required. Please set an account password in Personal Account first.'
+      );
+      return;
+    }
+    if (!exportPassword.trim()) {
+      toast.error('Please enter your account password to export data.');
+      return;
+    }
+
+    setIsExportingData(true);
+    try {
+      const { data: isValidPassword, error: authErr } = await supabase.rpc(
+        'verify_user_password',
+        { entered_password: exportPassword }
+      );
+      if (authErr || !isValidPassword) {
+        throw new Error('Authentication failed. Incorrect account password.');
+      }
+
+      const exported = await exportEncryptedDatabaseCsv({
+        actorId: user?.id,
+        actorEmail: user?.email || profile?.email,
+      });
+
+      const blob = new Blob([exported.encryptedContent], {
+        type: 'application/octet-stream',
+      });
+      saveAs(blob, exported.filename);
+
+      toast.success(
+        `Encrypted backup exported (${exported.productsCount} products, ${exported.membersCount} members).`
+      );
+      setIsExportModalOpen(false);
+      setExportPassword('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to export encrypted backup.');
+    } finally {
+      setIsExportingData(false);
+    }
+  };
+
+  const handleEncryptedImportFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    setImportFilename(file.name);
+    setImportPreview(null);
+    setImportParseError(null);
+    setImportResolutions({});
+    setImportPassword('');
+    setIsImportModalOpen(true);
+    setIsDecodingImport(true);
+
+    try {
+      const text = await file.text();
+      const validated = await decryptAndValidateEncryptedBackup(text);
+      setImportPreview(validated);
+      setImportResolutions({ ...validated.parsed.defaultResolutions });
+    } catch (err: any) {
+      setImportParseError(
+        err?.message || 'Failed to decrypt or validate encrypted backup file.'
+      );
+    } finally {
+      setIsDecodingImport(false);
+    }
+  };
+
+  const handleConfirmEncryptedImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSuperAdminOnly || !importPreview) return;
+
+    if (activeSession) {
+      toast.error(
+        'Cannot import data while a cash session is open. Close the cash drawer first.'
+      );
+      return;
+    }
+    if (!hasPassword) {
+      toast.error(
+        'Password re-authentication is required. Please set an account password in Personal Account first.'
+      );
+      return;
+    }
+    if (!importPassword.trim()) {
+      toast.error('Please enter your account password to authorize import.');
+      return;
+    }
+    if (!importPreview.parsed.isValid || importPreview.parsed.errorCount > 0) {
+      toast.error(
+        'Backup contains validation errors and cannot be imported until resolved.'
+      );
+      return;
+    }
+
+    setIsImportingData(true);
+    setImportProgress({ percent: 2, label: 'Verifying account password...' });
+    try {
+      const { data: isValidPassword, error: authErr } = await supabase.rpc(
+        'verify_user_password',
+        { entered_password: importPassword }
+      );
+      if (authErr || !isValidPassword) {
+        throw new Error('Authentication failed. Incorrect account password.');
+      }
+
+      const summary = await executeValidatedEncryptedImport({
+        parsed: importPreview.parsed,
+        resolutions: importResolutions,
+        actorEmail: user?.email || profile?.email,
+        actorId: user?.id,
+        onProgress: (percent, label) => setImportProgress({ percent, label }),
+      });
+
+      await clearAppCaches();
+      await logAudit(
+        'DATABASE_ENCRYPTED_IMPORT',
+        `SuperAdmin imported encrypted backup (${importFilename}): ${summary.productsInserted} inserted / ${summary.productsOverwritten} overwritten products, ${summary.membersInserted} inserted / ${summary.membersOverwritten} overwritten members.`,
+        user?.id
+      );
+
+      toast.success(
+        `Import complete: ${summary.productsInserted + summary.productsOverwritten} products, ${summary.membersInserted + summary.membersOverwritten} members processed.`
+      );
+      setIsImportModalOpen(false);
+      setImportPreview(null);
+      setImportPassword('');
+      setImportProgress(null);
+      await fetchBackups();
+    } catch (err: any) {
+      toast.error(err?.message || 'Encrypted backup import failed.');
+    } finally {
+      setIsImportingData(false);
+    }
+  };
+
   if (!isSuperAdminOnly) {
     return (
       <div className="p-6 sm:p-8 rounded-2xl bg-(--bg-card) border border-rose-500/30 text-center space-y-3 shadow-xs">
@@ -1086,7 +1264,51 @@ export const DatabaseBackup: React.FC = () => {
             </p>
           </div>
 
-          <div className="hidden sm:flex items-center gap-3">
+          <input
+            ref={encryptedFileInputRef}
+            type="file"
+            accept=".wpenc,application/octet-stream"
+            onChange={handleEncryptedImportFileChange}
+            className="hidden"
+          />
+
+          <div className="hidden sm:flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setExportPassword('');
+                setIsExportModalOpen(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-sm"
+              title="Export AES-256 encrypted backup data (password required)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Data
+            </button>
+
+            <button
+              type="button"
+              disabled={!!activeSession}
+              onClick={() => {
+                if (activeSession) {
+                  toast.error(
+                    'Please close the active cash session before importing data.'
+                  );
+                  return;
+                }
+                encryptedFileInputRef.current?.click();
+              }}
+              title={
+                activeSession
+                  ? 'Close the active cash session before importing data'
+                  : 'Import & validate encrypted backup data (password required)'
+              }
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-(--bg-card) hover:bg-(--bg-input) text-(--color-text) border border-(--border-color) text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Upload className="w-3.5 h-3.5 text-blue-500" />
+              Import Data
+            </button>
+
             <button
               disabled={!!activeSession}
               onClick={() => {
@@ -1519,6 +1741,36 @@ export const DatabaseBackup: React.FC = () => {
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
+                onClick={() => {
+                  setExportPassword('');
+                  setIsExportModalOpen(true);
+                }}
+                className="w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                title="Export Encrypted Data"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={!!activeSession}
+                onClick={() => {
+                  if (activeSession) {
+                    toast.error(
+                      'Close the active cash session before importing data.'
+                    );
+                    return;
+                  }
+                  encryptedFileInputRef.current?.click();
+                }}
+                className="w-9 h-9 rounded-xl bg-(--bg-page) border border-(--border-color) text-blue-600 dark:text-blue-400 flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Import Encrypted Data"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
                 onClick={fetchBackups}
                 disabled={isLoading}
                 className="w-9 h-9 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-500 dark:text-slate-400 hover:text-(--color-text) flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50"
@@ -1541,10 +1793,10 @@ export const DatabaseBackup: React.FC = () => {
                   }
                   setIsCreateModalOpen(true);
                 }}
-                className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <PlusCircle className="w-4 h-4 shrink-0" />
-                <span>SAVE BACKUP</span>
+                <span>SAVE</span>
               </button>
             </div>
           </div>,
@@ -1777,6 +2029,383 @@ export const DatabaseBackup: React.FC = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Export Encrypted Data (Password Re-Auth Required) */}
+      <Modal
+        isOpen={isExportModalOpen}
+        onClose={() => {
+          if (!isExportingData) {
+            setIsExportModalOpen(false);
+            setExportPassword('');
+          }
+        }}
+        title="Export Encrypted Backup Data"
+      >
+        <form
+          onSubmit={handleConfirmEncryptedExport}
+          className="space-y-4 font-body text-left"
+        >
+          <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-start gap-3 text-xs">
+            <FileLock2 className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <strong className="font-heading uppercase text-[10px] tracking-wider text-blue-700 dark:text-blue-300 block">
+                AES-256-GCM Encrypted Data Export (.wpenc)
+              </strong>
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                Exports live Products, Members, Subscriptions, and Cards from
+                Supabase in an encrypted package that cannot be read or altered
+                even if opened directly in a text editor or Excel.
+              </p>
+            </div>
+          </div>
+
+          {!hasPassword ? (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 font-semibold">
+              Password re-authentication is required for exporting data. Please
+              create an account password in Personal Account settings first.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="exportPasswordInput"
+                className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+              >
+                <Lock className="w-3.5 h-3.5 text-blue-500" />
+                Enter Account Password to Authorize Export
+              </label>
+              <input
+                id="exportPasswordInput"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                autoCorrect="off"
+                disabled={isExportingData}
+                value={exportPassword}
+                onChange={(e) => setExportPassword(e.target.value)}
+                placeholder="Confirm your SuperAdmin password..."
+                className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
+                required
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={isExportingData}
+              onClick={() => {
+                setIsExportModalOpen(false);
+                setExportPassword('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={isExportingData}
+              disabled={!hasPassword || !exportPassword.trim() || isExportingData}
+              loadingLabel="ENCRYPTING & EXPORTING..."
+              className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 font-heading text-xs uppercase tracking-wider"
+            >
+              Verify &amp; Export Encrypted File
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Import Encrypted Data (Validation + Conflict Resolution + Password Re-Auth) */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          if (!isImportingData && !isDecodingImport) {
+            setIsImportModalOpen(false);
+            setImportPreview(null);
+            setImportParseError(null);
+            setImportPassword('');
+            setImportProgress(null);
+          }
+        }}
+        title="Import Encrypted Backup Data"
+        className="max-w-2xl w-full"
+      >
+        <form
+          onSubmit={handleConfirmEncryptedImport}
+          className="space-y-4 font-body text-left"
+        >
+          <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileLock2 className="w-4 h-4 text-blue-500 shrink-0" />
+              <span className="font-mono font-bold truncate">
+                {importFilename || 'Encrypted Backup File'}
+              </span>
+            </div>
+            {importPreview && (
+              <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                SHA-256: {importPreview.fileSha256.slice(0, 10).toUpperCase()}...
+              </span>
+            )}
+          </div>
+
+          {isDecodingImport ? (
+            <div className="p-8 text-center space-y-2">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
+              <p className="text-xs font-semibold text-slate-500">
+                Decrypting payload &amp; running strict schema validation...
+              </p>
+            </div>
+          ) : importParseError ? (
+            <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-xs text-rose-600 dark:text-rose-400">
+              <XCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <strong className="font-heading uppercase text-[10px] tracking-wider block">
+                  Decryption / Format Error
+                </strong>
+                <p>{importParseError}</p>
+              </div>
+            </div>
+          ) : (
+            importPreview && (
+              <div className="space-y-3">
+                {/* Summary KPI Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color)">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      Products
+                    </span>
+                    <span className="font-mono font-black text-sm">
+                      {importPreview.parsed.products.length}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color)">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      Members
+                    </span>
+                    <span className="font-mono font-black text-sm">
+                      {importPreview.parsed.members.length}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color)">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      Duplicates
+                    </span>
+                    <span className="font-mono font-black text-sm text-amber-500">
+                      {importPreview.parsed.conflicts.length}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color)">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      Errors
+                    </span>
+                    <span
+                      className={`font-mono font-black text-sm ${
+                        importPreview.parsed.errorCount > 0
+                          ? 'text-rose-500'
+                          : 'text-emerald-500'
+                      }`}
+                    >
+                      {importPreview.parsed.errorCount}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Validation Result Banner */}
+                {importPreview.parsed.errorCount > 0 ? (
+                  <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2 text-xs">
+                    <div className="flex items-center gap-2 font-heading font-bold uppercase text-[10px] text-rose-600 dark:text-rose-400">
+                      <XCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        Import Blocked — {importPreview.parsed.errorCount}{' '}
+                        Validation Error(s)
+                      </span>
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                      {importPreview.parsed.issues
+                        .filter((i) => i.severity === 'error')
+                        .slice(0, 20)
+                        .map((issue, idx) => (
+                          <div
+                            key={idx}
+                            className="text-[11px] font-mono text-rose-700 dark:text-rose-300"
+                          >
+                            [{issue.group} Line {issue.line}] {issue.message}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>
+                      Integrity &amp; schema validation passed with zero errors.
+                    </span>
+                  </div>
+                )}
+
+                {/* Duplicate Conflict Actions */}
+                {importPreview.parsed.conflicts.length > 0 &&
+                  importPreview.parsed.errorCount === 0 && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-heading font-bold uppercase text-[10px] text-amber-700 dark:text-amber-300">
+                          Duplicate Records Detected (
+                          {importPreview.parsed.conflicts.length})
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next: Record<string, DuplicateAction> = {};
+                              importPreview.parsed.conflicts.forEach((c) => {
+                                next[c.conflictKey] = 'ignore';
+                              });
+                              setImportResolutions(next);
+                            }}
+                            className="px-2 py-1 rounded-md border border-(--border-color) bg-(--bg-card) text-[10px] font-bold uppercase cursor-pointer"
+                          >
+                            Ignore All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next: Record<string, DuplicateAction> = {};
+                              importPreview.parsed.conflicts.forEach((c) => {
+                                next[c.conflictKey] = 'overwrite';
+                              });
+                              setImportResolutions(next);
+                            }}
+                            className="px-2 py-1 rounded-md bg-amber-600 text-white text-[10px] font-bold uppercase cursor-pointer"
+                          >
+                            Overwrite All
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                        {importPreview.parsed.conflicts.map((c) => {
+                          const action =
+                            importResolutions[c.conflictKey] ??
+                            c.defaultResolution;
+                          return (
+                            <div
+                              key={c.conflictKey}
+                              className="p-2 rounded-lg bg-(--bg-card) border border-(--border-color) flex items-center justify-between gap-2 text-[11px]"
+                            >
+                              <div className="min-w-0 truncate">
+                                <span className="font-bold uppercase">
+                                  [{c.group}] {c.identifier}
+                                </span>
+                                <span className="text-slate-400 ml-1.5">
+                                  ({c.scope === 'database' ? 'Exists in DB' : `CSV Line ${c.earlierCsvLine}`})
+                                </span>
+                              </div>
+                              <select
+                                value={action}
+                                onChange={(e) =>
+                                  setImportResolutions((prev) => ({
+                                    ...prev,
+                                    [c.conflictKey]: e.target
+                                      .value as DuplicateAction,
+                                  }))
+                                }
+                                className="px-2 py-1 rounded border border-(--border-color) bg-(--bg-page) text-[10px] font-bold uppercase"
+                              >
+                                <option value="ignore">Ignore</option>
+                                <option value="overwrite">Overwrite</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Progress Indicator */}
+                {importProgress && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span>{importProgress.label}</span>
+                      <span>{importProgress.percent}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 transition-all"
+                        style={{ width: `${importProgress.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Password Re-Authentication Input */}
+                {importPreview.parsed.errorCount === 0 && (
+                  !hasPassword ? (
+                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 font-semibold">
+                      Password re-authentication is required for importing data.
+                      Please set an account password in Personal Account first.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 pt-1">
+                      <label
+                        htmlFor="importPasswordInput"
+                        className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-blue-500" />
+                        Enter Account Password to Authorize Import
+                      </label>
+                      <input
+                        id="importPasswordInput"
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
+                        disabled={isImportingData}
+                        value={importPassword}
+                        onChange={(e) => setImportPassword(e.target.value)}
+                        placeholder="Confirm your SuperAdmin password..."
+                        className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
+                        required
+                      />
+                    </div>
+                  )
+                )}
+              </div>
+            )
+          )}
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={isImportingData || isDecodingImport}
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportPreview(null);
+                setImportParseError(null);
+                setImportPassword('');
+                setImportProgress(null);
+              }}
+            >
+              Cancel
+            </Button>
+            {importPreview && importPreview.parsed.errorCount === 0 && (
+              <Button
+                type="submit"
+                loading={isImportingData}
+                disabled={
+                  !hasPassword ||
+                  !importPassword.trim() ||
+                  isImportingData ||
+                  !!activeSession
+                }
+                loadingLabel="IMPORTING BACKUP..."
+                className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 font-heading text-xs uppercase tracking-wider"
+              >
+                Verify &amp; Import Backup
+              </Button>
+            )}
+          </div>
+        </form>
       </Modal>
     </div>
   );

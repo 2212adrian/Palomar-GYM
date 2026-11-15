@@ -257,9 +257,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     if (!formName) {
       const rawName = data.product_name || '';
       const weightVolume = formatQuantity(data.quantity || '');
-      const combinedName = weightVolume
-        ? `${rawName} - ${weightVolume}`
-        : rawName;
+      const combinedName = (
+        weightVolume ? `${rawName} - ${weightVolume}` : rawName
+      ).toUpperCase();
       setFormName(combinedName);
     }
     if (data.image_front_url) {
@@ -501,7 +501,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const handleAddCurrentToQueue = () => {
     if (saving || isSubmitting || isSuccess) return;
-    const nameClean = formName.trim();
+    const nameClean = formName.trim().toUpperCase();
     const priceNum = parseFloat(formPrice);
 
     if (!nameClean) {
@@ -565,7 +565,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
 
     if (isMultiAddMode) {
-      const currentName = formName.trim();
+      const currentName = formName.trim().toUpperCase();
       const currentPrice = parseFloat(formPrice);
       let itemsToSave = [...stagedItems];
 
@@ -973,7 +973,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   maxLength={100}
                   placeholder="e.g. Bottled Water 500ml, Whey Protein"
                   value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  onChange={(e) => setFormName(e.target.value.toUpperCase())}
                   className="w-full px-3.5 py-2.5 sm:py-3 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-bold text-(--color-text) placeholder:text-(--color-text)/30 outline-none focus:border-slate-400 dark:focus:border-white focus:ring-1 focus:ring-slate-400/20 dark:focus:ring-white/20 transition-all uppercase min-w-0"
                 />
                 {!saving && !isSubmitting && !isSuccess && isDuplicateName && (

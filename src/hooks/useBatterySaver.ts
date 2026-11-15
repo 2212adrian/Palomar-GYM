@@ -142,8 +142,7 @@ export function useBatterySaver() {
     batteryLevel <= LOW_BATTERY_THRESHOLD_PERCENT;
 
   const isBatterySaver =
-    isPlatformSupported &&
-    (mode === 'on' || (mode === 'auto' && isLowDevicePower));
+    mode === 'on' || (isPlatformSupported && mode === 'auto' && isLowDevicePower);
 
   const isAutoTriggered =
     isPlatformSupported && mode === 'auto' && isLowDevicePower;
@@ -151,11 +150,8 @@ export function useBatterySaver() {
   // Apply global .battery-saver class to <html> for app-wide CSS/GPU optimization
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    document.documentElement.classList.toggle(
-      'battery-saver',
-      isPlatformSupported && isBatterySaver
-    );
-  }, [isBatterySaver, isPlatformSupported]);
+    document.documentElement.classList.toggle('battery-saver', isBatterySaver);
+  }, [isBatterySaver]);
 
   const setBatterySaverMode = useCallback((nextMode: BatterySaverMode) => {
     persistMode(nextMode);

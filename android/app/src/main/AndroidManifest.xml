@@ -10,11 +10,6 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-    <!-- ─── LOCATION PERMISSIONS (FIX FOR GPS ACCESS) ─── -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-
     <!-- ─── NOTIFICATION PERMISSIONS (FIX FOR ANDROID 13+) ─── -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

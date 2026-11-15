@@ -1910,9 +1910,10 @@ export async function parseAndValidateMigrationCsv(
     }
 
     if (rowValid) {
+      const upperProductName = rawName.toUpperCase();
       const productRow: CsvProductRow = {
         lineNumber: line,
-        product_name: rawName,
+        product_name: upperProductName,
         selling_price: priceRes.value,
         has_stock_limit: limitParsed.value,
         stock_quantity: limitParsed.value ? stockQty : 0,
@@ -1921,7 +1922,7 @@ export async function parseAndValidateMigrationCsv(
         status: productStatus,
       };
 
-      const nameKey = normalizeKey(rawName);
+      const nameKey = normalizeKey(upperProductName);
       const barcodeKey = cleanBarcode ? cleanBarcode.toLowerCase() : null;
 
       // Cross-check DB collision by name & barcode
@@ -1936,7 +1937,7 @@ export async function parseAndValidateMigrationCsv(
           group: 'PRODUCTS',
           line,
           field: 'manufacturer_barcode',
-          identifier: rawName,
+          identifier: upperProductName,
           message: `Conflict mismatch: Name matches DB product "${dbByName.product_name}" while barcode "${cleanBarcode}" belongs to a different product ("${dbByBarcode.product_name}").`,
         });
         continue;
@@ -1963,7 +1964,7 @@ export async function parseAndValidateMigrationCsv(
           group: 'PRODUCTS',
           line,
           matchedBy: dbByName ? 'product_name' : 'manufacturer_barcode',
-          identifier: rawName,
+          identifier: upperProductName,
           targetDbId: dbMatch.id,
           existingSnapshot: dbMatch,
           existingSummary,
@@ -1988,7 +1989,7 @@ export async function parseAndValidateMigrationCsv(
             group: 'PRODUCTS',
             line,
             matchedBy: csvNameMatch ? 'product_name' : 'manufacturer_barcode',
-            identifier: rawName,
+            identifier: upperProductName,
             earlierCsvLine: csvMatch.line,
             existingSummary: `Line ${csvMatch.line}: ₱${prev.selling_price.toFixed(2)} • ${
               prev.has_stock_limit ? `Stock: ${prev.stock_quantity}` : 'Unlimited'

@@ -99,6 +99,49 @@ export const buildAppUrl = (path = '/'): string => {
   return `${APP_URL}${cleanPath}`;
 };
 
+const isLocalhostOrigin = (url: string): boolean =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/i.test(
+    stripTrailingSlashes(url)
+  );
+
+/**
+ * Resolves the public-facing domain for shareable member links/QR codes
+ * (e.g., `/register`), matching the live domain (`dev-wolfpalomar.vercel.app`
+ * or `wolfpalomar.vercel.app`) rather than `http://localhost:9999`.
+ */
+export const resolvePublicPortalBaseUrl = (): string => {
+  // 1. Prefer the active non-localhost web origin when running in browser
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = stripTrailingSlashes(window.location.origin);
+    if (
+      !isNativeAppShell() &&
+      /^https?:\/\//i.test(origin) &&
+      !isLocalhostOrigin(origin) &&
+      !origin.includes('-projects.vercel.app')
+    ) {
+      return origin;
+    }
+  }
+
+  // 2. Allow explicit VITE_APP_URL only if it is not a localhost URL
+  const configured = readConfiguredAppUrl();
+  if (configured && !isLocalhostOrigin(configured)) {
+    return configured;
+  }
+
+  // 3. Fallback to canonical environment domain
+  return import.meta.env.DEV
+    ? 'https://dev-wolfpalomar.vercel.app'
+    : 'https://wolfpalomar.vercel.app';
+};
+
+export const buildPublicPortalUrl = (path = '/'): string => {
+  const base = resolvePublicPortalBaseUrl();
+  if (!path || path === '/') return base;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+};
+
 // Surface configuration warnings in development
 if (import.meta.env.DEV) {
   if (!readConfiguredAppUrl()) {

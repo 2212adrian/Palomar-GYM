@@ -51,6 +51,7 @@ import {
   registrationService,
   settingsService,
   getSynchronousInitialSettings,
+  normalizeMemberFullName,
 } from '../memberService';
 import { getEffectiveRates } from '../../../lib/ratesService';
 import {
@@ -1074,22 +1075,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const existingMemberMatch = useMemo<Member | null>(() => {
     if (!firstName.trim() || !lastName.trim()) return null;
-    const targetFirst = firstName.trim().toLowerCase();
-    const targetLast = lastName.trim().toLowerCase();
+    const mi = middleInitials.trim() ? ` ${middleInitials.trim().replace('.', '')}.` : '';
+    const suff = suffix.trim() ? ` ${suffix.trim()}` : '';
+    const targetNormalized = normalizeMemberFullName(
+      `${lastName.trim()}, ${firstName.trim()}${mi}${suff}`
+    );
 
     return (
       allMembers.find((m: Member) => {
         if (selectedExistingMember && m.id === selectedExistingMember.id)
           return false;
         if (prefillMember && m.id === prefillMember.id) return false;
-        const flatFullName = m.full_name.toLowerCase();
-        return (
-          flatFullName.includes(targetFirst) &&
-          flatFullName.includes(targetLast)
-        );
+        return normalizeMemberFullName(m.full_name) === targetNormalized;
       }) || null
     );
-  }, [firstName, lastName, selectedExistingMember, prefillMember, allMembers]);
+  }, [
+    firstName,
+    lastName,
+    middleInitials,
+    suffix,
+    selectedExistingMember,
+    prefillMember,
+    allMembers,
+  ]);
 
   const phoneMatchMember = useMemo<Member | null>(() => {
     const cleanPhone = phone.trim();
@@ -1288,6 +1296,25 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         type: 'info',
         text: `Attached to existing member profile: ${active?.full_name} (${active?.member_id}).`,
       });
+    }
+
+    if (
+      enrollmentType === 'new' &&
+      !selectedExistingMember &&
+      !prefillMember &&
+      existingMemberMatch
+    ) {
+      notices.push({
+        type: 'warning',
+        text: `Duplicate full name detected: "${existingMemberMatch.full_name}" (${existingMemberMatch.member_id}) already exists.`,
+      });
+      return {
+        level: 'red' as const,
+        title: 'Duplicate Full Name Detected',
+        description: `A member named "${existingMemberMatch.full_name}" (${existingMemberMatch.member_id}) is already registered. Duplicate full names are not allowed — attach their existing profile to renew or edit.`,
+        actionMember: existingMemberMatch,
+        notices,
+      };
     }
 
     if (!selectedExistingMember && phoneMatchMember) {
@@ -1772,22 +1799,80 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       }
     }
 
+    if (
+      enrollmentType === 'new' &&
+      !selectedExistingMember &&
+      !prefillMember &&
+      existingMemberMatch
+    ) {
+      setErrors({
+        lastName: `Member "${existingMemberMatch.full_name}" already exists.`,
+        firstName: 'Duplicate full names are not permitted.',
+      });
+      toast.error(
+        `Duplicate full name not allowed: "${existingMemberMatch.full_name}" (${existingMemberMatch.member_id}) already exists. Select Existing Member instead.`
+      );
+      return false;
+    }
+
     const newErrors: Record<string, string> = {};
 
-    if (!lastName.trim()) newErrors.lastName = 'Last name is required.';
-    if (!firstName.trim()) newErrors.firstName = 'First name is required.';
-    if (!phone.trim() || phone.trim().toLowerCase() === 'no phone')
+    const cleanLast = lastName.trim();
+    const cleanFirst = firstName.trim();
+    const cleanPhoneDigits = phone.replace(/\D/g, '');
+    const cleanEmergencyPhoneDigits = emergencyPhone.replace(/\D/g, '');
+    const cleanParentPhoneDigits = parentPhone.replace(/\D/g, '');
+
+    if (!cleanLast) {
+      newErrors.lastName = 'Last name is required.';
+    } else if (cleanLast.length > 50) {
+      newErrors.lastName = 'Last name cannot exceed 50 characters.';
+    }
+
+    if (!cleanFirst) {
+      newErrors.firstName = 'First name is required.';
+    } else if (cleanFirst.length > 50) {
+      newErrors.firstName = 'First name cannot exceed 50 characters.';
+    }
+
+    if (!cleanPhoneDigits || phone.trim().toLowerCase() === 'no phone') {
       newErrors.phone = 'Phone number is required.';
+    } else if (cleanPhoneDigits.length < 10 || cleanPhoneDigits.length > 15) {
+      newErrors.phone = 'Phone number must be 10 to 15 digits.';
+    }
+
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
 
+    if (address.trim().length > 150) {
+      newErrors.address = 'Home address cannot exceed 150 characters.';
+    }
+
+    if (email.trim()) {
+      if (
+        email.trim().length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+      ) {
+        newErrors.email = 'Please enter a valid email address (max 254 chars).';
+      }
+    }
+
     if (isMinor) {
-      if (!parentName.trim())
+      if (!parentName.trim()) {
         newErrors.parentName =
           'Parent / Legal Guardian name is required for minors.';
+      } else if (parentName.trim().length > 100) {
+        newErrors.parentName = 'Parent name cannot exceed 100 characters.';
+      }
       if (!parentRelationship.trim())
         newErrors.parentRelationship = 'Relationship to minor is required.';
-      if (!parentPhone.trim())
+      if (!cleanParentPhoneDigits) {
         newErrors.parentPhone = 'Parent contact phone is required.';
+      } else if (
+        cleanParentPhoneDigits.length < 10 ||
+        cleanParentPhoneDigits.length > 15
+      ) {
+        newErrors.parentPhone = 'Parent phone must be 10 to 15 digits.';
+      }
       if (!applicantSig && !isSignaturesLocked)
         newErrors.applicantSig = 'Applicant digital signature is required.';
       if (!parentSig && !isSignaturesLocked)
@@ -1797,8 +1882,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       if (!sameAsParent) {
         if (!emergencyName.trim())
           newErrors.emergencyName = 'Emergency contact name is required.';
-        if (!emergencyPhone.trim())
+        if (!cleanEmergencyPhoneDigits) {
           newErrors.emergencyPhone = 'Emergency phone is required.';
+        } else if (
+          cleanEmergencyPhoneDigits.length < 10 ||
+          cleanEmergencyPhoneDigits.length > 15
+        ) {
+          newErrors.emergencyPhone = 'Emergency phone must be 10 to 15 digits.';
+        }
+      }
+    } else if (cleanEmergencyPhoneDigits) {
+      if (
+        cleanEmergencyPhoneDigits.length < 10 ||
+        cleanEmergencyPhoneDigits.length > 15
+      ) {
+        newErrors.emergencyPhone = 'Emergency phone must be 10 to 15 digits.';
       }
     }
 
@@ -1816,18 +1914,24 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const missingList: string[] = [];
       if (!lastName.trim()) missingList.push('Last Name');
       if (!firstName.trim()) missingList.push('First Name');
-      if (!phone.trim()) missingList.push('Phone Number');
+      const phoneDigits = phone.replace(/\D/g, '');
+      if (!phoneDigits || phoneDigits.length < 10 || phoneDigits.length > 15) {
+        missingList.push('Valid Phone Number (10-15 digits)');
+      }
       if (!birthday.trim()) missingList.push('Birthday');
       if (isMinor) {
         if (!parentName.trim()) missingList.push('Parent Name');
-        if (!parentPhone.trim()) missingList.push('Parent Phone');
+        const pDigits = parentPhone.replace(/\D/g, '');
+        if (!pDigits || pDigits.length < 10 || pDigits.length > 15) {
+          missingList.push('Valid Parent Phone (10-15 digits)');
+        }
         if (!applicantSig) missingList.push('Applicant Signature');
         if (!parentSig) missingList.push('Parent Signature');
       }
       if (!waiverAgreed) missingList.push('Terms Agreement');
 
       if (missingList.length > 0) {
-        toast.error(`Please complete missing items: ${missingList.join(', ')}`);
+        toast.error(`Please complete / fix: ${missingList.join(', ')}`);
       }
       return;
     }
@@ -1914,14 +2018,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
       let targetMember: Member;
       const combinedName = getCombinedFullName();
-      const existingByPhone = phone.trim()
-        ? allMembers.find((m: Member) => m.phone === phone.trim())
-        : null;
+      if (
+        enrollmentType === 'new' &&
+        !prefillMember &&
+        !selectedExistingMember &&
+        existingMemberMatch
+      ) {
+        toast.error(
+          `Duplicate full name not allowed: "${existingMemberMatch.full_name}" (${existingMemberMatch.member_id}) already exists.`
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       const activeMemberToUse =
         prefillMember ||
         selectedExistingMember ||
-        existingMemberMatch ||
-        existingByPhone;
+        (enrollmentType === 'existing' ? existingMemberMatch : null);
 
       const finalEmergencyName =
         isMinor && sameAsParent ? parentName.trim() : emergencyName.trim();
@@ -2833,6 +2946,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </label>
                         <input
                           type="text"
+                          maxLength={50}
                           value={lastName}
                           disabled={isNameLocked}
                           onChange={(e) => {
@@ -2868,6 +2982,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </label>
                         <input
                           type="text"
+                          maxLength={50}
                           value={firstName}
                           disabled={isNameLocked}
                           onChange={(e) => {
@@ -2904,7 +3019,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             type="text"
                             value={middleInitials}
                             disabled={isNameLocked}
-                            maxLength={2}
+                            maxLength={5}
                             onChange={(e) => setMiddleInitials(e.target.value)}
                             autoComplete="off"
                             spellCheck={false}
@@ -2920,6 +3035,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           </label>
                           <input
                             type="text"
+                            maxLength={10}
                             value={suffix}
                             disabled={isNameLocked}
                             onChange={(e) => setSuffix(e.target.value)}
@@ -2947,10 +3063,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           )}
                         </label>
                         <input
-                          type="text"
+                          type="tel"
                           value={phone}
                           disabled={isPhoneLocked}
-                          maxLength={11}
+                          maxLength={15}
                           onChange={(e) => {
                             setPhone(e.target.value.replace(/\D/g, ''));
                             if (errors.phone)
@@ -2966,8 +3082,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
                                 : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                           }`}
-                          placeholder="0917XXXXXXX"
+                          placeholder="09171234567"
                         />
+                        {errors.phone && (
+                          <span className="text-[9px] text-rose-500 font-bold block">
+                            {errors.phone}
+                          </span>
+                        )}
 
                        {phoneMatchMember && !selectedExistingMember && !isStaff && (
                           <div className="flex items-center justify-between text-[9px] text-amber-500 mt-1 font-medium">
@@ -3061,14 +3182,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                       {/* Home Address */}
                       <div className="md:col-span-2 space-y-1">
-                        <label className="text-xs font-bold text-(--color-text)/80 block">
-                          Home Address{' '}
-                          <span className="text-(--color-text)/40 font-normal">
-                            (optional)
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-(--color-text)/80 block">
+                            Home Address{' '}
+                            <span className="text-(--color-text)/40 font-normal">
+                              (optional)
+                            </span>
+                          </label>
+                          <span className="text-[9px] font-mono text-(--color-text)/50">
+                            {address.length}/150
                           </span>
-                        </label>
+                        </div>
                         <input
                           type="text"
+                          maxLength={150}
                           value={address}
                           disabled={isAddressLocked}
                           onChange={(e) => setAddress(e.target.value)}
@@ -3078,6 +3205,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold text-(--color-text) outline-none focus:border-white focus:ring-2 focus:ring-white/20 transition-all"
                           placeholder="Barangay, City, Province (optional)"
                         />
+                        {errors.address && (
+                          <span className="text-[9px] text-rose-500 font-bold block">
+                            {errors.address}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3096,6 +3228,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           </label>
                           <input
                             type="text"
+                            maxLength={100}
                             value={emergencyName}
                             disabled={isEmergencyNameLocked}
                             onChange={(e) => setEmergencyName(e.target.value)}
@@ -3135,21 +3268,31 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             Emergency Phone
                           </label>
                           <input
-                            type="text"
-                            maxLength={11}
+                            type="tel"
+                            maxLength={15}
                             value={emergencyPhone}
                             disabled={isEmergencyPhoneLocked}
-                            onChange={(e) =>
+                            onChange={(e) => {
                               setEmergencyPhone(
                                 e.target.value.replace(/\D/g, '')
-                              )
-                            }
+                              );
+                              if (errors.emergencyPhone)
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  emergencyPhone: '',
+                                }));
+                            }}
                             autoComplete="off"
                             spellCheck={false}
                             autoCorrect="off"
                             className="w-full px-3.5 py-2.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-mono font-bold text-(--color-text) outline-none focus:border-blue-500"
-                            placeholder="0918XXXXXXX"
+                            placeholder="09181234567"
                           />
+                          {errors.emergencyPhone && (
+                            <span className="text-[9px] text-rose-500 font-bold block">
+                              {errors.emergencyPhone}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3185,6 +3328,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           </label>
                           <input
                             type="text"
+                            maxLength={100}
                             value={parentName}
                             disabled={isParentNameLocked}
                             onChange={(e) => {
@@ -3263,8 +3407,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             )}
                           </label>
                           <input
-                            type="text"
-                            maxLength={11}
+                            type="tel"
+                            maxLength={15}
                             value={parentPhone}
                             disabled={isParentPhoneLocked}
                             onChange={(e) => {
@@ -3287,8 +3431,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
                                   : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                             }`}
-                            placeholder="0918XXXXXXX"
+                            placeholder="09181234567"
                           />
+                          {errors.parentPhone && (
+                            <span className="text-[9px] text-rose-500 font-bold block">
+                              {errors.parentPhone}
+                            </span>
+                          )}
                         </div>
 
                         <div className="md:col-span-2 p-2.5 bg-(--bg-card) rounded-xl border border-(--border-color) flex items-center justify-between">

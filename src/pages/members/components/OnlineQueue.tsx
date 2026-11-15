@@ -47,7 +47,7 @@ import type { OnlineRegistration } from '../../../types/members';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
-import { buildAppUrl } from '../../../lib/appUrl';
+import { buildPublicPortalUrl } from '../../../lib/appUrl';
 
 interface OnlineQueueProps {
   onApproveLaunchWizard: (reg: OnlineRegistration) => void;
@@ -311,7 +311,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     };
   }, [currentActor]);
 
-  const registrationPortalUrl = useMemo(() => buildAppUrl('/register'), []);
+  const registrationPortalUrl = useMemo(() => buildPublicPortalUrl('/register'), []);
 
   const [copiedLink, setCopiedLink] = useState(false);
 

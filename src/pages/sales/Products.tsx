@@ -343,7 +343,10 @@ export const Products: React.FC<ProductsProps> = ({
         const uniqueDbMap = new Map<string, Product>();
         data.forEach((item: Product) => {
           if (!uniqueDbMap.has(item.id)) {
-            uniqueDbMap.set(item.id, item);
+            uniqueDbMap.set(item.id, {
+              ...item,
+              product_name: (item.product_name || '').toUpperCase(),
+            });
           }
         });
         const deduplicatedDb = Array.from(uniqueDbMap.values());
@@ -754,7 +757,7 @@ export const Products: React.FC<ProductsProps> = ({
   const handleEditClick = (product: Product) => {
     setIsEditing(true);
     setSelectedProductId(product.id);
-    setFormName(product.product_name);
+    setFormName((product.product_name || '').toUpperCase());
     setFormPrice(product.selling_price.toString());
     setFormHasStockLimit(product.has_stock_limit);
     setFormStockQuantity(product.stock_quantity.toString());
@@ -774,9 +777,13 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
       setSaving(true);
 
       if (bulkItems && bulkItems.length > 0) {
+        const normalizedBulkItems = bulkItems.map((item) => ({
+          ...item,
+          product_name: String(item.product_name || '').trim().toUpperCase(),
+        }));
         const { data, error } = await supabase
           .from('products')
-          .insert(bulkItems)
+          .insert(normalizedBulkItems)
           .select();
 
         if (error) {
@@ -835,7 +842,7 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
         await logAudit('BULK_PRODUCTS_CREATED', auditDetails);
         setShowFormModal(false);
       } else {
-        const nameClean = formName.trim();
+        const nameClean = formName.trim().toUpperCase();
         const priceNum = parseFloat(formPrice);
 
         if (!nameClean || nameClean.length > 100) {
@@ -1650,13 +1657,13 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span
-                  className={`font-semibold tracking-wide block text-sm ${
+                  className={`font-semibold tracking-wide block text-sm uppercase ${
                     isDeleted
                       ? 'line-through text-rose-600 dark:text-rose-400'
                       : ''
                   }`}
                 >
-                  {item.product_name}
+                  {item.product_name.toUpperCase()}
                 </span>
 
                 {/* Sync status indicator badge */}
@@ -2289,11 +2296,11 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
 
                         <div className="min-w-0 flex-1 space-y-1">
                           <h4
-                            className={`font-bold text-sm sm:text-base text-(--color-text) truncate leading-tight ${
+                            className={`font-bold text-sm sm:text-base text-(--color-text) truncate leading-tight uppercase ${
                               isDeleted ? 'line-through text-rose-500' : ''
                             }`}
                           >
-                            {product.product_name}
+                            {product.product_name.toUpperCase()}
                           </h4>
 
                           <div className="flex items-center gap-1.5 font-mono">

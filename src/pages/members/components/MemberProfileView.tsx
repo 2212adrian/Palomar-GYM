@@ -38,6 +38,7 @@ import {
   cardService,
   settingsService,
   getSynchronousInitialSettings,
+  normalizeMemberFullName,
 } from '../memberService';
 import type {
   Member,
@@ -1190,10 +1191,77 @@ setSheetHeightPercent((current) => {
   };
 
   const handleSaveProfileChanges = async () => {
-    if (!editLastName.trim() || !editFirstName.trim() || !editPhone.trim()) {
+    const cleanLast = editLastName.trim();
+    const cleanFirst = editFirstName.trim();
+    const phoneDigits = editPhone.replace(/\D/g, '');
+    const emergencyDigits = editEmergencyPhone.replace(/\D/g, '');
+
+    if (!cleanLast || !cleanFirst || !phoneDigits) {
       toast.warning('Last Name, First Name, and Contact Phone are required.');
       return;
     }
+
+    if (cleanLast.length > 50 || cleanFirst.length > 50) {
+      toast.warning('First and Last Name cannot exceed 50 characters each.');
+      return;
+    }
+
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      toast.warning('Contact Phone must contain between 10 and 15 digits.');
+      return;
+    }
+
+    if (
+      emergencyDigits &&
+      (emergencyDigits.length < 10 || emergencyDigits.length > 15)
+    ) {
+      toast.warning('Emergency Phone must contain between 10 and 15 digits.');
+      return;
+    }
+
+    if (
+      editEmail.trim() &&
+      (editEmail.trim().length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editEmail.trim()))
+    ) {
+      toast.warning('Please provide a valid email address (max 254 characters).');
+      return;
+    }
+
+    if (editAddress.trim().length > 150) {
+      toast.warning('Home Address cannot exceed 150 characters.');
+      return;
+    }
+
+    const formattedFullName = formatFullName(
+      editLastName,
+      editFirstName,
+      editMiddleInitial,
+      editSuffix
+    );
+    const normalizedCandidate = normalizeMemberFullName(formattedFullName);
+
+    try {
+      const { data: dupMatches } = await supabase
+        .from('members')
+        .select('id, member_id, full_name')
+        .is('deleted_at', null)
+        .ilike('full_name', normalizedCandidate);
+
+      const conflict = (dupMatches || []).find(
+        (m: any) =>
+          m.id !== localMember.id &&
+          m.member_id !== localMember.member_id &&
+          normalizeMemberFullName(m.full_name) === normalizedCandidate
+      );
+
+      if (conflict) {
+        toast.error(
+          `Duplicate full name not allowed: "${conflict.full_name}" (${conflict.member_id}) already exists.`
+        );
+        return;
+      }
+    } catch {}
 
     if (hasActiveSubscription) {
       setIsEditConfirmModalOpen(true);
@@ -2074,6 +2142,7 @@ setSheetHeightPercent((current) => {
                           </label>
                           <input
                             type="text"
+                            maxLength={50}
                             value={editLastName}
                             onChange={(e) => setEditLastName(e.target.value)}
                             autoComplete="off"
@@ -2089,6 +2158,7 @@ setSheetHeightPercent((current) => {
                           </label>
                           <input
                             type="text"
+                            maxLength={50}
                             value={editFirstName}
                             onChange={(e) => setEditFirstName(e.target.value)}
                             autoComplete="off"
@@ -2107,7 +2177,7 @@ setSheetHeightPercent((current) => {
                           </label>
                           <input
                             type="text"
-                            maxLength={2}
+                            maxLength={5}
                             value={editMiddleInitial}
                             onChange={(e) => setEditMiddleInitial(e.target.value)}
                             autoComplete="off"
@@ -2123,6 +2193,7 @@ setSheetHeightPercent((current) => {
                           </label>
                           <input
                             type="text"
+                            maxLength={10}
                             value={editSuffix}
                             onChange={(e) => setEditSuffix(e.target.value)}
                             autoComplete="off"
@@ -2165,12 +2236,12 @@ setSheetHeightPercent((current) => {
                           Contact Phone *
                         </label>
                         <input
-                          type="text"
+                          type="tel"
                           value={editPhone}
                           onChange={(e) =>
                             setEditPhone(e.target.value.replace(/\D/g, ''))
                           }
-                          maxLength={11}
+                          maxLength={15}
                           autoComplete="off"
                           spellCheck={false}
                           autoCorrect="off"
@@ -2184,6 +2255,7 @@ setSheetHeightPercent((current) => {
                         </label>
                         <input
                           type="email"
+                          maxLength={254}
                           value={editEmail}
                           onChange={(e) => setEditEmail(e.target.value)}
                           autoComplete="off"
@@ -2193,11 +2265,17 @@ setSheetHeightPercent((current) => {
                         />
                       </div>
                       <div>
-                        <label className="text-slate-400 text-xs font-medium block mb-1">
-                          Home Address
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-slate-400 text-xs font-medium block">
+                            Home Address
+                          </label>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {editAddress.length}/150
+                          </span>
+                        </div>
                         <input
                           type="text"
+                          maxLength={150}
                           value={editAddress}
                           onChange={(e) => setEditAddress(e.target.value)}
                           autoComplete="off"
@@ -2246,6 +2324,7 @@ setSheetHeightPercent((current) => {
                         </label>
                         <input
                           type="text"
+                          maxLength={100}
                           value={editEmergencyName}
                           onChange={(e) => setEditEmergencyName(e.target.value)}
                           autoComplete="off"
@@ -2301,14 +2380,14 @@ setSheetHeightPercent((current) => {
                           Emergency Phone
                         </label>
                         <input
-                          type="text"
+                          type="tel"
                           value={editEmergencyPhone}
                           onChange={(e) =>
                             setEditEmergencyPhone(
                               e.target.value.replace(/\D/g, '')
                             )
                           }
-                          maxLength={11}
+                          maxLength={15}
                           autoComplete="off"
                           spellCheck={false}
                           autoCorrect="off"
