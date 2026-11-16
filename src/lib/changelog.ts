@@ -16,6 +16,38 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.9',
+    date: '2026-11-16',
+    summary:
+      'RBAC backend and frontend security hardening to prevent bypassing UI restrictions, session-gated Admin ON/OFF switch for Online Registration with database and realtime enforcement, responsive OnlineQueue UI overhaul, and notification/TypeScript fixes.',
+    sections: [
+      {
+        type: 'RBAC Security & Access Control Enforcement',
+        items: [
+          'Logbook & Sales Permission Separation: Separated payment toggle permissions from soft-deletion so Staff can soft-delete and restore daily attendance and sales records via their Recycle Bins, while payment status changes (Collect / Paid), subscription purges, and direct mutations to receipts, cards, member_cards, and subscriptions remain strictly Admin-only.',
+          'Soft-Delete & Revenue Visibility Guards: Replaced Sales unmount hard-deletes with deleted_at soft-deletes, gated Sales revenue counters behind Admin checks across desktop and mobile views, and exposed Sales and Logbook Recycle Bin access to Staff.',
+          'Admin-Only Recycle Bin Reactivation & Trigger Sync: Restricted Logbook Recycle Bin card and receipt reactivation queries and updates to Admins, relying on PostgreSQL\'s tr_card_revert_on_attendance_change trigger to synchronize card status automatically for Staff restorations.',
+          'Secure Offline Sync & RPC Routing: Updated background offline sync to process card_purchase items via the pay_physical_card RPC, route audit entries through the log_audit_entry RPC with UUID validation, and restrict direct receipts and cards mutations during attendance sync to Admins.',
+        ],
+      },
+      {
+        type: 'Online Registration Switch & Portal Controls',
+        items: [
+          'Session-Gated Admin ON/OFF Switch: Added an interactive role="switch" control in OnlineQueue allowing Admin and SuperAdmin users to toggle public Online Registration ON or OFF (read-only for Staff), automatically forcing the switch OFF and disabling it whenever no cash drawer session is open.',
+          'Database Enforcement & Realtime Sync: Persisted online_registration_enabled in system_config backed by get_online_registration_status(), set_online_registration_enabled(), updated is_gym_open() anonymous RLS insert checks, a cash_sessions trigger resetting the switch to false on session close, and a system_config guard trigger blocking true while closed—paired with Supabase realtime sync in registrationService and OnlineRegistrationPage (/register) to distinguish a closed gym session from a paused online portal.',
+        ],
+      },
+      {
+        type: 'Online Registration UI & Notification Fixes',
+        items: [
+          'Single Consolidated Closed-Session Banner: Removed the redundant red closed-session banner inside OnlineQueue, retaining only the amber closed-session banner above the Members List and Online Registration tabs with clean mobile stacking and updated messaging for approvals and online registration.',
+          'Responsive OnlineQueue Layout: Unified the workspace header, Admin toggle switch, and action toolbar (bringing Copy Link to tablet and desktop), and replaced the overlapping fixed mobile dock with a 2-column mobile action grid (44px+ touch targets), 1-column mobile / 2-column small-tablet card grid (<768px), sortable data table (768px+), and tabular numerals on counters and purge timers.',
+          'Cash Notification & TypeScript Fixes: Added full digital_in type and UI support to notification cash approval/rejection handlers, corrected auth/superadmin import paths in update and notification services, and resolved remaining TypeScript build issues.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.8',
     date: '2026-11-15',
     summary:

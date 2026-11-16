@@ -13,7 +13,7 @@ DROP POLICY IF EXISTS "Superadmin full access" ON public.sync_conflicts;
 CREATE POLICY "Superadmin full access"
     ON public.sync_conflicts
     AS PERMISSIVE FOR ALL
-    TO authenticated
+    TO authenticatedQ
     USING (public.is_superadmin())
     WITH CHECK (public.is_superadmin());
 
