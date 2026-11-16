@@ -4,6 +4,8 @@ import { App as CapApp } from '@capacitor/app';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { saveAs } from 'file-saver';
 import { supabase } from './supabase/client';
+import { useAuthStore } from '../stores/authStore';
+import { isSuperAdmin } from '../constants/auth';
 
 export interface AppReleaseInfo {
   id?: string;
@@ -158,6 +160,24 @@ export const fetchLatestRelease = async (
 ): Promise<AppReleaseInfo | null> => {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return null;
+  }
+
+  const authState = useAuthStore.getState();
+  if (authState.user) {
+    const roleStr = String(
+      authState.profile?.role ||
+        authState.user?.app_metadata?.role ||
+        ''
+    )
+      .toLowerCase()
+      .trim();
+    const isAdminUser =
+      isSuperAdmin(authState.user.email) ||
+      roleStr === 'admin' ||
+      roleStr === 'superadmin';
+    if (!isAdminUser) {
+      return null;
+    }
   }
 
   try {

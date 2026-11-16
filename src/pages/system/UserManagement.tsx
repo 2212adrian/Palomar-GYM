@@ -449,6 +449,10 @@ export const UserManagement: React.FC = () => {
       toast.error('You cannot delete your own session account.');
       return;
     }
+    if (isSuperAdminAccount(targetUser) || isProtectedAdminAccount(targetUser)) {
+      toast.error('Administrator accounts can only be deleted by the Superadmin.');
+      return;
+    }
     setDeleteTargetUser(targetUser);
     setDeleteConfirmText('');
     setDeleteModalOpen(true);
@@ -537,6 +541,10 @@ export const UserManagement: React.FC = () => {
   };
 
   const handleOpenEditProfile = (targetUser: any) => {
+    if (isSuperAdminAccount(targetUser) || isProtectedAdminAccount(targetUser)) {
+      toast.error('Administrator profiles can only be edited by the Superadmin.');
+      return;
+    }
     if (avatarPreviewUrl) {
       URL.revokeObjectURL(avatarPreviewUrl);
     }
@@ -574,6 +582,12 @@ export const UserManagement: React.FC = () => {
       toast.error(
         'Superadmin credentials are permanently locked and must be configured in Personal Account.'
       );
+      setIsEditProfileModalOpen(false);
+      return;
+    }
+
+    if (isProtectedAdminAccount(editTargetUser)) {
+      toast.error('Administrator profiles can only be modified by the Superadmin.');
       setIsEditProfileModalOpen(false);
       return;
     }
@@ -725,7 +739,8 @@ export const UserManagement: React.FC = () => {
       return;
     }
 
-    if (targetRole === 'admin' && !viewerIsSuperAdmin) {
+    const targetObj = usersList.find((u) => u.id === targetId) || { role: targetRole };
+    if (isProtectedAdminAccount(targetObj)) {
       triggerHapticButton();
       toast.error(
         'Administrator account statuses can only be modified by the Superadmin.'
@@ -774,6 +789,12 @@ export const UserManagement: React.FC = () => {
   ) => {
     if (targetId === user?.id) {
       toast.error('You cannot change your own permission role.');
+      return;
+    }
+
+    const targetObj = usersList.find((u) => u.id === targetId) || { role: currentRole };
+    if (isProtectedAdminAccount(targetObj)) {
+      toast.error('Administrator account roles can only be modified by the Superadmin.');
       return;
     }
 
@@ -839,6 +860,13 @@ export const UserManagement: React.FC = () => {
 
   const isSuperAdminRow = (rowEmail?: string | null) =>
     isEmailSuperAdmin(rowEmail);
+
+  const isProtectedAdminAccount = (account?: any) => {
+    if (!account) return false;
+    if (viewerIsSuperAdmin) return false;
+    const roleStr = String(account.role || '').toLowerCase().trim();
+    return roleStr === 'admin' || roleStr === 'superadmin' || isSuperAdminAccount(account);
+  };
 
   const systemUsers = usersList.filter((u) => {
     const email = (u.email || '').trim().toLowerCase();
@@ -1011,7 +1039,7 @@ export const UserManagement: React.FC = () => {
           );
         };
 
-        if (isSelfUser) {
+        if (isSelfUser || isProtectedAdminAccount(u)) {
           return getRoleBadge(effectiveBaseRole);
         }
 
@@ -1094,7 +1122,7 @@ export const UserManagement: React.FC = () => {
               {getStatusBadge(compStatus)}
             </div>
 
-            {!isSelfUser && (
+            {!isSelfUser && !isProtectedAdminAccount(u) && !isSuperAdminAccount(u) && (
               <button
                 type="button"
                 onClick={() =>
@@ -1148,15 +1176,14 @@ export const UserManagement: React.FC = () => {
         }
 
         const isTargetSuperAdmin = isSuperAdminAccount(u);
-        const isProtectedAdmin =
-          u.role === 'admin' && u.status === 'active' && !viewerIsSuperAdmin;
+        const isProtectedAdmin = isProtectedAdminAccount(u);
         const isNoEmailAccount =
           !u.email || u.email.endsWith('@palomargym.noemail');
 
         return (
           <div className="flex items-center justify-end gap-1.5">
             {/* Action 1: Edit Profile (Username & Profile Photo) */}
-            {!isTargetSuperAdmin && (
+            {!isTargetSuperAdmin && !isProtectedAdmin && (
               <button
                 type="button"
                 onClick={() => handleOpenEditProfile(u)}
@@ -1391,6 +1418,7 @@ export const UserManagement: React.FC = () => {
             const currentRole = draft?.role || effectiveBaseRole;
             const isTargetSuperAdmin =
               isSuperAdminAccount(u) || isSuperAdminRow(displayEmail);
+            const isProtectedAdmin = isProtectedAdminAccount(u);
 
             return (
               <div
@@ -1437,7 +1465,7 @@ export const UserManagement: React.FC = () => {
                       <span className="text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
                         SUPERADMIN
                       </span>
-                    ) : isSelfUser ? (
+                    ) : isSelfUser || isProtectedAdmin ? (
                       <span
                         className={`text-[9px] font-heading tracking-widest px-2.5 py-1 rounded-full uppercase font-bold ${
                           effectiveBaseRole === 'admin'
@@ -1531,7 +1559,7 @@ export const UserManagement: React.FC = () => {
                   </div>
 
                   {/* Toggle Switch */}
-                  {!isSelfUser && (
+                  {!isSelfUser && !isProtectedAdmin && !isTargetSuperAdmin && (
                     <button
                       type="button"
                       onClick={() =>
@@ -1569,7 +1597,7 @@ export const UserManagement: React.FC = () => {
                     </span>
                   ) : (
                     <div className="flex items-center justify-end gap-2 w-full">
-                      {!isTargetSuperAdmin && (
+                      {!isTargetSuperAdmin && !isProtectedAdmin && (
                         <button
                           type="button"
                           onClick={() => handleOpenEditProfile(u)}
@@ -1594,19 +1622,21 @@ export const UserManagement: React.FC = () => {
                         <span>Reset</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteUserClick(u)}
-                        disabled={isDeletingUser === u.id}
-                        className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer"
-                      >
-                        {isDeletingUser === u.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                        <span>Delete</span>
-                      </button>
+                      {!isTargetSuperAdmin && !isProtectedAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUserClick(u)}
+                          disabled={isDeletingUser === u.id}
+                          className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer"
+                        >
+                          {isDeletingUser === u.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          <span>Delete</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

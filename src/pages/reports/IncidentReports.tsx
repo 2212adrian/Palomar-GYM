@@ -97,12 +97,13 @@ const SUGGESTED_TAGS = [
 
 export const IncidentReports: React.FC = () => {
   const location = useLocation();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { setActions } = useContext(HeaderActionsContext);
 
   // Safe, case-insensitive role check
   const roleString = String(
-    user?.app_metadata?.role ||
+    profile?.role ||
+      user?.app_metadata?.role ||
       user?.user_metadata?.role ||
       (user as any)?.role ||
       ''
@@ -114,6 +115,9 @@ export const IncidentReports: React.FC = () => {
     roleString === 'admin' ||
     roleString === 'superadmin' ||
     isSuperAdmin(user?.email);
+
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
 
   // Mount Guard Ref
   const isMountedRef = useRef(true);
@@ -1083,8 +1087,14 @@ export const IncidentReports: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      if (stagedDeletionsRef.current.length > 0) {
+      if (stagedDeletionsRef.current.length > 0 && navigator.onLine) {
         stagedDeletionsRef.current.forEach((report) => {
+          if (
+            !isAdminRef.current &&
+            (report.status !== 'Unread' || report.is_archived)
+          ) {
+            return;
+          }
           supabase.from('incident_reports').delete().eq('id', report.id).then();
         });
       }

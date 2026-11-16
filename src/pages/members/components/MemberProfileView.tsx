@@ -171,7 +171,8 @@ export const MemberProfileView: React.FC<MemberProfileViewProps> = ({
   // Role resolution
   const role = useMemo<'admin' | 'staff'>(() => {
     if (isSuperAdmin(user?.email)) return 'admin';
-    return profile?.role?.toLowerCase() === 'admin' ? 'admin' : 'staff';
+    const r = String(profile?.role || '').toLowerCase();
+    return r === 'admin' || r === 'superadmin' ? 'admin' : 'staff';
   }, [user, profile]);
 
   const isAdmin = role === 'admin';
@@ -820,15 +821,10 @@ setSheetHeightPercent((current) => {
   const handleConfirmUnbindCard = async () => {
     try {
       if (currentCard) {
-        const { error } = await supabase
-          .from('cards')
-          .update({
-            status: 'Deactivated',
-            updated_at: getServerNow().toISOString(),
-          })
-          .eq('id', currentCard.id);
-
-        if (error) throw error;
+        await cardService.unbind(
+          localMember.member_id,
+          profile?.username || user?.email || 'Admin Staff'
+        );
 
         toast.success(
           `Card ${currentCard.card_number} unbinded. Member now has no registered card.`
@@ -849,7 +845,7 @@ setSheetHeightPercent((current) => {
     try {
       await cardService.markClaimed(
         localMember.member_id,
-        user?.email || 'Admin Staff'
+        profile?.username || user?.email || 'Admin Staff'
       );
       toast.success(
         `Physical card for ${localMember.full_name} marked as CLAIMED.`
@@ -868,19 +864,10 @@ setSheetHeightPercent((current) => {
     if (!currentCard) return;
     setIsUndoingClaim(true);
     try {
-      const { error } = await supabase
-        .from('cards')
-        .update({
-          claim_status: 'UNCLAIMED',
-          claimed_at: null,
-          claimed_by: null,
-          claim_notes: null,
-          updated_at: getServerNow().toISOString(),
-        })
-        .eq('member_id', localMember.member_id)
-        .eq('status', 'Active');
-
-      if (error) throw error;
+      await cardService.undoClaim(
+        localMember.member_id,
+        profile?.username || user?.email || 'Admin Staff'
+      );
 
       toast.info(
         `Card for ${localMember.full_name} reverted to UNCLAIMED (Pending Pickup).`
@@ -1079,19 +1066,21 @@ setSheetHeightPercent((current) => {
           applicant = regData.applicant_signature || null;
           parent = regData.parent_signature || null;
 
-          await supabase
-            .from('members')
-            .update({
-              applicant_signature: applicant,
-              parent_signature: parent,
-              parent_name: localMember.parent_name || regData.parent_name,
-              parent_phone: localMember.parent_phone || regData.parent_phone,
-              parent_relationship:
-                localMember.parent_relationship || regData.parent_relationship,
-              parent_email: localMember.parent_email || regData.parent_email,
-              consent_date: localMember.consent_date || regData.consent_date,
-            })
-            .eq('id', localMember.id);
+          if (isAdmin || !hasActiveSubscription) {
+            await supabase
+              .from('members')
+              .update({
+                applicant_signature: applicant,
+                parent_signature: parent,
+                parent_name: localMember.parent_name || regData.parent_name,
+                parent_phone: localMember.parent_phone || regData.parent_phone,
+                parent_relationship:
+                  localMember.parent_relationship || regData.parent_relationship,
+                parent_email: localMember.parent_email || regData.parent_email,
+                consent_date: localMember.consent_date || regData.consent_date,
+              })
+              .eq('id', localMember.id);
+          }
         }
       }
 
@@ -1293,13 +1282,18 @@ setSheetHeightPercent((current) => {
   };
 
   const handleStatusToggleConfirm = async () => {
+    if (!isAdmin && hasActiveSubscription) {
+      toast.error('Staff cannot change member status while an active subscription is running.');
+      setIsStatusModalOpen(false);
+      return;
+    }
     const nextStatus = localMember.status === 'Active' ? 'Suspended' : 'Active';
 
     try {
       await memberService.update(
         localMember.id,
         { status: nextStatus },
-        'Admin Staff'
+        profile?.username || user?.email || 'Admin Staff'
       );
       setLocalMember((prev) => ({ ...prev, status: nextStatus }));
       toast.success(`Member status set to ${nextStatus}.`);
@@ -1311,6 +1305,11 @@ setSheetHeightPercent((current) => {
   };
 
   const handleDeleteMemberConfirm = async () => {
+    if (!isAdmin) {
+      toast.error('Only Administrators can delete member profiles.');
+      setIsDeleteModalOpen(false);
+      return;
+    }
     if (hasActiveSubscription) {
       toast.error('Cannot delete member while an active subscription exists.');
       return;
@@ -1320,7 +1319,7 @@ setSheetHeightPercent((current) => {
       await memberService.archive(
         localMember.id,
         'Profile archived by staff',
-        'Admin Staff'
+        profile?.username || user?.email || 'Admin Staff'
       );
       toast.success(
         `Profile for ${localMember.full_name} moved to Recycle Bin.`
@@ -1697,22 +1696,36 @@ setSheetHeightPercent((current) => {
                 name={localMember.full_name}
                 size={60}
                 roundedClassName="rounded-2xl shadow-md border-2 border-white/20"
-                isEditable={!isOffline}
+                isEditable={!isOffline && (isAdmin || !hasActiveSubscription)}
                 onEditClick={() => {
-                  if (!isOffline) setIsPhotoModalOpen(true);
+                  if (!isOffline && (isAdmin || !hasActiveSubscription)) {
+                    setIsPhotoModalOpen(true);
+                  }
                 }}
-                badgeTooltip={isOffline ? 'Offline - Photo editing restricted' : 'Click to view and change member photo'}
+                badgeTooltip={
+                  isOffline
+                    ? 'Offline - Photo editing restricted'
+                    : !isAdmin && hasActiveSubscription
+                      ? 'Locked for Staff while subscription is running'
+                      : 'Click to view and change member photo'
+                }
               />
               <button
                 type="button"
-                disabled={isOffline}
+                disabled={isOffline || (!isAdmin && hasActiveSubscription)}
                 onClick={() => setIsPhotoModalOpen(true)}
                 className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-md border border-white/20 transition-transform ${
-                  isOffline
+                  isOffline || (!isAdmin && hasActiveSubscription)
                     ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 cursor-not-allowed opacity-50'
                     : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer active:scale-95'
                 }`}
-                title={isOffline ? 'Offline - Photo editing restricted' : 'Change photo'}
+                title={
+                  isOffline
+                    ? 'Offline - Photo editing restricted'
+                    : !isAdmin && hasActiveSubscription
+                      ? 'Locked for Staff while subscription is running'
+                      : 'Change photo'
+                }
               >
                 <Camera className="w-3 h-3" />
               </button>
@@ -3497,12 +3510,12 @@ setSheetHeightPercent((current) => {
               </div>
             </div>
           ) : (
-            /* NORMAL MODE: All 3 Buttons in One Single Row */
-            <div className="grid grid-cols-3 gap-2 w-full">
+            /* NORMAL MODE: Action Row */
+            <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-2 w-full`}>
               {/* 1. Edit Details */}
               <button
                 type="button"
-                disabled={isOffline}
+                disabled={isOffline || (!isAdmin && hasActiveSubscription)}
                 onClick={() => {
                   setActiveTab('Overview');
                   if (sheetHeightPercent <= 30) setSheetHeightPercent(70);
@@ -3514,29 +3527,43 @@ setSheetHeightPercent((current) => {
                   setIsEditing(true);
                 }}
                 className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase transition-all border-none ${
-                  isOffline
+                  isOffline || (!isAdmin && hasActiveSubscription)
                     ? 'bg-slate-500/5 text-slate-400 border border-(--border-color) opacity-50 cursor-not-allowed'
                     : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 cursor-pointer active:scale-95'
                 }`}
-                title="Edit Details"
+                title={
+                  !isAdmin && hasActiveSubscription
+                    ? 'Locked for Staff while subscription is running'
+                    : 'Edit Details'
+                }
               >
-                <Pencil className="w-4 h-4 shrink-0" />
+                {!isAdmin && hasActiveSubscription ? (
+                  <Lock className="w-4 h-4 shrink-0" />
+                ) : (
+                  <Pencil className="w-4 h-4 shrink-0" />
+                )}
                 <span className="truncate">Edit Details</span>
               </button>
 
-              {/* 2. Suspend / Activate Member (Left of Delete) */}
+              {/* 2. Suspend / Activate Member */}
               <button
                 type="button"
-                disabled={isOffline}
+                disabled={isOffline || (!isAdmin && hasActiveSubscription)}
                 onClick={() => setIsStatusModalOpen(true)}
                 className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase border-none transition-all shadow-md ${
-                  isOffline
+                  isOffline || (!isAdmin && hasActiveSubscription)
                     ? 'bg-slate-400 dark:bg-zinc-700 text-white/50 opacity-50 cursor-not-allowed'
                     : localMember.status === 'Active'
                       ? 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer active:scale-95'
                       : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
                 }`}
-                title={localMember.status === 'Active' ? 'Suspend Member' : 'Activate Member'}
+                title={
+                  !isAdmin && hasActiveSubscription
+                    ? 'Locked for Staff while subscription is running'
+                    : localMember.status === 'Active'
+                      ? 'Suspend Member'
+                      : 'Activate Member'
+                }
               >
                 {localMember.status === 'Active' ? (
                   <>
@@ -3551,29 +3578,31 @@ setSheetHeightPercent((current) => {
                 )}
               </button>
 
-              {/* 3. Delete Member */}
-              <button
-                type="button"
-                disabled={hasActiveSubscription || isOffline}
-                onClick={() => setIsDeleteModalOpen(true)}
-                className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase transition-all border-none ${
-                  hasActiveSubscription || isOffline
-                    ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
-                    : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer active:scale-95'
-                }`}
-                title={
-                  hasActiveSubscription
-                    ? 'Member cannot be deleted while an active subscription contract exists'
-                    : 'Delete Member'
-                }
-              >
-                {hasActiveSubscription || isOffline ? (
-                  <Lock className="w-4 h-4 shrink-0" />
-                ) : (
-                  <Trash2 className="w-4 h-4 shrink-0" />
-                )}
-                <span className="truncate">Delete</span>
-              </button>
+              {/* 3. Delete Member (Admin Only) */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={hasActiveSubscription || isOffline}
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className={`min-h-[44px] px-2 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-heading font-bold uppercase transition-all border-none ${
+                    hasActiveSubscription || isOffline
+                      ? 'bg-slate-200 dark:bg-zinc-800 text-slate-400 cursor-not-allowed opacity-50'
+                      : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    hasActiveSubscription
+                      ? 'Member cannot be deleted while an active subscription contract exists'
+                      : 'Delete Member'
+                  }
+                >
+                  {hasActiveSubscription || isOffline ? (
+                    <Lock className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 shrink-0" />
+                  )}
+                  <span className="truncate">Delete</span>
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -44,6 +44,7 @@ import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import {
   memberService,
   subscriptionService,
@@ -338,7 +339,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillMember,
 }) => {
   const { user, profile } = useAuthStore();
-  const isStaff = profile?.role === 'staff';
+  const isStaff =
+    !isSuperAdmin(user?.email) &&
+    (profile?.role || '').toLowerCase() !== 'admin' &&
+    (profile?.role || '').toLowerCase() !== 'superadmin';
 
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();
@@ -1969,7 +1973,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       let livePlanBasePrice = 0;
       let liveGcashFee = 0;
       let liveCardFee = 0;
-      let liveTotalPrice = 0;
 
       if (selectedPlan !== 'No Subscription') {
         let liveSettings: MembershipSettings | null = null;
@@ -2004,10 +2007,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         liveGcashFee =
           paymentMethod === 'GCash' ? liveSettings.gcash_fee || 10 : 0;
         liveCardFee = addIdCard ? liveSettings.card_printing_fee || 50 : 0;
-        liveTotalPrice = livePlanBasePrice + liveGcashFee + liveCardFee;
       } else {
         liveCardFee = addIdCard ? settings.card_printing_fee || 50 : 0;
-        liveTotalPrice = liveCardFee;
       }
 
       if (membershipStatusSummary.isBlocked) {
@@ -2070,105 +2071,64 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         profile?.username ||
         (user?.email ? user.email.split('@')[0] : 'SUPERADMIN');
 
-      if (activeMemberToUse) {
-        targetMember = await memberService.update(
-          activeMemberToUse.id,
-          memberFields,
-          currentProcessor
-        );
-      } else {
-        targetMember = await memberService.create(
-          { ...memberFields, status: 'Active' },
-          currentProcessor
-        );
-      }
-
       const mappedPayment: PaymentMethod = paymentMethod as PaymentMethod;
-      let createdSub: Subscription | null = null;
-      if (selectedPlan !== 'No Subscription') {
-        createdSub = await subscriptionService.create(
-          targetMember.member_id,
-          selectedPlan,
-          mappedPayment,
-          currentProcessor,
-          liveTotalPrice,
-          {
-            basePrice: livePlanBasePrice,
-            gcashFee: liveGcashFee,
-            cardFee: liveCardFee,
-            gcashRefNo: gcashReference.trim(),
-          }
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        'process_member_enrollment',
+        {
+          p_member_id: activeMemberToUse
+            ? activeMemberToUse.member_id || activeMemberToUse.id
+            : null,
+          p_member_fields: memberFields,
+          p_plan_name: selectedPlan,
+          p_payment_method: mappedPayment,
+          p_base_price: livePlanBasePrice,
+          p_gcash_fee: liveGcashFee,
+          p_card_fee: liveCardFee,
+          p_gcash_ref_no: gcashReference.trim() || null,
+          p_add_id_card: addIdCard,
+          p_online_reg_id: importedQueueReg ? importedQueueReg.id : null,
+          p_processor_name: currentProcessor,
+        }
+      );
+
+      if (rpcError || !rpcResult?.member) {
+        throw new Error(
+          rpcError?.message || 'Enrollment transaction failed on server.'
         );
       }
 
-      const receiptNo =
+      targetMember = rpcResult.member as Member;
+      const createdSub: Subscription | null =
+        (rpcResult.subscription as Subscription) || null;
+      const receiptNo: string =
+        rpcResult.receipt_no ||
         createdSub?.receipt_number ||
         `REG-${getServerNow().getTime().toString().slice(-6)}`;
 
-      // Record standalone card purchase receipt if registering profile-only with card
-      if (selectedPlan === 'No Subscription' && addIdCard && liveCardFee > 0) {
+      if (rpcResult.card) {
         try {
-          await supabase.from('receipts').insert([
-            {
-              id: receiptNo,
-              member_id: targetMember.member_id,
-              customer_name: targetMember.full_name,
-              customer_type: 'Physical Card',
-              amount: liveCardFee,
-              base_price: 0,
-              gcash_fee: 0,
-              card_fee: liveCardFee,
-              gcash_ref_no: gcashReference.trim() || null,
-              payment_method: mappedPayment,
-              payment_status: 'Paid',
-              item_description: 'Physical Membership Card Fee',
-              processed_by: currentProcessor,
-            },
-          ]);
-        } catch (rcptErr) {
-          console.warn('Receipt creation deferred offline:', rcptErr);
-        }
+          const cacheKey = 'palomar_cards_cache_v1';
+          const cached =
+            localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+          const list = cached ? JSON.parse(cached) : [];
+          if (Array.isArray(list)) {
+            const filtered = list.filter(
+              (c: any) => c.member_id !== targetMember.member_id
+            );
+            filtered.unshift(rpcResult.card);
+            localStorage.setItem(cacheKey, JSON.stringify(filtered));
+            sessionStorage.setItem(cacheKey, JSON.stringify(filtered));
+          }
+        } catch {}
       }
 
-      const isEnrolled = selectedPlan !== 'No Subscription';
+      try {
+        sessionStorage.removeItem('members_sanitized_cache');
+        localStorage.removeItem('members_sanitized_cache');
+      } catch {}
 
-      if (addIdCard) {
-        await cardService.issue(
-          targetMember.member_id,
-          'QR',
-          currentProcessor,
-          undefined,
-          'PAID',
-          'UNCLAIMED',
-          liveCardFee,
-          receiptNo
-        );
-      } else if (isEnrolled) {
-        // Automatically create membership card when new enrolled member has been added
-        const existingCard = await cardService.getByMemberId(
-          targetMember.member_id
-        );
-        if (!existingCard) {
-          await cardService.issue(
-            targetMember.member_id,
-            'QR',
-            currentProcessor,
-            undefined,
-            'NONE',
-            'NOT_APPLICABLE',
-            0
-          );
-        }
-      }
-      // Fresh created member without enrollment and without card selection has no card created
-
-      if (importedQueueReg) {
-        try {
-          await registrationService.approve(importedQueueReg.id, currentProcessor);
-        } catch (apprErr) {
-          console.warn('Queue approval deferred offline:', apprErr);
-        }
-      }
+      window.dispatchEvent(new Event('member-refresh'));
 
       const now = getServerNow();
       const formattedDate =
@@ -4185,8 +4145,11 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { profile } = useAuthStore();
-  const isStaff = profile?.role === 'staff';
+  const { user, profile } = useAuthStore();
+  const isStaff =
+    !isSuperAdmin(user?.email) &&
+    (profile?.role || '').toLowerCase() !== 'admin' &&
+    (profile?.role || '').toLowerCase() !== 'superadmin';
 
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();

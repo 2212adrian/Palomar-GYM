@@ -43,9 +43,11 @@ import { useResponsiveItemsPerPage } from '../../../lib/useResponsiveItemsPerPag
 
 // Import Types & Services
 import { registrationService, settingsService } from '../memberService';
+import { supabase } from '../../../lib/supabase/client';
 import type { OnlineRegistration } from '../../../types/members';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { buildPublicPortalUrl } from '../../../lib/appUrl';
 
@@ -133,8 +135,98 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   const itemsPerPage = useResponsiveItemsPerPage();
   const { isSessionOpen } = useCashSessionStore();
   const { profile, user } = useAuthStore();
+  const isAdmin =
+    isSuperAdmin(user?.email) ||
+    (profile?.role || '').toLowerCase() === 'admin' ||
+    (profile?.role || '').toLowerCase() === 'superadmin';
   const currentActor = profile?.username || user?.email || 'System';
   const { isBatterySaver } = useBatterySaver();
+
+  // Online Registration Portal Enable/Disable Switch State
+  const [isOnlineRegEnabled, setIsOnlineRegEnabled] = useState<boolean>(false);
+  const [isLoadingRegStatus, setIsLoadingRegStatus] = useState<boolean>(true);
+  const [isTogglingReg, setIsTogglingReg] = useState<boolean>(false);
+
+  const effectiveOnlineRegOpen = isSessionOpen && isOnlineRegEnabled;
+
+  const fetchRegStatus = useCallback(async () => {
+    try {
+      const status = await registrationService.getRegistrationGateStatus();
+      setIsOnlineRegEnabled(status.session_open && status.enabled);
+    } catch {
+      // Preserve last known or closed default
+    } finally {
+      setIsLoadingRegStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSessionOpen) {
+      setIsOnlineRegEnabled(false);
+    }
+    fetchRegStatus();
+  }, [isSessionOpen, fetchRegStatus]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`online_reg_switch_sync_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_config' },
+        () => {
+          fetchRegStatus();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_sessions' },
+        () => {
+          fetchRegStatus();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchRegStatus]);
+
+  const handleToggleOnlineRegistration = async () => {
+    if (!isAdmin) {
+      toast.error('Only Administrators can toggle Online Registration.');
+      return;
+    }
+
+    if (!isSessionOpen) {
+      setIsOnlineRegEnabled(false);
+      toast.warning(
+        'Cash drawer session is closed. Open a cash session before turning ON Online Registration.',
+        { toastId: 'online-reg-session-closed' }
+      );
+      return;
+    }
+
+    const nextEnabled = !effectiveOnlineRegOpen;
+    setIsTogglingReg(true);
+    setIsOnlineRegEnabled(nextEnabled);
+
+    try {
+      const result = await registrationService.setRegistrationEnabled(nextEnabled);
+      setIsOnlineRegEnabled(result.session_open && result.enabled);
+      toast.success(
+        result.enabled
+          ? 'Online registration portal is now ON.'
+          : 'Online registration portal is now OFF.',
+        { toastId: 'online-reg-toggle-status' }
+      );
+    } catch (err: any) {
+      setIsOnlineRegEnabled(!nextEnabled && isSessionOpen);
+      await fetchRegStatus();
+      toast.error(err?.message || 'Failed to update online registration status.');
+    } finally {
+      setIsTogglingReg(false);
+    }
+  };
 
   const fetchQueue = useCallback(async () => {
     setIsSyncing(true);
@@ -202,7 +294,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     );
   }, [pendingQueue, mobileSearchQuery]);
 
-  const mobileItemsPerPage = 5;
+  const mobileItemsPerPage = 6;
   const totalMobilePages = Math.max(
     1,
     Math.ceil(filteredMobileQueue.length / mobileItemsPerPage)
@@ -215,10 +307,14 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   // Handle Archive Action (Exempts ticket from daily midnight purge)
   const handleArchiveRegistration = async (reg: OnlineRegistration) => {
+    if (!isAdmin) {
+      toast.error('Only Administrators can archive registration tickets.');
+      return;
+    }
     try {
       await registrationService.archive(
         reg.id,
-        'Archived by staff to prevent daily purge',
+        'Archived by admin to prevent daily purge',
         currentActor
       );
       toast.success(
@@ -235,6 +331,10 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   // Handle Restore Action from Archived Tickets Modal
   const handleRestoreRegistration = async (reg: OnlineRegistration) => {
+    if (!isAdmin) {
+      toast.error('Only Administrators can restore registration tickets.');
+      return;
+    }
     try {
       await registrationService.restore(reg.id, currentActor);
       toast.success(`Restored ${reg.full_name} (${reg.id}) to active queue.`);
@@ -246,6 +346,10 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
   // ─── STACKABLE MULTI-UNDO REJECTION CONTROLLERS ───
   const handleInitiateReject = (reg: OnlineRegistration) => {
+    if (!isAdmin) {
+      toast.error('Only Administrators can reject online registration tickets.');
+      return;
+    }
     setStagedRejections((prev) => [...prev, reg]);
     if (selectedReg?.id === reg.id) {
       setSelectedReg(null);
@@ -657,21 +761,25 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             <Eye className="w-4 h-4" />
           </button>
 
-          <button
-            onClick={() => handleArchiveRegistration(item)}
-            className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-500/20 cursor-pointer transition-colors"
-            title="Archive ticket (Exempts from daily 12:00 AM purge)"
-          >
-            <Archive className="w-4 h-4" />
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => handleArchiveRegistration(item)}
+                className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-500/20 cursor-pointer transition-colors"
+                title="Archive ticket (Exempts from daily 12:00 AM purge)"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
 
-          <button
-            onClick={() => handleInitiateReject(item)}
-            className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-lg border border-red-500/20 cursor-pointer transition-colors"
-            title="Reject submission"
-          >
-            <XSquare className="w-4 h-4" />
-          </button>
+              <button
+                onClick={() => handleInitiateReject(item)}
+                className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-lg border border-red-500/20 cursor-pointer transition-colors"
+                title="Reject submission"
+              >
+                <XSquare className="w-4 h-4" />
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => {
@@ -756,101 +864,225 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   ];
 
   return (
-    <div className="space-y-4 pb-28 sm:pb-0">
-      {/* Closed Session Warning Banner */}
-      {!isSessionOpen && (
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold uppercase select-none animate-fade-in shadow-xs">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 shrink-0 text-rose-500" />
-            <span>
-              Cash drawer session is closed. Approving pre-registrations and
-              enrolling members are locked.
-            </span>
+    <div className="space-y-4 pb-4">
+      {/* Unified Responsive Workspace Header & Registration Gate Switch */}
+      <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-3.5 sm:p-4 lg:p-5 space-y-3.5 select-none">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3.5 border-b border-(--border-color)">
+          {/* Title & Portal Summary */}
+          <div className="min-w-0 space-y-1 text-left">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-heading text-xs sm:text-sm tracking-wider text-blue-700 dark:text-blue-400 uppercase font-extrabold">
+                Online Pre-Registrations Queue
+              </h3>
+              <span className="font-mono text-[11px] font-bold tabular-nums text-slate-600 dark:text-slate-300 bg-(--bg-page) border border-(--border-color) px-2 py-0.5 rounded-md">
+                {pendingQueue.length} Pending
+              </span>
+            </div>
+            <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+              Portal: {registrationPortalUrl.replace(/^https?:\/\//, '')}
+            </p>
           </div>
-          <span className="text-[10px] font-mono opacity-80 lowercase font-normal hidden sm:inline">
-            open session in cash management to proceed
-          </span>
+
+          {/* Admin Registration ON/OFF Control */}
+          <div
+            className={`flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-xl border transition-colors w-full lg:w-auto lg:min-w-[310px] ${
+              effectiveOnlineRegOpen
+                ? 'bg-emerald-500/8 border-emerald-500/25'
+                : 'bg-(--bg-page) border-(--border-color)'
+            }`}
+          >
+            <div className="min-w-0 text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="font-heading text-[11px] font-bold uppercase tracking-wider text-(--color-text)">
+                  Online Registration
+                </span>
+                {!isAdmin && (
+                  <Lock
+                    className="w-3 h-3 text-slate-400 shrink-0"
+                    aria-label="Admin control only"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-medium">
+                {!isSessionOpen ? (
+                  <>
+                    <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="text-slate-500 dark:text-slate-400 truncate">
+                      Off · Open cash session to enable
+                    </span>
+                  </>
+                ) : isLoadingRegStatus ? (
+                  <span className="text-slate-400">Checking portal state...</span>
+                ) : effectiveOnlineRegOpen ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-emerald-600 dark:text-emerald-400 truncate">
+                      On · Accepting submissions
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                    <span className="text-amber-600 dark:text-amber-400 truncate">
+                      Off · Public portal paused
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className={`font-mono text-[10px] font-bold uppercase w-6 text-right tabular-nums ${
+                  effectiveOnlineRegOpen
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {effectiveOnlineRegOpen ? 'ON' : 'OFF'}
+              </span>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={effectiveOnlineRegOpen}
+                aria-label="Toggle Online Registration"
+                disabled={
+                  !isAdmin || !isSessionOpen || isTogglingReg || isLoadingRegStatus
+                }
+                onClick={handleToggleOnlineRegistration}
+                title={
+                  !isAdmin
+                    ? 'Only Administrators can turn Online Registration on or off'
+                    : !isSessionOpen
+                      ? 'Closed Cash Session: Open a cash session first to enable Online Registration'
+                      : effectiveOnlineRegOpen
+                        ? 'Turn OFF public Online Registration'
+                        : 'Turn ON public Online Registration'
+                }
+                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  effectiveOnlineRegOpen
+                    ? 'bg-emerald-500 border-emerald-600/30'
+                    : 'bg-slate-300 dark:bg-zinc-700 border-slate-400/30 dark:border-white/10'
+                } ${
+                  !isAdmin || !isSessionOpen || isTogglingReg || isLoadingRegStatus
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                    effectiveOnlineRegOpen ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Responsive Action Toolbar (Mobile 2-col grid / Tablet & Desktop inline bar) */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                fetchArchived();
+                setIsArchiveModalOpen(true);
+              }}
+              className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+              title="View Archived Pre-Registration Tickets (Exempt from Daily Midnight Purges)"
+            >
+              <Archive className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Archived</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleCopyRegistrationLink}
+            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            title="Copy Public Pre-Registration Portal Link"
+          >
+            {copiedLink ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            )}
+            <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenRegistrationPortal}
+            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            title="Open Anonymous Self-Service Pre-Registration Page in new tab"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span>Open Form</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrintPoster}
+            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            title="Print Physical QR Registration Poster"
+          >
+            <Printer className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span>Print Poster</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              fetchQueue();
+              fetchRegStatus();
+            }}
+            disabled={isSyncing}
+            className={`h-11 sm:h-10 px-3.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+              isAdmin ? 'col-span-2 sm:col-span-1 sm:ml-auto' : 'sm:ml-auto'
+            }`}
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 shrink-0 ${isSyncing ? 'animate-spin' : ''}`}
+            />
+            <span>Sync</span>
+          </button>
+        </div>
+      </div>
 
       {/* 12:00 AM Manila Time Daily Deletion Notice */}
-      <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs select-none shadow-2xs animate-fade-in">
-        <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+      <div className="px-3.5 py-2.5 bg-amber-500/8 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs select-none">
+        <div className="flex items-start sm:items-center gap-2 min-w-0 text-left">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0 text-amber-500" />
-          <span className="leading-relaxed font-medium">
-            <strong>Daily Retention Notice:</strong> Pending pre-registration tickets are kept for the current day only and will be permanently deleted at <strong>12:00 AM Manila Time</strong>. Click <strong>Archive</strong> on any ticket to exempt it from the daily purge.
+          <span className="leading-snug font-medium">
+            <strong>Daily Retention Notice:</strong> Pending tickets clear
+            daily at <strong>12:00 AM Manila Time</strong> unless archived.
           </span>
         </div>
         {countdown && (
-          <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap">
-            <Clock className="w-3 h-3 text-amber-500" />
+          <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0 bg-amber-500/12 border border-amber-500/25 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold tabular-nums text-amber-700 dark:text-amber-300 whitespace-nowrap">
+            <Clock className="w-3 h-3 text-amber-500 shrink-0" />
             <span>Purge in: {countdown}</span>
           </div>
         )}
       </div>
 
-      {/* Queue Header & Actions (Desktop / Tablet Header) */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 select-none">
-        <div>
-          <h3 className="font-heading text-xs tracking-widest text-blue-700 dark:text-blue-400 uppercase font-bold">
-            Online Pre-Registrations Queue
-          </h3>
-        </div>
-
-        {/* Desktop Buttons */}
-        <div className="hidden sm:flex items-center gap-2">
-          <button
-            onClick={() => {
-              fetchArchived();
-              setIsArchiveModalOpen(true);
-            }}
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-            title="View Archived Pre-Registration Tickets (Exempt from Daily Midnight Purges)"
-          >
-            <Archive className="w-3.5 h-3.5 text-amber-500" /> Archived Tickets
-          </button>
-
-          <button
-            onClick={handleOpenRegistrationPortal}
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-            title="Open Anonymous Self-Service Pre-Registration Page in new tab"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-emerald-500" /> Open Form
-          </button>
-          <button
-            onClick={handlePrintPoster}
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-            title="Print Physical QR registration Poster with Dynamic Token Expiration"
-          >
-            <Printer className="w-3.5 h-3.5 text-blue-500" /> Print Poster
-          </button>
-
-          <button
-            onClick={fetchQueue}
-            disabled={isSyncing}
-            className="p-2 border border-(--border-color) bg-(--bg-card) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5 text-[9px] font-heading tracking-wider uppercase font-bold transition-colors"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`}
-            />{' '}
-            Sync
-          </button>
-        </div>
-      </div>
-
       {/* Main Content Area */}
       {pendingQueue.length === 0 ? (
-        <div className="p-12 text-center bg-(--bg-card) border border-(--border-color) rounded-3xl space-y-3 shadow-xs">
-          <Clock className="w-8 h-8 text-slate-400 mx-auto animate-pulse" />
-          <h4 className="font-heading text-xs uppercase tracking-wider text-slate-500">
+        <div className="py-10 px-6 text-center bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-2.5">
+          <Clock className="w-7 h-7 text-slate-400 mx-auto" />
+          <h4 className="font-heading text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 font-bold">
             Queue is Clear
           </h4>
-          <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
-            No pending pre-registration tickets in the queue. New submissions
-            will appear here automatically as they are received.
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+            {!isSessionOpen
+              ? 'Open a cash drawer session in Cash Management to enable Online Registration and process approvals.'
+              : !effectiveOnlineRegOpen
+                ? 'Online Registration is currently OFF. Turn the switch ON above when ready to receive submissions.'
+                : 'No pending pre-registration tickets in the queue. New submissions will appear automatically.'}
           </p>
           {!hasAttemptedEmptyRefresh && (
-            <div className="pt-1">
+            <div className="pt-1.5">
               <button
                 type="button"
                 disabled={isRefreshingEmpty || isSyncing}
@@ -863,7 +1095,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                     setIsRefreshingEmpty(false);
                   }
                 }}
-                className="px-4 py-2 bg-(--bg-input) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-all inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                className="h-10 px-4 bg-(--bg-page) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${
@@ -879,10 +1111,10 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         </div>
       ) : (
         <>
-          {/* Mobile Responsive Cards View */}
-          <div className="block sm:hidden space-y-3">
+          {/* Mobile & Small Tablet Cards View (<768px) */}
+          <div className="block md:hidden space-y-3">
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={mobileSearchQuery}
@@ -894,7 +1126,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                 autoComplete="off"
                 spellCheck={false}
                 autoCorrect="off"
-                className="w-full pl-10 pr-9 py-2.5 bg-(--bg-card) border border-(--border-color) rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-(--color-text)"
+                className="w-full min-h-[44px] pl-10 pr-10 py-2.5 bg-(--bg-card) border border-(--border-color) rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-(--color-text)"
               />
               {mobileSearchQuery && (
                 <button
@@ -903,9 +1135,10 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                     setMobileSearchQuery('');
                     setMobilePage(1);
                   }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  aria-label="Clear search"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -915,7 +1148,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                 No tickets match your search.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {paginatedMobileQueue.map((item) => {
                   const age = calculateAge(item.birthday);
                   const isMinor = age >= 12 && age < 18;
@@ -924,111 +1157,122 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className="p-4 rounded-2xl bg-(--bg-card) border border-(--border-color) space-y-3 shadow-xs text-left"
+                      className="p-4 rounded-2xl bg-(--bg-card) border border-(--border-color) flex flex-col justify-between gap-3 text-left"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-heading text-xs font-bold border border-slate-200 dark:border-white/5 shrink-0">
-                            {item.full_name[0]}
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-heading text-xs font-bold border border-slate-200 dark:border-white/5 shrink-0">
+                              {item.full_name[0]}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                {item.full_name}
+                              </h4>
+                              <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5 tabular-nums">
+                                {item.id} · {item.gender}
+                              </span>
+                            </div>
+                          </div>
+
+                          <span className="font-semibold text-[11px] text-emerald-600 dark:text-emerald-400 shrink-0 text-right">
+                            {item.preferred_plan}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                          {isRestricted ? (
+                            <span className="font-mono bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-md font-bold tabular-nums">
+                              RESTRICTED (&lt;12 YRS)
+                            </span>
+                          ) : isMinor ? (
+                            <span className="font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold tabular-nums">
+                              MINOR ({age} YRS)
+                            </span>
+                          ) : (
+                            <span className="font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded-md font-bold tabular-nums">
+                              ADULT ({age} YRS)
+                            </span>
+                          )}
+
+                          <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium">
+                            {item.parent_consent_required ? (
+                              <>
+                                <ShieldCheck className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span>Parent Consent</span>
+                              </>
+                            ) : (
+                              <span>Self-Certified</span>
+                            )}
+                          </span>
+
+                          <span className="font-mono text-slate-400 ml-auto tabular-nums">
+                            {new Date(item.submitted_at).toLocaleDateString(
+                              'en-US',
+                              {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color) grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="min-w-0">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
+                              Phone
+                            </span>
+                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200 block truncate tabular-nums">
+                              {item.phone}
+                            </span>
                           </div>
                           <div className="min-w-0">
-                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                              {item.full_name}
-                            </h4>
-                            <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                              {item.id} • {item.gender}
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
+                              Emergency
+                            </span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                              {item.emergency_contact_name ||
+                                item.parent_name ||
+                                'N/A'}
                             </span>
                           </div>
                         </div>
-
-                        <span className="font-bold text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                          {item.preferred_plan}
-                        </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        {isRestricted ? (
-                          <span className="text-[8px] font-mono bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded font-bold">
-                            RESTRICTED (&lt;12 YRS)
-                          </span>
-                        ) : isMinor ? (
-                          <span className="text-[8px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold">
-                            MINOR ({age} YRS)
-                          </span>
-                        ) : (
-                          <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
-                            ADULT ({age} YRS)
-                          </span>
-                        )}
-
-                        {item.parent_consent_required ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                            <ShieldCheck className="w-2.5 h-2.5 text-amber-500 dark:text-amber-400" />
-                            Parent Consent
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/5">
-                            Self-Certified
-                          </span>
-                        )}
-
-                        <span className="text-[9px] font-mono text-slate-400 ml-auto">
-                          {new Date(item.submitted_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200/60 dark:border-white/5 grid grid-cols-2 gap-2 text-[11px]">
-                        <div>
-                          <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
-                            Phone
-                          </span>
-                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200 block truncate">
-                            {item.phone}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-semibold">
-                            Emergency
-                          </span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
-                            {item.emergency_contact_name || item.parent_name || 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-(--border-color)">
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-(--border-color)">
                         <button
                           type="button"
                           onClick={() => setSelectedReg(item)}
-                          className="p-2 flex-1 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-slate-300 rounded-xl cursor-pointer transition-colors border border-slate-200 dark:border-white/5 flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+                          className="h-10 px-2.5 flex-1 bg-(--bg-page) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-700 dark:text-slate-200 rounded-xl cursor-pointer transition-colors border border-(--border-color) flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
                           title="Preview details"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>View</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleArchiveRegistration(item)}
-                          className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/20 cursor-pointer transition-colors"
-                          title="Archive ticket"
-                        >
-                          <Archive className="w-3.5 h-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveRegistration(item)}
+                              className="h-10 w-10 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/20 cursor-pointer transition-colors flex items-center justify-center shrink-0"
+                              title="Archive ticket"
+                            >
+                              <Archive className="w-4 h-4" />
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleInitiateReject(item)}
-                          className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl border border-red-500/20 cursor-pointer transition-colors"
-                          title="Reject submission"
-                        >
-                          <XSquare className="w-3.5 h-3.5" />
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInitiateReject(item)}
+                              className="h-10 w-10 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl border border-red-500/20 cursor-pointer transition-colors flex items-center justify-center shrink-0"
+                              title="Reject submission"
+                            >
+                              <XSquare className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
 
                         <button
                           type="button"
@@ -1043,7 +1287,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                             onApproveLaunchWizard(item);
                           }}
                           disabled={!isSessionOpen}
-                          className={`py-2 px-3 font-bold rounded-xl font-heading text-[10px] tracking-wider uppercase flex items-center justify-center gap-1 border-none transition-all shadow-xs ${
+                          className={`h-10 px-3 font-bold rounded-xl font-heading text-[10px] tracking-wider uppercase flex items-center justify-center gap-1.5 border-none transition-colors shrink-0 ${
                             !isSessionOpen
                               ? 'bg-slate-400 dark:bg-zinc-700 text-white/70 opacity-50 cursor-not-allowed'
                               : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-95'
@@ -1064,16 +1308,16 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             )}
 
             {totalMobilePages > 1 && (
-              <div className="flex items-center justify-between pt-2 px-1">
+              <div className="flex items-center justify-between pt-1 px-1">
                 <button
                   type="button"
                   onClick={() => setMobilePage((p) => Math.max(1, p - 1))}
                   disabled={mobilePage === 1}
-                  className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40"
+                  className="h-10 px-3.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40 cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" /> Prev
                 </button>
-                <span className="text-[11px] font-mono text-slate-500">
+                <span className="text-[11px] font-mono tabular-nums text-slate-500">
                   Page {mobilePage} of {totalMobilePages}
                 </span>
                 <button
@@ -1082,7 +1326,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                     setMobilePage((p) => Math.min(totalMobilePages, p + 1))
                   }
                   disabled={mobilePage === totalMobilePages}
-                  className="px-3 py-1.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40"
+                  className="h-10 px-3.5 rounded-xl border border-(--border-color) bg-(--bg-card) text-xs font-bold flex items-center gap-1 disabled:opacity-40 cursor-pointer"
                 >
                   Next <ChevronRight className="w-3.5 h-3.5" />
                 </button>
@@ -1090,8 +1334,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             )}
           </div>
 
-          {/* Desktop Table View */}
-          <div className="hidden sm:block p-1 bg-(--bg-card) border border-(--border-color) rounded-3xl overflow-hidden shadow-xs">
+          {/* Tablet (768px+) & Desktop Table View */}
+          <div className="hidden md:block p-3 bg-(--bg-card) border border-(--border-color) rounded-2xl overflow-hidden">
             <Table<OnlineRegistration>
               data={pendingQueue}
               columns={columns}
@@ -1109,80 +1353,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
             />
           </div>
         </>
-      )}
-
-      {/* MOBILE FLOATING ACTION DOCK */}
-      {!selectedReg &&
-        !isArchiveModalOpen &&
-        createPortal(
-          <div className="sm:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 h-14 bg-(--bg-card)/95 backdrop-blur-xl border border-(--border-color) rounded-2xl flex items-center justify-between px-3 z-[190] shadow-2xl">
-          {/* Status Indicator */}
-          <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-            <Clock className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="text-[11px] truncate">
-              {pendingQueue.length} Pending
-            </span>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                fetchArchived();
-                setIsArchiveModalOpen(true);
-              }}
-              className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Archived Tickets"
-            >
-              <Archive className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenRegistrationPortal}
-              className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Open Online Form"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyRegistrationLink}
-              className="w-9 h-9 rounded-xl bg-slate-500/10 text-slate-600 dark:text-slate-300 hover:bg-slate-500/20 border border-slate-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Copy Registration Link"
-            >
-              {copiedLink ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrintPoster}
-              className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 flex items-center justify-center cursor-pointer transition-colors active:scale-95"
-              title="Print Poster"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={fetchQueue}
-              disabled={isSyncing}
-              className="w-9 h-9 rounded-xl bg-(--color-primary) hover:bg-(--color-primary-hover) text-white flex items-center justify-center cursor-pointer transition-transform active:scale-95 shadow-md disabled:opacity-50"
-              title="Sync Queue"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}
-              />
-            </button>
-          </div>
-        </div>,
-        document.body
       )}
 
       {/* Consolidated Multi-Stacked Undo Toast Notification */}

@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { supabase } from '../lib/supabase/client';
 import { isCapacitorApp } from '../lib/platform';
+import { useAuthStore } from './authStore';
+import { isSuperAdmin } from '../constants/auth';
 
 const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISPATCHED_NOTIF_IDS_KEY = 'palomar_dispatched_notification_ids';
@@ -87,7 +89,7 @@ const triggerBrowserNotification = async (
 
 export interface PendingCashApproval {
   id: string;
-  type: 'cash_in' | 'cash_out';
+  type: 'cash_in' | 'cash_out' | 'digital_in';
   amount: number;
   reason: string;
   performed_by_name: string;
@@ -296,6 +298,21 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   ) => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
+    const authState = useAuthStore.getState();
+    const effectiveEmail = _userEmail ?? authState.user?.email;
+    const effectiveRole = String(
+      _userRole ??
+        authState.profile?.role ??
+        authState.user?.app_metadata?.role ??
+        ''
+    )
+      .toLowerCase()
+      .trim();
+    const isAdminUser =
+      isSuperAdmin(effectiveEmail) ||
+      effectiveRole === 'admin' ||
+      effectiveRole === 'superadmin';
+
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
@@ -474,79 +491,97 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       console.warn('Failed to load expiring subscriptions:', err);
     }
 
-    // 4. PENDING CASH IN & OUT APPROVALS (For Admins - strictly scoped to the active open cash session)
+    // 4. PENDING CASH IN, DIGITAL IN & OUT APPROVALS (Admins Only)
     let pendingApprovals = 0;
     let pendingApprovalsList: PendingCashApproval[] = [];
 
-    try {
-      const { data: openSession } = await supabase
-        .from('cash_sessions')
-        .select('id')
-        .eq('status', 'open')
-        .is('closed_at', null)
-        .order('opened_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    if (isAdminUser) {
+      try {
+        const { data: openSession } = await supabase
+          .from('cash_sessions')
+          .select('id')
+          .eq('status', 'open')
+          .is('closed_at', null)
+          .order('opened_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (openSession?.id) {
-        const { data: pendingTxs, error: pendingErr } = await supabase
-          .from('cash_transactions')
-          .select('id, type, amount, performed_by_name, reason, created_at, session_id')
-          .eq('session_id', openSession.id)
-          .eq('status', 'pending')
-          .eq('is_voided', false)
-          .order('created_at', { ascending: false });
+        if (openSession?.id) {
+          const { data: pendingTxs, error: pendingErr } = await supabase
+            .from('cash_transactions')
+            .select('id, type, amount, performed_by_name, reason, created_at, session_id')
+            .eq('session_id', openSession.id)
+            .eq('status', 'pending')
+            .eq('is_voided', false)
+            .order('created_at', { ascending: false });
 
-        if (!pendingErr && pendingTxs) {
-          pendingApprovals = pendingTxs.length;
-          pendingApprovalsList = pendingTxs.map((t: any) => ({
-            id: String(t.id),
-            type: t.type === 'cash_out' ? 'cash_out' : 'cash_in',
-            amount: Number(t.amount || 0),
-            reason: t.reason || (t.type === 'cash_out' ? 'Cash Outflow' : 'Cash Inflow'),
-            performed_by_name: t.performed_by_name || 'Staff',
-            created_at: t.created_at || new Date().toISOString(),
-            session_id: t.session_id || openSession.id,
-          }));
+          if (!pendingErr && pendingTxs) {
+            pendingApprovals = pendingTxs.length;
+            pendingApprovalsList = pendingTxs.map((t: any) => ({
+              id: String(t.id),
+              type:
+                t.type === 'cash_out'
+                  ? 'cash_out'
+                  : t.type === 'digital_in'
+                    ? 'digital_in'
+                    : 'cash_in',
+              amount: Number(t.amount || 0),
+              reason:
+                t.reason ||
+                (t.type === 'cash_out'
+                  ? 'Cash Outflow'
+                  : t.type === 'digital_in'
+                    ? 'Digital Cash In'
+                    : 'Cash Inflow'),
+              performed_by_name: t.performed_by_name || 'Staff',
+              created_at: t.created_at || new Date().toISOString(),
+              session_id: t.session_id || openSession.id,
+            }));
 
-          pendingApprovalsList.forEach((tx) => {
-            const key = `cash_approval_${tx.id}`;
-            if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-              const label = tx.type === 'cash_out' ? 'Cash Out' : 'Cash In';
-              triggerBrowserNotification(`💵 ${label} Request: ₱${tx.amount.toFixed(2)}`, {
-                body: `Requested by ${tx.performed_by_name}: ${tx.reason}`,
-              });
-              dispatchedIdsSet.add(key);
-              hasNewDispatches = true;
-            }
-          });
+            pendingApprovalsList.forEach((tx) => {
+              const key = `cash_approval_${tx.id}`;
+              if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+                const label =
+                  tx.type === 'cash_out'
+                    ? 'Cash Out'
+                    : tx.type === 'digital_in'
+                      ? 'Digital In'
+                      : 'Cash In';
+                triggerBrowserNotification(`💵 ${label} Request: ₱${tx.amount.toFixed(2)}`, {
+                  body: `Requested by ${tx.performed_by_name}: ${tx.reason}`,
+                });
+                dispatchedIdsSet.add(key);
+                hasNewDispatches = true;
+              }
+            });
+          }
+
+          // Auto-cleanup: Dismiss orphaned pending transactions left from older closed sessions
+          try {
+            await supabase
+              .from('cash_transactions')
+              .update({
+                status: 'rejected',
+                rejection_reason: 'Session closed before request was resolved',
+              })
+              .neq('session_id', openSession.id)
+              .eq('status', 'pending');
+          } catch {}
+        } else {
+          // When drawer is closed, no pending cash movements can be active
+          try {
+            await supabase
+              .from('cash_transactions')
+              .update({
+                status: 'rejected',
+                rejection_reason: 'Session closed before request was resolved',
+              })
+              .eq('status', 'pending');
+          } catch {}
         }
-
-        // Auto-cleanup: Dismiss orphaned pending transactions left from older closed sessions
-        try {
-          await supabase
-            .from('cash_transactions')
-            .update({
-              status: 'rejected',
-              rejection_reason: 'Session closed before request was resolved',
-            })
-            .neq('session_id', openSession.id)
-            .eq('status', 'pending');
-        } catch {}
-      } else {
-        // When drawer is closed, no pending cash movements can be active
-        try {
-          await supabase
-            .from('cash_transactions')
-            .update({
-              status: 'rejected',
-              rejection_reason: 'Session closed before request was resolved',
-            })
-            .eq('status', 'pending');
-        } catch {}
+      } catch (err) {
+        console.warn('Failed to load pending cash approvals:', err);
       }
-    } catch (err) {
-      console.warn('Failed to load pending cash approvals:', err);
     }
 
     if (hasNewDispatches) {
@@ -582,15 +617,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   approveCashApproval: async (id: string, actorId?: string, actorName?: string) => {
     try {
-      const { error } = await supabase
-        .from('cash_transactions')
-        .update({
-          status: 'approved',
-          approved_by: actorId || null,
-          approved_by_name: actorName || 'Admin',
-          approved_at: new Date().toISOString(),
-        })
-        .eq('id', id);
+      const { error } = await supabase.rpc('approve_cash_transaction', {
+        p_transaction_id: id,
+        p_admin_id: actorId || null,
+        p_admin_name: actorName || 'Admin',
+      });
 
       if (!error) {
         set((state) => {
@@ -613,13 +644,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   rejectCashApproval: async (id: string, reason?: string) => {
     try {
-      const { error } = await supabase
-        .from('cash_transactions')
-        .update({
-          status: 'rejected',
-          rejection_reason: reason || 'Rejected by admin via notifications',
-        })
-        .eq('id', id);
+      const authState = useAuthStore.getState();
+      const actorName = authState.profile?.username || authState.user?.email || 'Admin';
+      const { error } = await supabase.rpc('reject_cash_transaction', {
+        p_transaction_id: id,
+        p_admin_id: authState.user?.id || null,
+        p_admin_name: actorName,
+        p_reason: reason || 'Rejected by admin via notifications',
+      });
 
       if (!error) {
         set((state) => {
@@ -641,6 +673,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   markIncidentRead: async (id: string) => {
+    const authState = useAuthStore.getState();
+    const roleStr = String(authState.profile?.role || authState.user?.app_metadata?.role || '')
+      .toLowerCase()
+      .trim();
+    const isAdminUser =
+      isSuperAdmin(authState.user?.email) || roleStr === 'admin' || roleStr === 'superadmin';
+    if (!isAdminUser) return;
+
     try {
       const { error } = await supabase
         .from('incident_reports')
@@ -674,10 +714,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   markAllAsRead: async () => {
     try {
       const state = get();
+      const authState = useAuthStore.getState();
+      const roleStr = String(authState.profile?.role || authState.user?.app_metadata?.role || '')
+        .toLowerCase()
+        .trim();
+      const isAdminUser =
+        isSuperAdmin(authState.user?.email) || roleStr === 'admin' || roleStr === 'superadmin';
 
-      // 1. Mark incidents as read in database
+      // 1. Mark incidents as read in database (Admins only)
       const unreadIds = state.unreadIncidents.map((i) => i.id);
-      if (unreadIds.length > 0) {
+      if (isAdminUser && unreadIds.length > 0) {
         await supabase
           .from('incident_reports')
           .update({

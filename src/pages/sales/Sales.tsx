@@ -1426,9 +1426,18 @@ export const Sales: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      if (stagedDeletionsRef.current.length > 0) {
+      if (
+        stagedDeletionsRef.current.length > 0 &&
+        (typeof navigator === 'undefined' || navigator.onLine)
+      ) {
+        const deletedIso = new Date().toISOString();
+        const currentUserId = useAuthStore.getState().user?.id || null;
         stagedDeletionsRef.current.forEach((tx) => {
-          supabase.from('sales').delete().eq('id', tx.id).then();
+          supabase
+            .from('sales')
+            .update({ deleted_at: deletedIso, deleted_by: currentUserId })
+            .eq('id', tx.id)
+            .then();
         });
       }
     };
@@ -1456,63 +1465,61 @@ export const Sales: React.FC = () => {
       setActions(
         <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in">
           {role === 'admin' && (
-            <>
-              <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
-                    <DynamicBanknoteIcon trend={revenueTrend} />
-                  </div>
-                  <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
-                    <AnimatedCurrency value={activeRevenue} />
-                  </span>
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
+                  <DynamicBanknoteIcon trend={revenueTrend} />
                 </div>
-
-                <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
-
-                <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
-                  <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span className="font-heading font-bold text-xs tracking-wide">
-                    {activeSalesCount}
-                    <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
-                      {activeSalesCount === 1 ? 'sale' : 'sales'}
-                    </span>
-                  </span>
-                </div>
+                <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
+                  <AnimatedCurrency value={activeRevenue} />
+                </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canOperateSession) {
-                    toast.warning(
-                      'Recycle Bin is unavailable while the cash session is closed.'
-                    );
-                    return;
-                  }
-                  if (stagedDeletionsRef.current.length > 0) {
-                    stagedDeletionsRef.current.forEach((tx) =>
-                      handleConfirmDelete(String(tx.id))
-                    );
-                  }
-                  setIsRecycleBinOpen(true);
-                }}
-                disabled={!canOperateSession}
-                title={
-                  !canOperateSession
-                    ? 'Recycle Bin is locked: Cash session is closed'
-                    : 'Recycle Bin'
-                }
-                className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-                  !canOperateSession
-                    ? 'opacity-50 cursor-not-allowed'
-                    : 'cursor-pointer active:scale-95'
-                }`}
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span>RECYCLE BIN</span>
-              </button>
-            </>
+              <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
+
+              <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
+                <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="font-heading font-bold text-xs tracking-wide">
+                  {activeSalesCount}
+                  <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
+                    {activeSalesCount === 1 ? 'sale' : 'sales'}
+                  </span>
+                </span>
+              </div>
+            </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!canOperateSession) {
+                toast.warning(
+                  'Recycle Bin is unavailable while the cash session is closed.'
+                );
+                return;
+              }
+              if (stagedDeletionsRef.current.length > 0) {
+                stagedDeletionsRef.current.forEach((tx) =>
+                  handleConfirmDelete(String(tx.id))
+                );
+              }
+              setIsRecycleBinOpen(true);
+            }}
+            disabled={!canOperateSession}
+            title={
+              !canOperateSession
+                ? 'Recycle Bin is locked: Cash session is closed'
+                : 'Recycle Bin'
+            }
+            className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
+              !canOperateSession
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer active:scale-95'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span>RECYCLE BIN</span>
+          </button>
 
           <button
             type="button"
@@ -2443,13 +2450,17 @@ export const Sales: React.FC = () => {
             }`}
           >
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-              <div className="flex items-center gap-1.5 shrink-0">
-                <DynamicBanknoteIcon trend={revenueTrend} />
-                <span className="text-[11px]">
-                  <AnimatedCurrency value={activeRevenue} />
-                </span>
-              </div>
-              <span className="text-slate-300 dark:text-zinc-700">•</span>
+              {role === 'admin' && (
+                <>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <DynamicBanknoteIcon trend={revenueTrend} />
+                    <span className="text-[11px]">
+                      <AnimatedCurrency value={activeRevenue} />
+                    </span>
+                  </div>
+                  <span className="text-slate-300 dark:text-zinc-700">•</span>
+                </>
+              )}
               <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
                 <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-[11px] truncate">
@@ -2459,38 +2470,36 @@ export const Sales: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {role === 'admin' && (
-                <button
-                  type="button"
-                  disabled={!isSessionOpen}
-                  onClick={() => {
-                    if (!isSessionOpen) {
-                      toast.warning(
-                        'Recycle Bin is unavailable while the cash session is closed.'
-                      );
-                      return;
-                    }
-                    if (stagedDeletionsRef.current.length > 0) {
-                      stagedDeletionsRef.current.forEach((tx) =>
-                        handleConfirmDelete(String(tx.id))
-                      );
-                    }
-                    setIsRecycleBinOpen(true);
-                  }}
-                  className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
-                    !isSessionOpen
-                      ? 'opacity-40 cursor-not-allowed'
-                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
-                  }`}
-                  title={
-                    !isSessionOpen
-                      ? 'Recycle Bin is locked: Cash session is closed'
-                      : 'Recycle Bin'
+              <button
+                type="button"
+                disabled={!isSessionOpen}
+                onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Recycle Bin is unavailable while the cash session is closed.'
+                    );
+                    return;
                   }
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+                  if (stagedDeletionsRef.current.length > 0) {
+                    stagedDeletionsRef.current.forEach((tx) =>
+                      handleConfirmDelete(String(tx.id))
+                    );
+                  }
+                  setIsRecycleBinOpen(true);
+                }}
+                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
+                  !isSessionOpen
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                }`}
+                title={
+                  !isSessionOpen
+                    ? 'Recycle Bin is locked: Cash session is closed'
+                    : 'Recycle Bin'
+                }
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
 
               <button
                 type="button"

@@ -482,6 +482,9 @@ export const LogbookPage: React.FC = () => {
     return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
+  const isAdminRef = useRef<boolean>(role === 'admin');
+  isAdminRef.current = role === 'admin';
+
   // Session-based deletability check with 24-hour void window for subscriptions
   const isLogDeletable = useCallback(
     (log: LogRecord) => {
@@ -1516,6 +1519,10 @@ export const LogbookPage: React.FC = () => {
   };
 
   const handleTriggerCollectPayment = async (log: LogRecord) => {
+    if (role !== 'admin') {
+      toast.error('Restricted: Only Administrators can modify payment status.');
+      return;
+    }
     const cacheKey = `logbook_sanitized_${dateStr}_v3`;
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
@@ -1566,6 +1573,10 @@ export const LogbookPage: React.FC = () => {
   };
 
   const handleTriggerUndoPayment = async (log: LogRecord) => {
+    if (role !== 'admin') {
+      toast.error('Restricted: Only Administrators can modify payment status.');
+      return;
+    }
     const cacheKey = `logbook_sanitized_${dateStr}_v3`;
     setLogs((prev) => {
       const updated: LogRecord[] = prev.map((item) =>
@@ -1625,6 +1636,13 @@ export const LogbookPage: React.FC = () => {
         .toLowerCase()
         .includes('card');
     if (!isCard) return;
+
+    // Staff soft-deleting attendance automatically triggers tr_card_revert_on_attendance_change in PostgreSQL
+    if (role !== 'admin') {
+      window.dispatchEvent(new CustomEvent('member-refresh'));
+      window.dispatchEvent(new CustomEvent('cards-refresh'));
+      return;
+    }
 
     const targetMemberIds: string[] = [];
     if (log.memberId) targetMemberIds.push(log.memberId);
@@ -1716,6 +1734,12 @@ export const LogbookPage: React.FC = () => {
         .toLowerCase()
         .includes('card');
     if (!isCard) return;
+
+    if (role !== 'admin') {
+      window.dispatchEvent(new CustomEvent('member-refresh'));
+      window.dispatchEvent(new CustomEvent('cards-refresh'));
+      return;
+    }
 
     const targetMemberIds: string[] = [];
     if (log.memberId) targetMemberIds.push(log.memberId);
@@ -1930,6 +1954,11 @@ export const LogbookPage: React.FC = () => {
         );
 
         if (isSubscription) {
+          if (role !== 'admin') {
+            throw new Error(
+              'Access Denied: Only Administrators can purge subscription records.'
+            );
+          }
           if (rawReceiptId) {
             await supabase
               .from('receipts')
@@ -2035,7 +2064,7 @@ export const LogbookPage: React.FC = () => {
           }
         }
 
-        if (isCard) {
+        if (isCard && role === 'admin') {
           if (rawReceiptId) {
             await supabase
               .from('receipts')
@@ -2125,7 +2154,7 @@ export const LogbookPage: React.FC = () => {
         );
       }
     },
-    [user?.id, dateStr]
+    [user?.id, dateStr, role]
   );
 
   const handleUndoDelete = (id: string) => {
@@ -2411,18 +2440,31 @@ export const LogbookPage: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      if (stagedDeletionsRef.current.length > 0) {
+      if (
+        stagedDeletionsRef.current.length > 0 &&
+        (typeof navigator === 'undefined' || navigator.onLine)
+      ) {
+        const deletedIso = new Date().toISOString();
         stagedDeletionsRef.current.forEach((log) => {
+          const isSub = Boolean(
+            log.isSubscription ||
+              log.customerType === 'New Membership' ||
+              log.customerType === 'Membership Renewal'
+          );
+          if (isSub && !isAdminRef.current) return;
+
           supabase
             .from('attendance')
             .update({
-              deleted_at: new Date().toISOString(),
+              deleted_at: deletedIso,
               deleted_by: user?.id || null,
             })
             .eq('id', log.id)
             .then();
 
-          deactivateCardsForLogRecord(log);
+          if (isAdminRef.current) {
+            deactivateCardsForLogRecord(log);
+          }
         });
       }
     };
@@ -2474,39 +2516,37 @@ export const LogbookPage: React.FC = () => {
             </div>
           </div>
 
-          {role === 'admin' && (
-            <button
-              type="button"
-              onClick={() => {
-                if (!isSessionOpen) {
-                  toast.warning(
-                    'Recycle Bin is unavailable while the cash session is closed.'
-                  );
-                  return;
-                }
-                if (stagedDeletionsRef.current.length > 0) {
-                  stagedDeletionsRef.current.forEach((log) =>
-                    handleConfirmDelete(String(log.id))
-                  );
-                }
-                setIsRecycleBinOpen(true);
-              }}
-              disabled={!canOperateSession}
-              title={
-                !canOperateSession
-                  ? 'Recycle Bin is locked: Cash session is closed'
-                  : 'Recycle Bin'
+          <button
+            type="button"
+            onClick={() => {
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Recycle Bin is unavailable while the cash session is closed.'
+                );
+                return;
               }
-              className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-                !canOperateSession
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'cursor-pointer active:scale-95'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span>RECYCLE BIN</span>
-            </button>
-          )}
+              if (stagedDeletionsRef.current.length > 0) {
+                stagedDeletionsRef.current.forEach((log) =>
+                  handleConfirmDelete(String(log.id))
+                );
+              }
+              setIsRecycleBinOpen(true);
+            }}
+            disabled={!canOperateSession}
+            title={
+              !canOperateSession
+                ? 'Recycle Bin is locked: Cash session is closed'
+                : 'Recycle Bin'
+            }
+            className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
+              !canOperateSession
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer active:scale-95'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span>RECYCLE BIN</span>
+          </button>
 
           <button
             type="button"
@@ -3028,6 +3068,9 @@ export const LogbookPage: React.FC = () => {
                         data={log}
                         viewMode={viewMode}
                         canDelete={isLogDeletable(log) && !isDeleting}
+                        canTogglePayment={
+                          role === 'admin' && isLogDeletable(log) && !isDeleting
+                        }
                         canPrint={!isStaffReadOnlyClosed}
                         printDisabledReason={
                           isStaffReadOnlyClosed
@@ -3047,6 +3090,12 @@ export const LogbookPage: React.FC = () => {
                         }}
                         onTriggerDelete={handleDeleteLog}
                         onTriggerCollectPayment={(record) => {
+                          if (role !== 'admin') {
+                            toast.error(
+                              'Restricted: Only Administrators can collect or toggle payments.'
+                            );
+                            return;
+                          }
                           if (!isLogDeletable(record)) {
                             toast.error(
                               'Cannot collect payment: this record belongs to a closed cash session.'
@@ -3056,6 +3105,12 @@ export const LogbookPage: React.FC = () => {
                           handleTriggerCollectPayment(record);
                         }}
                         onTriggerUndoPayment={(record) => {
+                          if (role !== 'admin') {
+                            toast.error(
+                              'Restricted: Only Administrators can undo payments.'
+                            );
+                            return;
+                          }
                           if (!isLogDeletable(record)) {
                             toast.error(
                               'Cannot undo payment: this record belongs to a closed cash session.'
@@ -3551,38 +3606,36 @@ export const LogbookPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {role === 'admin' && (
-                <button
-                  type="button"
-                  disabled={!isSessionOpen}
-                  onClick={() => {
-                    if (!isSessionOpen) {
-                      toast.warning(
-                        'Recycle Bin is unavailable while the cash session is closed.'
-                      );
-                      return;
-                    }
-                    if (stagedDeletionsRef.current.length > 0) {
-                      stagedDeletionsRef.current.forEach((log) =>
-                        handleConfirmDelete(String(log.id))
-                      );
-                    }
-                    setIsRecycleBinOpen(true);
-                  }}
-                  className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-all ${
-                    !isSessionOpen
-                      ? 'opacity-40 cursor-not-allowed'
-                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
-                  }`}
-                  title={
-                    !isSessionOpen
-                      ? 'Recycle Bin is locked: Cash session is closed'
-                      : 'Recycle Bin'
+              <button
+                type="button"
+                disabled={!isSessionOpen}
+                onClick={() => {
+                  if (!isSessionOpen) {
+                    toast.warning(
+                      'Recycle Bin is unavailable while the cash session is closed.'
+                    );
+                    return;
                   }
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+                  if (stagedDeletionsRef.current.length > 0) {
+                    stagedDeletionsRef.current.forEach((log) =>
+                      handleConfirmDelete(String(log.id))
+                    );
+                  }
+                  setIsRecycleBinOpen(true);
+                }}
+                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-all ${
+                  !isSessionOpen
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                }`}
+                title={
+                  !isSessionOpen
+                    ? 'Recycle Bin is locked: Cash session is closed'
+                    : 'Recycle Bin'
+                }
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
 
               <button
                 type="button"

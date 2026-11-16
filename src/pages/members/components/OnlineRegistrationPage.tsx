@@ -618,18 +618,23 @@ export const OnlineRegistrationPage: React.FC = () => {
   const [isRatesLoading, setIsRatesLoading] = useState<boolean>(true);
   const [ratesError, setRatesError] = useState<boolean>(false);
   const [isGymOpen, setIsGymOpen] = useState<boolean | null>(null);
+  const [registrationGate, setRegistrationGate] = useState<{
+    sessionOpen: boolean;
+    enabled: boolean;
+  } | null>(null);
   const [isCheckingGymStatus, setIsCheckingGymStatus] = useState<boolean>(true);
 
   const checkGymOpenStatus = useCallback(async () => {
     try {
-      const { data, error } = await supabase.rpc('is_gym_open');
-      if (!error && typeof data === 'boolean') {
-        setIsGymOpen(data);
-      } else {
-        setIsGymOpen(true);
-      }
+      const status = await registrationService.getRegistrationGateStatus();
+      setIsGymOpen(status.is_open);
+      setRegistrationGate({
+        sessionOpen: status.session_open,
+        enabled: status.enabled,
+      });
     } catch {
-      setIsGymOpen(true);
+      setIsGymOpen(false);
+      setRegistrationGate({ sessionOpen: false, enabled: false });
     } finally {
       setIsCheckingGymStatus(false);
     }
@@ -689,7 +694,28 @@ export const OnlineRegistrationPage: React.FC = () => {
       checkGymOpenStatus();
     }, 30000);
 
-    return () => clearInterval(statusPoll);
+    const channel = supabase
+      .channel(`public_reg_gate_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cash_sessions' },
+        () => {
+          checkGymOpenStatus();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_config' },
+        () => {
+          checkGymOpenStatus();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(statusPoll);
+      supabase.removeChannel(channel);
+    };
   }, [checkGymOpenStatus, fetchLiveRates]);
 
   // 3-Second Timer Trigger on Entering Step 4
@@ -1127,7 +1153,9 @@ export const OnlineRegistrationPage: React.FC = () => {
   const handleNextStep = async () => {
     if (isGymOpen === false) {
       toast.error(
-        'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+        registrationGate && !registrationGate.sessionOpen
+          ? 'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+          : 'Online pre-registration is currently turned off by the front desk. Please check back later.'
       );
       return;
     }
@@ -1227,11 +1255,17 @@ export const OnlineRegistrationPage: React.FC = () => {
     }
 
     try {
-      const { data: liveOpen, error: openErr } = await supabase.rpc('is_gym_open');
-      if (!openErr && liveOpen === false) {
+      const liveGate = await registrationService.getRegistrationGateStatus();
+      if (!liveGate.is_open) {
         setIsGymOpen(false);
+        setRegistrationGate({
+          sessionOpen: liveGate.session_open,
+          enabled: liveGate.enabled,
+        });
         toast.error(
-          'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+          !liveGate.session_open
+            ? 'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+            : 'Online pre-registration is currently turned off by the front desk. Please check back later.'
         );
         return;
       }
@@ -1836,13 +1870,19 @@ export const OnlineRegistrationPage: React.FC = () => {
 
               <div className="space-y-2 max-w-md mx-auto">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 inline-block">
-                  Registration Currently Closed
+                  {registrationGate && !registrationGate.sessionOpen
+                    ? 'Registration Currently Closed'
+                    : 'Online Registration Turned Off'}
                 </span>
                 <h3 className="font-heading text-base sm:text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white leading-snug">
-                  Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.
+                  {registrationGate && !registrationGate.sessionOpen
+                    ? 'Wolf Palomar Fitness Gym Muaythai Boxing is currently closed, please come back later.'
+                    : 'Online Pre-Registration Is Currently Closed'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                  Online pre-registration reopens automatically as soon as the reception desk opens a new session.
+                  {registrationGate && !registrationGate.sessionOpen
+                    ? 'Online pre-registration unlocks once the reception desk opens a new session.'
+                    : 'The front desk has paused online pre-registration submissions for now. Please check back later or sign up in person at the gym reception desk.'}
                 </p>
               </div>
 

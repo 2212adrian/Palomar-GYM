@@ -4,6 +4,7 @@ import { Network } from '@capacitor/network';
 import { supabase } from './supabase/client'; 
 import { useCashSessionStore } from '../stores/useCashSessionStore';
 import { useAuthStore } from '../stores/authStore';
+import { isSuperAdmin } from '../constants/auth';
 import {
   getDecryptedPendingTransactions,
   purgeTransactionsByIds,
@@ -89,6 +90,16 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
   // 2. Fetch and decrypt all pending records (automatically verifies SHA-256 integrity)
   const allVaultItems = await getDecryptedPendingTransactions();
+
+  const authState = useAuthStore.getState() as any;
+  const isSyncAdmin =
+    isSuperAdmin(authState.user?.email) ||
+    (
+      authState.profile?.role ||
+      authState.user?.user_metadata?.role ||
+      authState.user?.app_metadata?.role ||
+      ''
+    ).toLowerCase() === 'admin';
 
   // Purge any local vault items that were already resolved in the cloud by an Admin on another device
   // Automatically drop conflicts belonging to closed or passed cash sessions
@@ -252,14 +263,17 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           );
 
           try {
-            await supabase.from('audit_logs').insert([
-              {
-                action: 'SALE_RESTORE_DEDUPLICATED',
-                details: `Sale #${cloudSale.receipt_no || cloudSale.id} restore by cashier "${item.userName}" merged: record was already restored by "${cloudSale.processed_by || 'another user'}".`,
-                target_id: targetSaleId,
-                performed_by: item.userId || null,
-              },
-            ]);
+            const validUid =
+              item.userId && /^[0-9a-f-]{36}$/i.test(item.userId)
+                ? item.userId
+                : null;
+            await supabase.rpc('log_audit_entry', {
+              p_user_id: validUid,
+              p_actor_username: item.userName || 'Staff',
+              p_action: 'SALE_RESTORE_DEDUPLICATED',
+              p_target_id: targetSaleId,
+              p_details: `Sale #${cloudSale.receipt_no || cloudSale.id} restore by cashier "${item.userName}" merged: record was already restored by "${cloudSale.processed_by || 'another user'}".`,
+            });
           } catch {
             // ignore audit insert fail
           }
@@ -359,14 +373,17 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         if (restoreErr) throw restoreErr;
 
         try {
-          await supabase.from('audit_logs').insert([
-            {
-              action: 'SALE_RESTORED',
-              details: `Restored sale transaction (₱${Number(cloudSale.total_amount || 0).toFixed(2)}) from Recycle Bin via background sync by ${item.userName}.`,
-              target_id: targetSaleId,
-              performed_by: item.userId || null,
-            },
-          ]);
+          const validUid =
+            item.userId && /^[0-9a-f-]{36}$/i.test(item.userId)
+              ? item.userId
+              : null;
+          await supabase.rpc('log_audit_entry', {
+            p_user_id: validUid,
+            p_actor_username: item.userName || 'Staff',
+            p_action: 'SALE_RESTORED',
+            p_target_id: targetSaleId,
+            p_details: `Restored sale transaction (₱${Number(cloudSale.total_amount || 0).toFixed(2)}) from Recycle Bin via background sync by ${item.userName}.`,
+          });
         } catch {}
 
         successfullySyncedIds.push(item.id);
@@ -415,7 +432,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
             console.warn(`[Sync] Could not restore attendance ${targetAttendanceId}:`, restoreErr);
           }
 
-          if (payload.receiptNumber) {
+          if (payload.receiptNumber && isSyncAdmin) {
             await supabase
               .from('receipts')
               .update({
@@ -458,7 +475,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
             console.warn(`[Sync] Could not soft delete attendance ${targetAttendanceId}:`, delErr);
           }
 
-          if (payload.receiptNumber) {
+          if (payload.receiptNumber && isSyncAdmin) {
             await supabase
               .from('cards')
               .update({
@@ -830,74 +847,21 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       // ─── D. CARD PURCHASES & BATCH PURCHASES ───
       if (item.type === 'card_purchase') {
         const payload = item.payload;
-        const nowIso = new Date().toISOString();
-        const feePaid = Number(payload.amount || payload.card_fee || payload.card_fee_paid || 0);
+        const feePaid = Number(
+          payload.amount || payload.card_fee || payload.card_fee_paid || 0
+        );
 
         if (payload.member_id) {
-          try {
-            const { data: existingCard } = await supabase
-              .from('cards')
-              .select('id, member_id')
-              .eq('member_id', payload.member_id)
-              .maybeSingle();
-
-            if (existingCard) {
-              await supabase
-                .from('cards')
-                .update({
-                  payment_status: 'PAID',
-                  claim_status: 'UNCLAIMED',
-                  card_fee_paid: feePaid,
-                  receipt_number: payload.receipt_number,
-                  updated_at: nowIso,
-                })
-                .eq('member_id', payload.member_id);
-            } else {
-              const expDate = new Date();
-              expDate.setFullYear(expDate.getFullYear() + 3);
-              await supabase.from('cards').insert([
-                {
-                  member_id: payload.member_id,
-                  card_number: payload.card_number || crypto.randomUUID(),
-                  card_type: 'QR',
-                  status: 'Active',
-                  version: 1,
-                  payment_status: 'PAID',
-                  claim_status: 'UNCLAIMED',
-                  card_fee_paid: feePaid,
-                  receipt_number: payload.receipt_number,
-                  issued_at: nowIso,
-                  expires_at: expDate.toISOString(),
-                  updated_at: nowIso,
-                },
-              ]);
-            }
-          } catch (cardSyncErr) {
-            console.warn('Card record sync error:', cardSyncErr);
-          }
-        }
-
-        if (payload.receipt_number || feePaid > 0) {
-          const cardReceipt = {
-            id: payload.receipt_number || `RCPT-CARD-${Date.now()}`,
-            member_id: payload.member_id,
-            customer_name: payload.customer_name || 'Member',
-            customer_type: 'Physical Card',
-            amount: feePaid,
-            base_price: 0,
-            gcash_fee: 0,
-            card_fee: feePaid,
-            gcash_ref_no: payload.gcash_ref_no || null,
-            payment_method: payload.payment_method || 'Cash',
-            payment_status: 'Paid',
-            item_description: payload.item_description || 'Physical Membership Card Fee',
-            cash_session_id: activeSessionId,
-            created_at: payload.created_at || item.createdAt,
-          };
-          try {
-            await supabase.from('receipts').insert([cardReceipt]);
-          } catch (rcptSyncErr) {
-            console.warn('Card receipt sync error:', rcptSyncErr);
+          const { error: cardPayErr } = await supabase.rpc('pay_physical_card', {
+            p_member_id: payload.member_id,
+            p_amount: feePaid,
+            p_payment_method: payload.payment_method || 'Cash',
+            p_receipt_no: payload.receipt_number || null,
+            p_staff_name: payload.staff_name || item.userName || 'Counter Staff',
+            p_gcash_ref_no: payload.gcash_ref_no || null,
+          });
+          if (cardPayErr) {
+            throw cardPayErr;
           }
         }
 
@@ -955,16 +919,20 @@ export async function executeOfflineSync(): Promise<SyncResult> {
               ? 'CASH_OUT'
               : 'DIGITAL_CASH_IN';
 
-          await supabase.from('audit_logs').insert([
-            {
-              action: actionLabel,
-              details: `Synced offline ${String(payload.type).toUpperCase()}: ₱${Number(payload.amount || 0).toFixed(2)} Reason: ${payload.reason}${
-                payload.reference_number ? ` (Ref: ${payload.reference_number})` : ''
-              } by ${item.userName}.`,
-              target_id: insertedTx?.id || null,
-              performed_by: item.userId || null,
-            },
-          ]);
+          const validUid =
+            item.userId && /^[0-9a-f-]{36}$/i.test(item.userId)
+              ? item.userId
+              : null;
+
+          await supabase.rpc('log_audit_entry', {
+            p_user_id: validUid,
+            p_actor_username: item.userName || 'Staff',
+            p_action: actionLabel,
+            p_target_id: insertedTx?.id || null,
+            p_details: `Synced offline ${String(payload.type).toUpperCase()}: ₱${Number(payload.amount || 0).toFixed(2)} Reason: ${payload.reason}${
+              payload.reference_number ? ` (Ref: ${payload.reference_number})` : ''
+            } by ${item.userName}.`,
+          });
         } catch (auditErr) {
           console.warn('Audit log for synced cash transaction failed:', auditErr);
         }

@@ -79,6 +79,7 @@ interface TimelineCardProps {
   mode: 'attendance' | 'sale';
   data: any;
   canDelete: boolean;
+  canTogglePayment?: boolean;
   canPrint?: boolean;
   printDisabledReason?: string;
   deleteDisabledReason?: string;
@@ -252,6 +253,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
   mode,
   data,
   canDelete,
+  canTogglePayment = canDelete,
   canPrint = true,
   printDisabledReason,
   deleteDisabledReason,
@@ -561,7 +563,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                         </span>
 
                         <div className="shrink-0">
-                          {canDelete && attendanceMeta.log.amountPaid > 0 ? (
+                          {canTogglePayment && attendanceMeta.log.amountPaid > 0 ? (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -758,7 +760,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
 
                   <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     {!attendanceMeta.isSubscription && (
-                      canDelete && attendanceMeta.log.amountPaid > 0 ? (
+                      canTogglePayment && attendanceMeta.log.amountPaid > 0 ? (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -963,7 +965,7 @@ const TimelineCardComponent: React.FC<TimelineCardProps> = ({
                           </span>
                         </div>
 
-                        {canDelete && attendanceMeta.log.amountPaid > 0 ? (
+                        {canTogglePayment && attendanceMeta.log.amountPaid > 0 ? (
                           <button
                             type="button"
                             onClick={(e) => {

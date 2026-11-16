@@ -96,9 +96,9 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
   const isDigitalInRefValid = !isDigitalIn || /^\d{13}$/.test(referenceNumber.trim());
 
   // Complete Anti-Structuring Rule:
-  // ALL physical manual drawer movements (Cash In or Cash Out) by non-admin staff
+  // ALL manual drawer movements (Cash In, Cash Out, and Digital In) by non-admin staff
   // require Admin approval. Zero thresholds to game or split.
-  const willRequireApproval = !isAdmin && (isCashIn || isCashOut);
+  const willRequireApproval = !isAdmin && (isCashIn || isCashOut || isDigitalIn);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,7 +165,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
         });
 
         toast.info(
-          `${isCashIn ? 'Cash In' : 'Cash Out'} request for ₱${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} sent to admin for approval.`
+          `${isCashIn ? 'Cash In' : isDigitalIn ? 'Digital In' : 'Cash Out'} request for ₱${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} sent to admin for approval.`
         );
         onClose();
         await onSuccess();
@@ -293,7 +293,7 @@ export const CashTransactionModal: React.FC<CashTransactionModalProps> = ({
           {willRequireApproval && (
             <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
               <Info className="w-3.5 h-3.5 shrink-0" />
-              Manual drawer {isCashIn ? 'cash in' : 'cash out'} will be submitted to the Admin for approval.
+              Manual {isCashIn ? 'cash in' : isDigitalIn ? 'digital in' : 'cash out'} will be submitted to the Admin for approval.
             </p>
           )}
         </div>

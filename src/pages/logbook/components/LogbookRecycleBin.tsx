@@ -19,6 +19,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import {
   stagePendingTransaction,
   getDecryptedPendingTransactions,
@@ -61,6 +62,18 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   onClose,
   onRestoreSuccess,
 }) => {
+  const { user, profile } = useAuthStore() as any;
+  const isAdmin = useMemo(() => {
+    if (isSuperAdmin(user?.email)) return true;
+    const roleStr = (
+      profile?.role ||
+      user?.user_metadata?.role ||
+      user?.app_metadata?.role ||
+      ''
+    ).toLowerCase();
+    return roleStr === 'admin';
+  }, [user, profile]);
+
   const [deletedLogs, setDeletedLogs] = useState<LogItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -691,121 +704,123 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
 
       if (attError) throw attError;
 
-      // 2. Reactivate Member Cards in cards Table (and fallback member_cards)
-      const allCardMemberIds: string[] = [];
-      const allReceiptNumbers: string[] = [];
+      // 2. Reactivate Member Cards in cards Table (Admins only; Staff restores automatically sync via tr_card_revert_on_attendance_change)
+      if (isAdmin) {
+        const allCardMemberIds: string[] = [];
+        const allReceiptNumbers: string[] = [];
 
-      validToRestore.forEach((l) => {
-        const isCardTx =
-          l.customerType === 'Card' ||
-          String(l.categoryOrPlan || '')
-            .toLowerCase()
-            .includes('card');
+        validToRestore.forEach((l) => {
+          const isCardTx =
+            l.customerType === 'Card' ||
+            String(l.categoryOrPlan || '')
+              .toLowerCase()
+              .includes('card');
 
-        if (isCardTx) {
-          if (l.memberId) allCardMemberIds.push(l.memberId);
-          if (Array.isArray(l.memberIds) && l.memberIds.length > 0) {
-            l.memberIds.forEach((mid) => allCardMemberIds.push(mid));
-          }
-          if (l.receiptNumber) allReceiptNumbers.push(l.receiptNumber);
-        }
-      });
-
-      const uniqueReceipts = Array.from(new Set(allReceiptNumbers)).filter(
-        Boolean
-      );
-
-      // Query receipts and cards for all member IDs belonging to these receipts
-      if (uniqueReceipts.length > 0) {
-        const [rcptRes, cardRes] = await Promise.allSettled([
-          supabase
-            .from('receipts')
-            .select('id, member_ids, member_id')
-            .in('id', uniqueReceipts),
-          supabase
-            .from('cards')
-            .select('member_id, receipt_number')
-            .in('receipt_number', uniqueReceipts),
-        ]);
-
-        if (rcptRes.status === 'fulfilled' && rcptRes.value.data) {
-          rcptRes.value.data.forEach((r: any) => {
-            if (r.member_id) allCardMemberIds.push(r.member_id);
-            if (Array.isArray(r.member_ids)) {
-              r.member_ids.forEach((id: string) => allCardMemberIds.push(id));
+          if (isCardTx) {
+            if (l.memberId) allCardMemberIds.push(l.memberId);
+            if (Array.isArray(l.memberIds) && l.memberIds.length > 0) {
+              l.memberIds.forEach((mid) => allCardMemberIds.push(mid));
             }
-          });
+            if (l.receiptNumber) allReceiptNumbers.push(l.receiptNumber);
+          }
+        });
+
+        const uniqueReceipts = Array.from(new Set(allReceiptNumbers)).filter(
+          Boolean
+        );
+
+        // Query receipts and cards for all member IDs belonging to these receipts
+        if (uniqueReceipts.length > 0) {
+          const [rcptRes, cardRes] = await Promise.allSettled([
+            supabase
+              .from('receipts')
+              .select('id, member_ids, member_id')
+              .in('id', uniqueReceipts),
+            supabase
+              .from('cards')
+              .select('member_id, receipt_number')
+              .in('receipt_number', uniqueReceipts),
+          ]);
+
+          if (rcptRes.status === 'fulfilled' && rcptRes.value.data) {
+            rcptRes.value.data.forEach((r: any) => {
+              if (r.member_id) allCardMemberIds.push(r.member_id);
+              if (Array.isArray(r.member_ids)) {
+                r.member_ids.forEach((id: string) => allCardMemberIds.push(id));
+              }
+            });
+          }
+
+          if (cardRes.status === 'fulfilled' && cardRes.value.data) {
+            cardRes.value.data.forEach((c: any) => {
+              if (c.member_id) allCardMemberIds.push(c.member_id);
+            });
+          }
+
+          // Restore receipt payment_status
+          await supabase
+            .from('receipts')
+            .update({
+              payment_status: 'Paid',
+              updated_at: new Date().toISOString(),
+            })
+            .in('id', uniqueReceipts);
+
+          // Update cards by receipt_number
+          await supabase
+            .from('cards')
+            .update({
+              status: 'Active',
+              payment_status: 'PAID',
+              claim_status: 'UNCLAIMED',
+              updated_at: new Date().toISOString(),
+            })
+            .in('receipt_number', uniqueReceipts);
         }
 
-        if (cardRes.status === 'fulfilled' && cardRes.value.data) {
-          cardRes.value.data.forEach((c: any) => {
-            if (c.member_id) allCardMemberIds.push(c.member_id);
-          });
+        const uniqueMemberIds = Array.from(new Set(allCardMemberIds)).filter(
+          Boolean
+        );
+
+        if (uniqueMemberIds.length > 0) {
+          const { data: memberRows } = await supabase
+            .from('members')
+            .select('id, member_id')
+            .or(
+              `member_id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')}),id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')})`
+            );
+
+          const allPossibleIds = Array.from(
+            new Set([
+              ...uniqueMemberIds,
+              ...(memberRows || []).map((m: any) => m.id),
+              ...(memberRows || []).map((m: any) => m.member_id),
+            ])
+          ).filter(Boolean);
+
+          const { error: cardsErr } = await supabase
+            .from('cards')
+            .update({
+              status: 'Active',
+              payment_status: 'PAID',
+              claim_status: 'UNCLAIMED',
+              updated_at: new Date().toISOString(),
+            })
+            .in('member_id', allPossibleIds);
+
+          if (cardsErr) {
+            console.warn('Error updating cards table:', cardsErr);
+          }
+
+          await supabase
+            .from('member_cards')
+            .update({
+              status: 'Active',
+              payment_status: 'PAID',
+              deleted_at: null,
+            })
+            .in('member_id', allPossibleIds);
         }
-
-        // Restore receipt payment_status
-        await supabase
-          .from('receipts')
-          .update({
-            payment_status: 'Paid',
-            updated_at: new Date().toISOString(),
-          })
-          .in('id', uniqueReceipts);
-
-        // Update cards by receipt_number
-        await supabase
-          .from('cards')
-          .update({
-            status: 'Active',
-            payment_status: 'PAID',
-            claim_status: 'UNCLAIMED',
-            updated_at: new Date().toISOString(),
-          })
-          .in('receipt_number', uniqueReceipts);
-      }
-
-      const uniqueMemberIds = Array.from(new Set(allCardMemberIds)).filter(
-        Boolean
-      );
-
-      if (uniqueMemberIds.length > 0) {
-        const { data: memberRows } = await supabase
-          .from('members')
-          .select('id, member_id')
-          .or(
-            `member_id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')}),id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')})`
-          );
-
-        const allPossibleIds = Array.from(
-          new Set([
-            ...uniqueMemberIds,
-            ...(memberRows || []).map((m: any) => m.id),
-            ...(memberRows || []).map((m: any) => m.member_id),
-          ])
-        ).filter(Boolean);
-
-        const { error: cardsErr } = await supabase
-          .from('cards')
-          .update({
-            status: 'Active',
-            payment_status: 'PAID',
-            claim_status: 'UNCLAIMED',
-            updated_at: new Date().toISOString(),
-          })
-          .in('member_id', allPossibleIds);
-
-        if (cardsErr) {
-          console.warn('Error updating cards table:', cardsErr);
-        }
-
-        await supabase
-          .from('member_cards')
-          .update({
-            status: 'Active',
-            payment_status: 'PAID',
-            deleted_at: null,
-          })
-          .in('member_id', allPossibleIds);
       }
 
       try {

@@ -49,6 +49,8 @@ import { HeaderActionsContext } from '../../routes';
 import { supabase } from '../../lib/supabase/client';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useNavbarStore } from '../../stores/useNavbarStore';
+import { useAuthStore } from '../../stores/authStore';
+import { isSuperAdmin } from '../../constants/auth';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 
 // Import Shared Types
@@ -128,6 +130,11 @@ export const MembersList: React.FC<MembersListProps> = ({
   const hasTriggeredRenewRef = useRef<boolean>(false);
 
   const { isSessionOpen } = useCashSessionStore();
+  const { user, profile } = useAuthStore();
+  const isAdmin =
+    isSuperAdmin(user?.email) ||
+    (profile?.role || '').toLowerCase() === 'admin' ||
+    (profile?.role || '').toLowerCase() === 'superadmin';
 
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
@@ -580,6 +587,7 @@ export const MembersList: React.FC<MembersListProps> = ({
   useEffect(() => {
    const handlePrintEvent = () => handleOpenPrintModal();
     const handleRecycleEvent = () => {
+      if (!isAdmin) return;
       if (isOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) {
         toast.error('Member\'s profile bin is unavailable while offline.', {
           toastId: 'recycle-bin-offline-event',
@@ -603,7 +611,7 @@ export const MembersList: React.FC<MembersListProps> = ({
       window.removeEventListener('trigger-member-recycle', handleRecycleEvent);
       window.removeEventListener('trigger-member-wizard', handleWizardEvent);
     };
-  }, [handleOpenPrintModal, isOffline]);
+  }, [handleOpenPrintModal, isOffline, isAdmin]);
 
   // Keyboard Shortcut: Focus Search
   useEffect(() => {
@@ -1139,6 +1147,12 @@ const chipCounts = useMemo(() => {
   }, [filteredMembers, mobilePage, itemsPerPage]);
 
   const handleToggleSuspend = async (memberItem: Member) => {
+    const subInfo = getSubscriptionDetails(memberItem.member_id);
+    if (!isAdmin && subInfo.hasSub) {
+      toast.error('Staff cannot edit or suspend members while a subscription is running.');
+      return;
+    }
+
     const nextStatus = memberItem.status === 'Active' ? 'Suspended' : 'Active';
     const prevMembers = [...members];
 
@@ -1152,7 +1166,7 @@ const chipCounts = useMemo(() => {
       await memberService.update(
         memberItem.id,
         { status: nextStatus },
-        'Admin Staff'
+        profile?.username || user?.email || 'Admin Staff'
       );
       toast.success(`Member set to ${nextStatus}.`);
       fetchMembers(true);
@@ -1543,27 +1557,31 @@ const chipCounts = useMemo(() => {
                     <span>Print Member Card</span>
                   </button>
 
-                  <div className="border-t border-(--border-color) my-1" />
+                  {(isAdmin || !subInfo.hasSub) && (
+                    <>
+                      <div className="border-t border-(--border-color) my-1" />
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenActionMenuId(null);
-                      handleToggleSuspend(item);
-                    }}
-                    className="w-full px-3.5 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 cursor-pointer"
-                  >
-                    {item.status === 'Active' ? (
-                      <UserX className="w-4 h-4" />
-                    ) : (
-                      <UserCheck className="w-4 h-4" />
-                    )}
-                    <span>
-                      {item.status === 'Active'
-                        ? 'Suspend Member'
-                        : 'Activate Member'}
-                    </span>
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenActionMenuId(null);
+                          handleToggleSuspend(item);
+                        }}
+                        className="w-full px-3.5 py-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl flex items-center gap-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 cursor-pointer"
+                      >
+                        {item.status === 'Active' ? (
+                          <UserX className="w-4 h-4" />
+                        ) : (
+                          <UserCheck className="w-4 h-4" />
+                        )}
+                        <span>
+                          {item.status === 'Active'
+                            ? 'Suspend Member'
+                            : 'Activate Member'}
+                        </span>
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1593,32 +1611,34 @@ const chipCounts = useMemo(() => {
               <span>PRINT MEMBER CARDS</span>
             </Button>
 
-            <Button
-              disabled={isOffline}
-              onClick={() => {
-                if (isOffline) {
-                  toast.error('Recycle Bin is unavailable while offline.', {
-                    toastId: 'recycle-bin-offline',
-                  });
-                  return;
+            {isAdmin && (
+              <Button
+                disabled={isOffline}
+                onClick={() => {
+                  if (isOffline) {
+                    toast.error('Recycle Bin is unavailable while offline.', {
+                      toastId: 'recycle-bin-offline',
+                    });
+                    return;
+                  }
+                  setIsRecycleOpen(true);
+                }}
+                variant="secondary"
+                title={
+                  isOffline
+                    ? 'Recycle Bin is unavailable while offline'
+                    : 'Open Recycle Bin'
                 }
-                setIsRecycleOpen(true);
-              }}
-              variant="secondary"
-              title={
-                isOffline
-                  ? 'Recycle Bin is unavailable while offline'
-                  : 'Open Recycle Bin'
-              }
-              className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
-                isOffline
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'cursor-pointer'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
-              <span>RECYCLE BIN</span>
-            </Button>
+                className={`py-1.5 px-2.5 lg:py-2 lg:px-3.5 !w-auto text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap ${
+                  isOffline
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'
+                }`}
+              >
+                <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
+                <span>RECYCLE BIN</span>
+              </Button>
+            )}
 
             <Button
               onClick={() => {
@@ -1695,15 +1715,15 @@ const chipCounts = useMemo(() => {
         <>
           {/* Top Closed Session Banner */}
           {!isSessionOpen && (
-            <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold uppercase select-none shadow-xs">
-              <div className="flex items-center gap-2">
+            <div className="mb-3 px-3.5 py-2.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 text-xs font-bold uppercase select-none">
+              <div className="flex items-center gap-2 min-w-0">
                 <Lock className="w-4 h-4 shrink-0 text-yellow-500" />
-                <span>
-                  Cash drawer session is closed. Subscription renewals and card
-                  purchases are locked.
+                <span className="leading-snug">
+                  Cash drawer session is closed. Subscription renewals, card
+                  purchases, and online registration are locked.
                 </span>
               </div>
-              <span className="text-[10px] font-mono opacity-80 lowercase font-normal hidden sm:inline">
+              <span className="text-[10px] font-mono opacity-80 lowercase font-normal shrink-0 sm:text-right">
                 open session in cash management to proceed
               </span>
             </div>
@@ -2802,31 +2822,33 @@ const chipCounts = useMemo(() => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                disabled={isOffline}
-                onClick={() => {
-                  if (isOffline) {
-                    toast.error('Recycle Bin is unavailable while offline.', {
-                      toastId: 'recycle-bin-offline',
-                    });
-                    return;
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={isOffline}
+                  onClick={() => {
+                    if (isOffline) {
+                      toast.error('Recycle Bin is unavailable while offline.', {
+                        toastId: 'recycle-bin-offline',
+                      });
+                      return;
+                    }
+                    setIsRecycleOpen(true);
+                  }}
+                  className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
+                    isOffline
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    isOffline
+                      ? 'Recycle Bin is unavailable while offline'
+                      : 'Recycle Bin'
                   }
-                  setIsRecycleOpen(true);
-                }}
-                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
-                  isOffline
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
-                }`}
-                title={
-                  isOffline
-                    ? 'Recycle Bin is unavailable while offline'
-                    : 'Recycle Bin'
-                }
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
 
               <button
                 type="button"
@@ -2985,26 +3007,47 @@ const chipCounts = useMemo(() => {
                     );
                   })()}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const target = mobileActionSheetMember;
-                      setMobileActionSheetMember(null);
-                      handleToggleSuspend(target);
-                    }}
-                    className="p-3 bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer shadow-xs"
-                  >
-                    {mobileActionSheetMember.status === 'Active' ? (
-                      <UserX className="w-5 h-5 text-amber-500" />
-                    ) : (
-                      <UserCheck className="w-5 h-5 text-emerald-500" />
-                    )}
-                    <span>
-                      {mobileActionSheetMember.status === 'Active'
-                        ? 'Suspend'
-                        : 'Reactivate'}
-                    </span>
-                  </button>
+                  {(() => {
+                    const mobileSubInfo = getSubscriptionDetails(
+                      mobileActionSheetMember.member_id
+                    );
+                    const suspendLocked = !isAdmin && mobileSubInfo.hasSub;
+                    return (
+                      <button
+                        type="button"
+                        disabled={suspendLocked}
+                        onClick={() => {
+                          if (suspendLocked) return;
+                          const target = mobileActionSheetMember;
+                          setMobileActionSheetMember(null);
+                          handleToggleSuspend(target);
+                        }}
+                        title={
+                          suspendLocked
+                            ? 'Locked for Staff while subscription is running'
+                            : undefined
+                        }
+                        className={`p-3 rounded-2xl flex flex-col items-center justify-center gap-1.5 text-center text-xs font-heading font-bold uppercase tracking-wider transition-all shadow-xs ${
+                          suspendLocked
+                            ? 'bg-slate-400/10 text-slate-400 border border-slate-500/20 cursor-not-allowed opacity-60'
+                            : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 active:scale-[0.98] cursor-pointer'
+                        }`}
+                      >
+                        {suspendLocked ? (
+                          <Lock className="w-5 h-5" />
+                        ) : mobileActionSheetMember.status === 'Active' ? (
+                          <UserX className="w-5 h-5 text-amber-500" />
+                        ) : (
+                          <UserCheck className="w-5 h-5 text-emerald-500" />
+                        )}
+                        <span>
+                          {mobileActionSheetMember.status === 'Active'
+                            ? 'Suspend'
+                            : 'Reactivate'}
+                        </span>
+                      </button>
+                    );
+                  })()}
 
                   {/* Row 3: View Profile Alone at the Bottom */}
                   <button

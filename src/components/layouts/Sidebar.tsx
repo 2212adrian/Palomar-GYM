@@ -189,9 +189,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     };
 
+    if (!isAdmin) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
     resolveVersionAndCheckUpdates();
 
-    // Subscribe to realtime app release changes
+    // Subscribe to realtime app release changes (Admins only)
     const releasesChannel = supabase
       .channel('sidebar_app_releases_sync')
       .on(

@@ -141,15 +141,22 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     onClose();
   };
 
-  const handleApproveCash = async (id: string, type: 'cash_in' | 'cash_out') => {
+  const handleApproveCash = async (
+    id: string,
+    type: 'cash_in' | 'cash_out' | 'digital_in'
+  ) => {
     try {
       setProcessingId(id);
       const actorName =
         profile?.username || user?.email?.split('@')[0] || 'Admin';
       await approveCashApproval(id, user?.id, actorName);
-      toast.success(
-        `${type === 'cash_in' ? 'Cash In' : 'Cash Out'} request approved.`
-      );
+      const label =
+        type === 'cash_in'
+          ? 'Cash In'
+          : type === 'digital_in'
+            ? 'Digital In'
+            : 'Cash Out';
+      toast.success(`${label} request approved.`);
     } catch {
       toast.error('Failed to approve cash transaction.');
     } finally {
@@ -157,13 +164,20 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     }
   };
 
-  const handleRejectCash = async (id: string, type: 'cash_in' | 'cash_out') => {
+  const handleRejectCash = async (
+    id: string,
+    type: 'cash_in' | 'cash_out' | 'digital_in'
+  ) => {
     try {
       setProcessingId(id);
       await rejectCashApproval(id, 'Rejected by admin via notifications');
-      toast.info(
-        `${type === 'cash_in' ? 'Cash In' : 'Cash Out'} request rejected.`
-      );
+      const label =
+        type === 'cash_in'
+          ? 'Cash In'
+          : type === 'digital_in'
+            ? 'Digital In'
+            : 'Cash Out';
+      toast.info(`${label} request rejected.`);
     } catch {
       toast.error('Failed to reject cash transaction.');
     } finally {
@@ -398,6 +412,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                       <div className="space-y-1">
                         {pendingCashApprovals.map((tx) => {
                           const isCashIn = tx.type === 'cash_in';
+                          const isDigitalIn = tx.type === 'digital_in';
+                          const isInflow = isCashIn || isDigitalIn;
                           const isBusy = processingId === tx.id;
 
                           return (
@@ -409,12 +425,14 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                               <div className="flex items-start gap-2.5 min-w-0 flex-1">
                                 <div
                                   className={`p-2 rounded-lg shrink-0 mt-0.5 ${
-                                    isCashIn
-                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                    isDigitalIn
+                                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
+                                      : isCashIn
+                                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                        : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                                   }`}
                                 >
-                                  {isCashIn ? (
+                                  {isInflow ? (
                                     <ArrowDownLeft className="w-4 h-4" />
                                   ) : (
                                     <ArrowUpRight className="w-4 h-4" />
@@ -426,15 +444,21 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                     <div className="flex items-center gap-1.5 truncate">
                                       <span
                                         className={`px-1.5 py-0.2 rounded text-[8px] font-heading font-black uppercase shrink-0 ${
-                                          isCashIn
-                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                          isDigitalIn
+                                            ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
+                                            : isCashIn
+                                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                                         }`}
                                       >
-                                        {isCashIn ? 'Cash In' : 'Cash Out'}
+                                        {isDigitalIn
+                                          ? 'Digital In'
+                                          : isCashIn
+                                            ? 'Cash In'
+                                            : 'Cash Out'}
                                       </span>
                                       <h5 className="font-mono text-xs font-black text-slate-900 dark:text-white truncate">
-                                        {isCashIn ? '+' : '-'}₱
+                                        {isInflow ? '+' : '-'}₱
                                         {tx.amount.toLocaleString('en-US', {
                                           minimumFractionDigits: 2,
                                         })}

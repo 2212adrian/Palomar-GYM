@@ -561,6 +561,8 @@ export const CashManagementPage: React.FC = () => {
           <div className="space-y-2.5">
             {pendingApprovals.map((tx) => {
               const isCashIn = tx.type === 'cash_in';
+              const isDigitalIn = tx.type === 'digital_in';
+              const isPositive = isCashIn || isDigitalIn;
               return (
                 <div
                   key={tx.id}
@@ -572,19 +574,23 @@ export const CashManagementPage: React.FC = () => {
                         className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
                           isCashIn
                             ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                            : isDigitalIn
+                              ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                         }`}
                       >
-                        {isCashIn ? 'CASH IN REQUEST' : 'CASH OUT REQUEST'}
+                        {isCashIn ? 'CASH IN REQUEST' : isDigitalIn ? 'DIGITAL IN REQUEST' : 'CASH OUT REQUEST'}
                       </span>
                       <span
                         className={`font-mono font-black text-sm sm:text-base ${
                           isCashIn
                             ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-600 dark:text-rose-400'
+                            : isDigitalIn
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
-                        {isCashIn ? '+' : '-'}₱
+                        {isPositive ? '+' : '-'}₱
                         {Number(tx.amount).toLocaleString('en-US', {
                           minimumFractionDigits: 2,
                         })}
@@ -621,7 +627,7 @@ export const CashManagementPage: React.FC = () => {
                       className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      Approve {isCashIn ? 'Cash In' : 'Cash Out'}
+                      Approve {isCashIn ? 'Cash In' : isDigitalIn ? 'Digital In' : 'Cash Out'}
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,5 @@
 import { supabase } from './client';
 import { logAudit } from './audit';
-import { getServerNow, getServerISOString } from '../serverTime';
 import { stagePendingTransaction } from '../offlineVault';
 import type {
   CashSession,
@@ -91,10 +90,6 @@ export async function openCashSession(params: {
   assertOnline();
 
   const openingFloatVal = Math.max(0, Number(params.openingFloat) || 0);
-  const nowIso = getServerISOString();
-  const sessionNum = `CS-${nowIso.slice(0, 10).replace(/-/g, '')}-${Math.floor(
-    100 + Math.random() * 900
-  )}`;
 
   // 1. Try atomic RPC first
   try {
@@ -119,51 +114,11 @@ export async function openCashSession(params: {
       );
       return session;
     }
-  } catch (rpcErr) {
-    console.warn('RPC open_cash_session_safe not available, using direct fallback:', rpcErr);
+  } catch (rpcErr: any) {
+    throw new Error(rpcErr?.message || 'Failed to open cash session via secure RPC.');
   }
 
-  // 2. Direct fallback
-  const now = getServerNow();
-
-  await supabase
-    .from('cash_sessions')
-    .update({
-      status: 'closed',
-      closed_at: now.toISOString(),
-      closed_by_name: params.openedByName || 'Admin',
-    })
-    .eq('status', 'open');
-
-  const { data, error } = await supabase
-    .from('cash_sessions')
-    .insert([
-      {
-        session_number: sessionNum,
-        opened_by: params.openedBy || null,
-        opened_by_name: params.openedByName || 'Admin',
-        status: 'open',
-        opening_float: openingFloatVal,
-        notes: params.notes?.trim() || null,
-      },
-    ])
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error(error?.message || 'Failed to open cash session in database.');
-  }
-
-  const session = data as CashSession;
-  await logAudit(
-    'CASH_SESSION_OPEN',
-    `Opened Cash Session #${session.session_number} with Opening Float of ₱${openingFloatVal.toFixed(2)}${
-      params.notes ? ` (Notes: ${params.notes})` : ''
-    }.`,
-    session.id
-  );
-
-  return session;
+  throw new Error('Failed to open cash session in database.');
 }
 
 /**
@@ -258,7 +213,7 @@ export async function recordCashTransaction(params: {
   const tx = (data || payload) as CashTransaction;
   const actionLabel =
     txStatus === 'pending'
-      ? 'CASH_OUT_REQUEST'
+      ? `${params.type.toUpperCase()}_REQUEST`
       : params.type === 'cash_in'
       ? 'CASH_IN'
       : params.type === 'cash_out'
@@ -295,44 +250,19 @@ export async function approveCashTransaction(params: {
       ? params.transactionId.slice(0, 8).toUpperCase()
       : params.transactionId;
 
-  // Try RPC first
-  try {
-    const { error: rpcError } = await supabase.rpc('approve_cash_transaction', {
-      p_transaction_id: params.transactionId,
-      p_admin_id: params.adminId || null,
-      p_admin_name: params.adminName || 'Admin',
-    });
+  const { error: rpcError } = await supabase.rpc('approve_cash_transaction', {
+    p_transaction_id: params.transactionId,
+    p_admin_id: params.adminId || null,
+    p_admin_name: params.adminName || 'Admin',
+  });
 
-    if (!rpcError) {
-      await logAudit(
-        'CASH_OUT_APPROVED',
-        `Approved Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}.`,
-        params.transactionId
-      );
-      return;
-    }
-  } catch (rpcErr) {
-    console.warn('approve_cash_transaction RPC fallback:', rpcErr);
-  }
-
-  // Fallback direct update
-  const { error } = await supabase
-    .from('cash_transactions')
-    .update({
-      status: 'approved',
-      approved_by: params.adminId || null,
-      approved_by_name: params.adminName || 'Admin',
-      approved_at: new Date().toISOString(),
-    })
-    .eq('id', params.transactionId);
-
-  if (error) {
-    throw new Error(error.message || 'Failed to approve cash transaction.');
+  if (rpcError) {
+    throw new Error(rpcError.message || 'Failed to approve cash transaction.');
   }
 
   await logAudit(
-    'CASH_OUT_APPROVED',
-    `Approved Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}.`,
+    'CASH_TRANSACTION_APPROVED',
+    `Approved Cash Transaction #${shortTxId} by ${params.adminName || 'Admin'}.`,
     params.transactionId
   );
 }
@@ -353,46 +283,20 @@ export async function rejectCashTransaction(params: {
       ? params.transactionId.slice(0, 8).toUpperCase()
       : params.transactionId;
 
-  // Try RPC first
-  try {
-    const { error: rpcError } = await supabase.rpc('reject_cash_transaction', {
-      p_transaction_id: params.transactionId,
-      p_admin_id: params.adminId || null,
-      p_admin_name: params.adminName || 'Admin',
-      p_reason: params.reason.trim(),
-    });
+  const { error: rpcError } = await supabase.rpc('reject_cash_transaction', {
+    p_transaction_id: params.transactionId,
+    p_admin_id: params.adminId || null,
+    p_admin_name: params.adminName || 'Admin',
+    p_reason: params.reason.trim(),
+  });
 
-    if (!rpcError) {
-      await logAudit(
-        'CASH_OUT_REJECTED',
-        `Rejected Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
-        params.transactionId
-      );
-      return;
-    }
-  } catch (rpcErr) {
-    console.warn('reject_cash_transaction RPC fallback:', rpcErr);
-  }
-
-  // Fallback direct update
-  const { error } = await supabase
-    .from('cash_transactions')
-    .update({
-      status: 'rejected',
-      approved_by: params.adminId || null,
-      approved_by_name: params.adminName || 'Admin',
-      approved_at: new Date().toISOString(),
-      rejection_reason: params.reason.trim(),
-    })
-    .eq('id', params.transactionId);
-
-  if (error) {
-    throw new Error(error.message || 'Failed to reject cash transaction.');
+  if (rpcError) {
+    throw new Error(rpcError.message || 'Failed to reject cash transaction.');
   }
 
   await logAudit(
-    'CASH_OUT_REJECTED',
-    `Rejected Cash Out transaction #${shortTxId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
+    'CASH_TRANSACTION_REJECTED',
+    `Rejected Cash Transaction #${shortTxId} by ${params.adminName || 'Admin'}: ${params.reason.trim()}`,
     params.transactionId
   );
 }
@@ -450,41 +354,15 @@ export async function voidCashTransaction(params: {
     params.adminName || 'Admin'
   }${activityPart}${amountPart} — Reason: ${params.reason.trim()}`;
 
-  // Try RPC first
-  try {
-    const { error: rpcError } = await supabase.rpc('void_cash_transaction', {
-      p_transaction_id: params.transactionId,
-      p_admin_id: params.adminId || null,
-      p_admin_name: params.adminName || 'Admin',
-      p_reason: params.reason.trim(),
-    });
+  const { error: rpcError } = await supabase.rpc('void_cash_transaction', {
+    p_transaction_id: params.transactionId,
+    p_admin_id: params.adminId || null,
+    p_admin_name: params.adminName || 'Admin',
+    p_reason: params.reason.trim(),
+  });
 
-    if (!rpcError) {
-      await logAudit(
-        'CASH_TRANSACTION_VOIDED',
-        logDetails,
-        params.transactionId
-      );
-      return;
-    }
-  } catch (rpcErr) {
-    console.warn('void_cash_transaction RPC fallback:', rpcErr);
-  }
-
-  // Fallback direct update
-  const { error } = await supabase
-    .from('cash_transactions')
-    .update({
-      is_voided: true,
-      voided_by: params.adminId || null,
-      voided_by_name: params.adminName || 'Admin',
-      voided_at: new Date().toISOString(),
-      void_reason: params.reason.trim(),
-    })
-    .eq('id', params.transactionId);
-
-  if (error) {
-    throw new Error(error.message || 'Failed to void cash transaction.');
+  if (rpcError) {
+    throw new Error(rpcError.message || 'Failed to void cash transaction.');
   }
 
   await logAudit(
@@ -522,75 +400,25 @@ export async function closeCashSession(params: {
 }): Promise<CashSession> {
   assertOnline();
 
-  const now = getServerNow();
-
-  // 1. Primary: Atomic RPC close function
-  try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
-      'close_cash_session_safe',
-      {
-        p_session_id: params.sessionId,
-        p_actual_cash: params.actualCash,
-        p_expected_cash: params.expectedCash,
-        p_discrepancy: params.discrepancy,
-        p_notes: params.notes?.trim() || null,
-        p_denominations: params.denominations || {},
-        p_closed_by: params.closedBy || null,
-        p_closed_by_name: params.closedByName || 'Admin',
-      }
-    );
-
-    if (!rpcError && rpcData) {
-      const closedSession = rpcData as CashSession;
-      const discLabel =
-        params.discrepancy === 0
-          ? 'BALANCED'
-          : params.discrepancy > 0
-          ? `OVER (+₱${params.discrepancy.toFixed(2)})`
-          : `CASH DISCREPANCY (-₱${Math.abs(params.discrepancy).toFixed(2)})`;
-
-      await logAudit(
-        'CASH_SESSION_CLOSE',
-        `Closed Cash Session #${closedSession.session_number || params.sessionId}: Expected ₱${params.expectedCash.toFixed(
-          2
-        )}, Actual ₱${params.actualCash.toFixed(2)} [${discLabel}].${
-          params.notes ? ` Notes: ${params.notes}` : ''
-        }`,
-        closedSession.id
-      );
-
-      return closedSession;
+  const { data: rpcData, error: rpcError } = await supabase.rpc(
+    'close_cash_session_safe',
+    {
+      p_session_id: params.sessionId,
+      p_actual_cash: params.actualCash,
+      p_expected_cash: params.expectedCash,
+      p_discrepancy: params.discrepancy,
+      p_notes: params.notes?.trim() || null,
+      p_denominations: params.denominations || {},
+      p_closed_by: params.closedBy || null,
+      p_closed_by_name: params.closedByName || 'Admin',
     }
-  } catch (rpcErr) {
-    console.warn('RPC close_cash_session_safe call failed:', rpcErr);
+  );
+
+  if (rpcError || !rpcData) {
+    throw new Error(rpcError?.message || 'Database error closing cash session.');
   }
 
-  // 2. Direct Table Fallback
-  const updatePayload = {
-    status: 'closed' as const,
-    closed_at: now.toISOString(),
-    closed_by: params.closedBy || null,
-    closed_by_name: params.closedByName || 'Admin',
-    closing_actual_cash: params.actualCash,
-    closing_expected_cash: params.expectedCash,
-    discrepancy: params.discrepancy,
-    discrepancy_reason: null,
-    notes: params.notes?.trim() || null,
-    denominations: params.denominations || {},
-  };
-
-  const { data, error } = await supabase
-    .from('cash_sessions')
-    .update(updatePayload)
-    .eq('id', params.sessionId)
-    .select()
-    .maybeSingle();
-
-  if (error || !data) {
-    throw new Error(error?.message || 'Database error closing cash session.');
-  }
-
-  const closedSession = data as CashSession;
+  const closedSession = rpcData as CashSession;
   const discLabel =
     params.discrepancy === 0
       ? 'BALANCED'
