@@ -20,6 +20,7 @@ import { Browser } from '@capacitor/browser';
 import { supabase } from './lib/supabase/client';
 
 import { promptInitialPermissionsOnLogin } from './lib/permissions';
+import { swapNoemailWithGoogleIdentity } from './lib/oauthCallback';
 import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
 import { initBackgroundSyncService } from './lib/backgroundSyncService';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
@@ -473,11 +474,17 @@ export const App: React.FC = () => {
             markPendingNewLogin();
             const { data: sessionData, error } =
               await supabase.auth.exchangeCodeForSession(code);
-            if (!error && sessionData?.session) {
+            if (!error && sessionData?.session?.user) {
+              await useAuthStore
+                .getState()
+                .claimActiveSession(sessionData.session.user.id);
+              await swapNoemailWithGoogleIdentity(sessionData.session.user).catch(
+                () => {}
+              );
               await checkSession();
               const profile = useAuthStore.getState().profile;
               const target =
-                profile?.role === 'staff' ? '/sales' : '/dashboard';
+                profile?.role === 'staff' ? '/cash-management' : '/dashboard';
               window.location.replace(target);
               return;
             }
@@ -497,16 +504,22 @@ export const App: React.FC = () => {
 
           if (access_token && refresh_token) {
             markPendingNewLogin();
-            const { error } = await supabase.auth.setSession({
+            const { data: sessionData, error } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
 
-            if (!error) {
+            if (!error && sessionData?.session?.user) {
+              await useAuthStore
+                .getState()
+                .claimActiveSession(sessionData.session.user.id);
+              await swapNoemailWithGoogleIdentity(sessionData.session.user).catch(
+                () => {}
+              );
               await checkSession();
               const profile = useAuthStore.getState().profile;
               const target =
-                profile?.role === 'staff' ? '/sales' : '/dashboard';
+                profile?.role === 'staff' ? '/cash-management' : '/dashboard';
               window.location.replace(target);
             }
           }

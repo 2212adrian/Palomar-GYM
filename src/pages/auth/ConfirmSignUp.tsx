@@ -97,11 +97,8 @@ export const ConfirmSignUp: React.FC = () => {
         if (passwordError) throw passwordError;
       }
 
-      // 2. Set account status to active inside the profiles table
-      const { error: dbError } = await supabase
-        .from('profiles')
-        .update({ status: 'active' })
-        .eq('id', user.id);
+      // 2. Set account status to active via SECURITY DEFINER RPC
+      const { error: dbError } = await supabase.rpc('activate_own_profile');
 
       if (dbError) throw dbError;
 

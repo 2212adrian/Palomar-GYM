@@ -323,40 +323,69 @@ export const PersonalAccount: React.FC = () => {
     };
   }, [user, isInitialNoPassword]);
 
+  const syncedGoogleKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     let isMounted = true;
     const syncGoogleEmailIfNeeded = async () => {
-      if (!user || !googleIdentity) return;
+      if (!user || !isGoogleLinked) return;
 
-      const currentEmail = user.email || '';
-      const googleEmail =
-        googleIdentity.identity_data?.email || googleIdentity.email;
+      const currentEmail = (user.email || '').trim().toLowerCase();
+      const googleEmail = (
+        googleIdentity?.identity_data?.email ||
+        googleIdentity?.email ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
 
-      if (!googleEmail) return;
-
-      if (
+      const needsSync =
         currentEmail.endsWith('@palomargym.noemail') ||
-        (isGoogleLinked &&
-          currentEmail.toLowerCase() !== googleEmail.toLowerCase() &&
-          currentEmail.includes('@palomargym.noemail'))
-      ) {
-        try {
-          const { data, error } = await supabase.rpc(
-            'sync_linked_google_email'
-          );
-          if (!error && data?.success && data?.updated && isMounted) {
-            await checkSession();
-            toast.success(
-              `Google account linked! Account email updated to ${data.new_email}.`
-            );
-            await logAudit(
-              'GOOGLE_ACCOUNT_EMAIL_BOUND',
-              `User bound Google account. Account email updated from "${data.old_email}" to "${data.new_email}".`,
-              user.id
+        (Boolean(googleEmail) && currentEmail !== googleEmail);
+
+      if (!needsSync) return;
+
+      const syncKey = `${user.id}:${currentEmail}:${googleEmail}`;
+      if (syncedGoogleKeyRef.current === syncKey) return;
+      syncedGoogleKeyRef.current = syncKey;
+
+      try {
+        const { data, error } = await supabase.rpc('sync_linked_google_email');
+        if (error) {
+          syncedGoogleKeyRef.current = null;
+          if (isMounted) {
+            toast.error(
+              error.message || 'Failed to update account email to linked Google address.'
             );
           }
-        } catch (err) {
-          console.warn('Failed to sync linked Google email:', err);
+          return;
+        }
+
+        if (data && data.success === false) {
+          if (isMounted && data.message) {
+            toast.error(data.message);
+          }
+          return;
+        }
+
+        if (data?.success && data?.updated && isMounted) {
+          await supabase.auth.refreshSession().catch(() => {});
+          await checkSession();
+          toast.success(
+            `Google account linked! Account email updated to ${data.new_email}.`
+          );
+          await logAudit(
+            'GOOGLE_ACCOUNT_EMAIL_BOUND',
+            `User bound Google account. Account email updated from "${data.old_email}" to "${data.new_email}".`,
+            user.id
+          );
+        }
+      } catch (err: any) {
+        syncedGoogleKeyRef.current = null;
+        if (isMounted) {
+          toast.error(
+            err?.message || 'Failed to synchronize linked Google email.'
+          );
         }
       }
     };
@@ -668,7 +697,9 @@ export const PersonalAccount: React.FC = () => {
   const handleLinkGoogle = async () => {
     try {
       setIsLinkingGoogle(true);
-      const redirectUri = buildAppUrl('/system/settings?tab=personal');
+      const redirectUri = buildAppUrl(
+        '/auth/callback?intent=link&next=/settings/personal-account'
+      );
       const { error } = await supabase.auth.linkIdentity({
         provider: 'google',
         options: {
@@ -736,7 +767,9 @@ export const PersonalAccount: React.FC = () => {
         'revert_user_to_local_email'
       );
       if (revertError) {
-        console.warn('Could not revert to local email:', revertError.message);
+        throw new Error(
+          revertError.message || 'Failed to revert account email to local handle.'
+        );
       }
 
       const newLocalEmail =
@@ -745,11 +778,15 @@ export const PersonalAccount: React.FC = () => {
           ?.toLowerCase()
           .replace(/[^a-z0-9]/g, '')}@palomargym.noemail`;
 
+      syncedGoogleKeyRef.current = null;
+
       await logAudit(
         'GOOGLE_ACCOUNT_UNLINKED',
         `User unlinked Google identity. Account email reverted to local handle "${newLocalEmail}".`,
         user?.id ?? undefined
       );
+
+      await supabase.auth.refreshSession().catch(() => {});
 
       const { data: updatedIdentities } = await supabase.auth.getUserIdentities();
       if (updatedIdentities?.identities) {

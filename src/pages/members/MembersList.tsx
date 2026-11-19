@@ -1715,16 +1715,16 @@ const chipCounts = useMemo(() => {
         <>
           {/* Top Closed Session Banner */}
           {!isSessionOpen && (
-            <div className="mb-3 px-3.5 py-2.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 text-xs font-bold uppercase select-none">
+            <div className="mb-3 px-3.5 py-2.5 bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3 text-xs font-semibold select-none">
               <div className="flex items-center gap-2 min-w-0">
-                <Lock className="w-4 h-4 shrink-0 text-yellow-500" />
+                <Lock className="w-4 h-4 shrink-0 text-amber-500" />
                 <span className="leading-snug">
-                  Cash drawer session is closed. Subscription renewals, card
-                  purchases, and online registration are locked.
+                  Cash drawer session is closed — renewals, card purchases, and
+                  approvals are locked.
                 </span>
               </div>
-              <span className="text-[10px] font-mono opacity-80 lowercase font-normal shrink-0 sm:text-right">
-                open session in cash management to proceed
+              <span className="text-[11px] font-mono opacity-80 shrink-0 sm:text-right">
+                Open session in Cash Management
               </span>
             </div>
           )}

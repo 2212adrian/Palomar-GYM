@@ -1050,7 +1050,7 @@ export const Login: React.FC = () => {
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
-        : buildAppUrl('/login');
+        : buildAppUrl('/auth/callback?intent=login');
 
       if (isNative) {
         const { data, error } = await supabase.auth.signInWithOAuth({

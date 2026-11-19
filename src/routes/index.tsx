@@ -22,6 +22,7 @@ import { isSuperAdmin } from '../constants/auth';
 import Settings from '../pages/system/Settings';
 import { ForgotPassword } from '../pages/auth/ForgotPassword';
 import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
+import { OAuthCallback } from '../pages/auth/OAuthCallback';
 import { StaffPlansConsole } from '../pages/members/components/SubscriptionPlan';
 
 // Import Anonymous Pre-Registration Page
@@ -86,9 +87,9 @@ const RootEntry: React.FC = () => {
       return <Navigate to={`/confirm-signup${hash}`} replace />;
     }
 
-    // Detect PKCE auth code exchange
+    // Detect PKCE OAuth auth code exchange on root redirect fallback
     if (search.includes('code=')) {
-      return <Navigate to={`/confirm-signup${search}`} replace />;
+      return <Navigate to={`/auth/callback${search}`} replace />;
     }
   }
 
@@ -298,6 +299,7 @@ const router = createBrowserRouter([
   { path: '/download', element: <DownloadPage standalone={true} /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/confirm-signup', element: <ConfirmSignUp /> },
+  { path: '/auth/callback', element: <OAuthCallback /> },
 
   // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {

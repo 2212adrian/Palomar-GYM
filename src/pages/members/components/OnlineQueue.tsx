@@ -83,9 +83,6 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
     useState<boolean>(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
-    useState<boolean>(false);
-  const [isRefreshingEmpty, setIsRefreshingEmpty] = useState<boolean>(false);
   const [hasAttemptedArchivedRefresh, setHasAttemptedArchivedRefresh] =
     useState<boolean>(false);
   const [isRefreshingArchived, setIsRefreshingArchived] =
@@ -864,31 +861,33 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
   ];
 
   return (
-    <div className="space-y-4 pb-4">
-      {/* Unified Responsive Workspace Header & Registration Gate Switch */}
+    <div className="space-y-3.5 pb-4">
+      {/* Unified Responsive Workspace Header, Portal Toggle & Action Toolbar */}
       <div className="bg-(--bg-card) border border-(--border-color) rounded-2xl p-3.5 sm:p-4 lg:p-5 space-y-3.5 select-none">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3.5 border-b border-(--border-color)">
-          {/* Title & Portal Summary */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5 pb-3.5 border-b border-(--border-color)">
+          {/* Queue Title & Tabular Counter */}
           <div className="min-w-0 space-y-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-heading text-xs sm:text-sm tracking-wider text-blue-700 dark:text-blue-400 uppercase font-extrabold">
-                Online Pre-Registrations Queue
+              <h3 className="font-heading text-sm sm:text-base tracking-wider text-(--color-text) uppercase font-extrabold">
+                Pre-Registration Queue
               </h3>
-              <span className="font-mono text-[11px] font-bold tabular-nums text-slate-600 dark:text-slate-300 bg-(--bg-page) border border-(--border-color) px-2 py-0.5 rounded-md">
+              <span className="font-mono text-[11px] font-bold tabular-nums text-blue-700 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-md">
                 {pendingQueue.length} Pending
               </span>
             </div>
-            <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
-              Portal: {registrationPortalUrl.replace(/^https?:\/\//, '')}
+            <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400">
+              Review incoming member applications and control public portal availability.
             </p>
           </div>
 
-          {/* Admin Registration ON/OFF Control */}
+          {/* Public Portal Status & Switch Control */}
           <div
-            className={`flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-xl border transition-colors w-full lg:w-auto lg:min-w-[310px] ${
+            className={`flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-xl border transition-colors w-full md:w-auto md:min-w-[300px] lg:min-w-[330px] shrink-0 ${
               effectiveOnlineRegOpen
-                ? 'bg-emerald-500/8 border-emerald-500/25'
-                : 'bg-(--bg-page) border-(--border-color)'
+                ? 'bg-emerald-500/8 border-emerald-500/30'
+                : !isSessionOpen
+                  ? 'bg-(--bg-page) border-(--border-color)'
+                  : 'bg-amber-500/8 border-amber-500/25'
             }`}
           >
             <div className="min-w-0 text-left">
@@ -897,46 +896,47 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                   Online Registration
                 </span>
                 {!isAdmin && (
-                  <Lock
-                    className="w-3 h-3 text-slate-400 shrink-0"
-                    aria-label="Admin control only"
-                  />
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400">
+                    <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    <span className="hidden sm:inline">Admin only</span>
+                  </span>
                 )}
               </div>
+
               <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-medium">
                 {!isSessionOpen ? (
                   <>
                     <Lock className="w-3 h-3 text-slate-400 shrink-0" />
                     <span className="text-slate-500 dark:text-slate-400 truncate">
-                      Off · Open cash session to enable
+                      Locked · Session closed
                     </span>
                   </>
                 ) : isLoadingRegStatus ? (
-                  <span className="text-slate-400">Checking portal state...</span>
+                  <span className="text-slate-400">Syncing portal state...</span>
                 ) : effectiveOnlineRegOpen ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                     <span className="text-emerald-600 dark:text-emerald-400 truncate">
-                      On · Accepting submissions
+                      Active · Accepting submissions
                     </span>
                   </>
                 ) : (
                   <>
                     <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
                     <span className="text-amber-600 dark:text-amber-400 truncate">
-                      Off · Public portal paused
+                      Paused · Submissions disabled
                     </span>
                   </>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2.5 shrink-0">
               <span
-                className={`font-mono text-[10px] font-bold uppercase w-6 text-right tabular-nums ${
+                className={`font-mono text-[11px] font-bold uppercase w-7 text-right tabular-nums ${
                   effectiveOnlineRegOpen
                     ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-slate-400 dark:text-slate-500'
+                    : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {effectiveOnlineRegOpen ? 'ON' : 'OFF'}
@@ -980,7 +980,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           </div>
         </div>
 
-        {/* Responsive Action Toolbar (Mobile 2-col grid / Tablet & Desktop inline bar) */}
+        {/* Responsive Action Toolbar */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
           {isAdmin && (
             <button
@@ -989,7 +989,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
                 fetchArchived();
                 setIsArchiveModalOpen(true);
               }}
-              className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+              className="h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
               title="View Archived Pre-Registration Tickets (Exempt from Daily Midnight Purges)"
             >
               <Archive className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -1000,7 +1000,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           <button
             type="button"
             onClick={handleCopyRegistrationLink}
-            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            className="h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
             title="Copy Public Pre-Registration Portal Link"
           >
             {copiedLink ? (
@@ -1014,8 +1014,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           <button
             type="button"
             onClick={handleOpenRegistrationPortal}
-            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
-            title="Open Anonymous Self-Service Pre-Registration Page in new tab"
+            className="h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            title="Open Public Pre-Registration Form in new tab"
           >
             <ExternalLink className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
             <span>Open Form</span>
@@ -1024,8 +1024,8 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
           <button
             type="button"
             onClick={handlePrintPoster}
-            className="h-11 sm:h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
-            title="Print Physical QR Registration Poster"
+            className="h-10 px-3 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0"
+            title="Print Lobby QR Registration Poster"
           >
             <Printer className="w-3.5 h-3.5 text-blue-500 shrink-0" />
             <span>Print Poster</span>
@@ -1038,7 +1038,7 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
               fetchRegStatus();
             }}
             disabled={isSyncing}
-            className={`h-11 sm:h-10 px-3.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
+            className={`h-10 px-3.5 border border-(--border-color) bg-(--bg-page) hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-xl text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-heading tracking-wider uppercase font-bold transition-colors whitespace-nowrap shrink-0 disabled:opacity-50 ${
               isAdmin ? 'col-span-2 sm:col-span-1 sm:ml-auto' : 'sm:ml-auto'
             }`}
           >
@@ -1050,18 +1050,18 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
         </div>
       </div>
 
-      {/* 12:00 AM Manila Time Daily Deletion Notice */}
+      {/* 12:00 AM Manila Time Daily Retention Notice */}
       <div className="px-3.5 py-2.5 bg-amber-500/8 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs select-none">
         <div className="flex items-start sm:items-center gap-2 min-w-0 text-left">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0 text-amber-500" />
           <span className="leading-snug font-medium">
-            <strong>Daily Retention Notice:</strong> Pending tickets clear
-            daily at <strong>12:00 AM Manila Time</strong> unless archived.
+            Unarchived pending tickets auto-clear daily at{' '}
+            <strong>12:00 AM Manila Time</strong>.
           </span>
         </div>
         {countdown && (
-          <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0 bg-amber-500/12 border border-amber-500/25 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold tabular-nums text-amber-700 dark:text-amber-300 whitespace-nowrap">
-            <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+          <div className="flex items-center gap-1.5 self-start sm:self-auto shrink-0 bg-amber-500/12 border border-amber-500/25 px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold tabular-nums text-amber-700 dark:text-amber-300 whitespace-nowrap">
+            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>Purge in: {countdown}</span>
           </div>
         )}
@@ -1069,45 +1069,18 @@ export const OnlineQueue: React.FC<OnlineQueueProps> = ({
 
       {/* Main Content Area */}
       {pendingQueue.length === 0 ? (
-        <div className="py-10 px-6 text-center bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-2.5">
+        <div className="py-10 px-6 text-center bg-(--bg-card) border border-(--border-color) rounded-2xl space-y-2">
           <Clock className="w-7 h-7 text-slate-400 mx-auto" />
-          <h4 className="font-heading text-xs uppercase tracking-wider text-slate-600 dark:text-slate-300 font-bold">
-            Queue is Clear
+          <h4 className="font-heading text-xs uppercase tracking-wider text-slate-700 dark:text-slate-200 font-bold">
+            No Pending Registrations
           </h4>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
             {!isSessionOpen
-              ? 'Open a cash drawer session in Cash Management to enable Online Registration and process approvals.'
+              ? 'Open a cash drawer session to enable the public portal and approve new applications.'
               : !effectiveOnlineRegOpen
-                ? 'Online Registration is currently OFF. Turn the switch ON above when ready to receive submissions.'
-                : 'No pending pre-registration tickets in the queue. New submissions will appear automatically.'}
+                ? 'The public registration portal is currently paused. Turn the switch ON above to accept submissions.'
+                : 'New self-service member registrations will appear here automatically.'}
           </p>
-          {!hasAttemptedEmptyRefresh && (
-            <div className="pt-1.5">
-              <button
-                type="button"
-                disabled={isRefreshingEmpty || isSyncing}
-                onClick={async () => {
-                  setIsRefreshingEmpty(true);
-                  try {
-                    await fetchQueue();
-                  } finally {
-                    setHasAttemptedEmptyRefresh(true);
-                    setIsRefreshingEmpty(false);
-                  }
-                }}
-                className="h-10 px-4 bg-(--bg-page) hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-(--color-text) rounded-xl font-heading text-[10px] font-bold uppercase tracking-wider cursor-pointer border border-(--border-color) transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${
-                    isRefreshingEmpty || isSyncing ? 'animate-spin' : ''
-                  }`}
-                />
-                <span>
-                  {isRefreshingEmpty || isSyncing ? 'Refreshing...' : 'Refresh'}
-                </span>
-              </button>
-            </div>
-          )}
         </div>
       ) : (
         <>

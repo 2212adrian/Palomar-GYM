@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { isSuperAdmin } from '../constants/auth'; // Centralized helper
 import { clearSensitiveAppData } from '../lib/cacheUtils';
+import { swapNoemailWithGoogleIdentity } from '../lib/oauthCallback';
 
 export interface UserProfile {
   id: string;
@@ -90,9 +91,34 @@ export const clearLocalActiveSessionId = (userId?: string | null): void => {
 export const markPendingNewLogin = (): void => {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(OAUTH_PENDING_LOGIN_KEY, 'true');
+    localStorage.setItem(
+      OAUTH_PENDING_LOGIN_KEY,
+      JSON.stringify({ ts: Date.now() })
+    );
   } catch {
     // Ignore storage errors
+  }
+};
+
+export const isOAuthCallbackUrl = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    if (
+      search.includes('error=') ||
+      search.includes('error_code=') ||
+      hash.includes('error=') ||
+      hash.includes('error_code=')
+    ) {
+      return false;
+    }
+    return (
+      search.includes('code=') ||
+      (hash.includes('access_token=') && hash.includes('refresh_token='))
+    );
+  } catch {
+    return false;
   }
 };
 
@@ -105,7 +131,7 @@ export const hasStoredAuthSession = (): boolean => {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
+      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
         const val = localStorage.getItem(key);
         if (val && val !== 'null' && val !== 'undefined') {
           try {
@@ -137,12 +163,20 @@ export const hasStoredAuthSession = (): boolean => {
 const consumePendingNewLogin = (): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    const pending = localStorage.getItem(OAUTH_PENDING_LOGIN_KEY) === 'true';
-    if (pending) {
-      localStorage.removeItem(OAUTH_PENDING_LOGIN_KEY);
+    const raw = localStorage.getItem(OAUTH_PENDING_LOGIN_KEY);
+    if (!raw) return false;
+    localStorage.removeItem(OAUTH_PENDING_LOGIN_KEY);
+
+    if (raw === 'true') return true;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.ts === 'number') {
+      return Date.now() - parsed.ts < 5 * 60 * 1000;
     }
-    return pending;
+    return false;
   } catch {
+    try {
+      localStorage.removeItem(OAUTH_PENDING_LOGIN_KEY);
+    } catch {}
     return false;
   }
 };
@@ -150,12 +184,16 @@ const consumePendingNewLogin = (): boolean => {
 const isTransientNetworkError = (err: any): boolean => {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
   const msg = String(err?.message || err || '').toLowerCase();
+  const status = Number(err?.status || err?.code || 0);
+  if (status >= 500 || status === 429 || status === 408) return true;
   return (
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
     msg.includes('network request failed') ||
     msg.includes('no internet connection') ||
-    msg.includes('load failed')
+    msg.includes('load failed') ||
+    msg.includes('abort') ||
+    msg.includes('timeout')
   );
 };
 
@@ -243,6 +281,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   claimActiveSession: async (userIdOverride?: string) => {
     isClaimingSession = true;
+    lastValidateSessionTime = Date.now();
     try {
       let targetUserId = userIdOverride || get().user?.id;
       if (!targetUserId) {
@@ -255,35 +294,70 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!targetUserId) return null;
 
       const newSessionId = generateSessionId();
-      setLocalActiveSessionId(targetUserId, newSessionId);
 
-      // 1. Revoke all other active sessions & refresh tokens for this user on Supabase Auth server
-      const { error: signOutOthersError } = await supabase.auth.signOut({
-        scope: 'others',
-      });
-      if (signOutOthersError) {
-        console.warn(
-          'Could not revoke other sessions via scope=others:',
-          signOutOthersError.message
-        );
-      }
-
-      // 2. Persist authoritative active_session_id in user_metadata so other devices detect replacement
-      const { error: updateError } = await supabase.auth.updateUser({
+      // 1. Persist authoritative active_session_id in user_metadata first (with one retry)
+      //    so localStorage never holds an unpersisted session ID that disagrees with the server.
+      let updateResult = await supabase.auth.updateUser({
         data: { active_session_id: newSessionId },
       });
-      if (updateError) {
-        console.warn(
-          'Could not update active_session_id metadata:',
-          updateError.message
-        );
+
+      if (updateResult.error) {
+        await new Promise((r) => setTimeout(r, 250));
+        updateResult = await supabase.auth.updateUser({
+          data: { active_session_id: newSessionId },
+        });
       }
 
-      return newSessionId;
+      let authoritativeSessionId = newSessionId;
+      if (updateResult.error) {
+        console.warn(
+          'Could not update active_session_id metadata:',
+          updateResult.error.message
+        );
+        const {
+          data: { user: fallbackUser },
+        } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+        const serverSessionId = fallbackUser?.user_metadata?.active_session_id;
+        if (serverSessionId) {
+          authoritativeSessionId = serverSessionId;
+          setLocalActiveSessionId(targetUserId, serverSessionId);
+        }
+      } else {
+        authoritativeSessionId =
+          updateResult.data?.user?.user_metadata?.active_session_id ||
+          newSessionId;
+        setLocalActiveSessionId(targetUserId, authoritativeSessionId);
+        if (updateResult.data?.user) {
+          set((state) =>
+            state.user?.id === targetUserId
+              ? { user: updateResult.data.user }
+              : state
+          );
+        }
+      }
+
+      // 2. Revoke other refresh/session tokens for this user on Supabase Auth server
+      try {
+        const { error: signOutOthersError } = await supabase.auth.signOut({
+          scope: 'others',
+        });
+        if (signOutOthersError) {
+          console.warn(
+            'Could not revoke other sessions via scope=others:',
+            signOutOthersError.message
+          );
+        }
+      } catch (signOutOthersErr) {
+        console.warn('Error revoking sibling sessions:', signOutOthersErr);
+      }
+
+      lastValidateSessionTime = Date.now();
+      return authoritativeSessionId;
     } catch (err) {
       console.warn('Failed to claim single active session:', err);
       return null;
     } finally {
+      lastValidateSessionTime = Date.now();
       isClaimingSession = false;
     }
   },
@@ -442,10 +516,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
           // Enforce single active session per user (skip on temporary recovery/invite routes)
           if (!isTemporaryAuthFlowRoute()) {
-            const isNewOAuthLogin = consumePendingNewLogin();
+            const pendingLogin = consumePendingNewLogin();
+            const isOAuthReturn = isOAuthCallbackUrl();
+            const isNewOAuthLogin = pendingLogin || isOAuthReturn;
 
             if (isNewOAuthLogin) {
               await get().claimActiveSession(activeUser.id);
+              try {
+                await swapNoemailWithGoogleIdentity(activeUser);
+              } catch {
+                // Non-blocking fallback: email sync can retry in PersonalAccount if offline
+              }
+              const {
+                data: { session: latestSession },
+              } = await supabase.auth.getSession();
+              if (latestSession?.user && latestSession.user.id === activeUser.id) {
+                activeUser = latestSession.user;
+              } else if (get().user?.id === activeUser.id && get().user) {
+                activeUser = get().user!;
+              }
+              lastValidateSessionTime = Date.now();
             } else if (
               !isClaimingSession &&
               !isLoginInProgress &&
@@ -477,6 +567,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 if (!remoteSessionId) {
                   // First time initializing single-session token for this session
                   await get().claimActiveSession(verifiedUser.id);
+                  const latestUser = get().user;
+                  if (latestUser?.id === verifiedUser.id) {
+                    activeUser = latestUser;
+                  }
                 } else if (!localSessionId) {
                   // Same client session rehydrating after page reload: retain session ID
                   setLocalActiveSessionId(verifiedUser.id, remoteSessionId);
@@ -486,6 +580,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   );
                   return;
                 }
+                lastValidateSessionTime = Date.now();
               }
             }
           }
@@ -508,6 +603,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             dbProfile = cachedFallbackProfile;
           } else {
             try {
+              const {
+                data: { session: liveSession },
+              } = await supabase.auth.getSession();
+              if (!liveSession?.user || liveSession.user.id !== activeUser.id) {
+                return;
+              }
+
               const { data, error: dbError } = await supabase
                 .from('profiles')
                 .select('*')
@@ -516,47 +618,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
               if (!dbError && data) {
                 dbProfile = data;
-              } else if (cachedFallbackProfile) {
+              } else if (cachedFallbackProfile && cachedFallbackProfile.id === activeUser.id) {
                 dbProfile = cachedFallbackProfile;
               } else if (!data && !dbError && !isSuperAdminUser) {
-                // Auto-create missing profile row if user was registered via auth directly (e.g. Google OAuth)
+                // Auto-create / activate missing profile row safely via SECURITY DEFINER RPC (never direct client insert)
                 try {
-                  await supabase.rpc('activate_own_profile');
-                  const { data: recheckedProfile } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', activeUser.id)
-                    .maybeSingle();
-
-                  if (recheckedProfile) {
-                    dbProfile = recheckedProfile;
-                  } else {
-                    const autoRole = (
-                      activeUser.app_metadata?.role ||
-                      activeUser.user_metadata?.role ||
-                      'staff'
-                    ).toLowerCase();
-                    const { data: createdProfile } = await supabase
+                  const { error: activateRpcError } = await supabase.rpc(
+                    'activate_own_profile'
+                  );
+                  if (!activateRpcError) {
+                    const { data: recheckedProfile } = await supabase
                       .from('profiles')
-                      .insert({
-                        id: activeUser.id,
-                        username:
-                          activeUser.user_metadata?.full_name ||
-                          activeUser.user_metadata?.username ||
-                          activeUser.email?.split('@')[0] ||
-                          'User',
-                        role: autoRole === 'admin' ? 'admin' : 'staff',
-                        status: 'active',
-                      })
-                      .select()
+                      .select('*')
+                      .eq('id', activeUser.id)
                       .maybeSingle();
 
-                    if (createdProfile) {
-                      dbProfile = createdProfile;
+                    if (recheckedProfile) {
+                      dbProfile = recheckedProfile;
                     }
+                  } else {
+                    console.warn(
+                      'activate_own_profile RPC deferred:',
+                      activateRpcError.message
+                    );
                   }
                 } catch {
-                  // Ignore background insertion error, proceed with auth metadata fallback
+                  // Ignore background RPC error, proceed with auth metadata fallback
                 }
               }
             } catch (fetchErr) {
@@ -702,7 +789,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               .subscribe();
           }
 
-          // 3. Client-Side Account Activation Trigger (Non-blocking RPC)
+          // 3. Client-Side Account Activation Trigger (Non-blocking SECURITY DEFINER RPC)
           let effectiveStatus = userStatus;
           if (userStatus === 'pending' && typeof navigator !== 'undefined' && navigator.onLine) {
             effectiveStatus = 'active';
@@ -710,13 +797,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               try {
                 const { error: rpcErr } = await supabase.rpc('activate_own_profile');
                 if (rpcErr) {
-                  const { error: updateErr } = await supabase
-                    .from('profiles')
-                    .update({ status: 'active' })
-                    .eq('id', activeUser.id);
-                  if (updateErr) {
-                    console.warn('Failed to auto-activate pending profile:', updateErr);
-                  }
+                  console.warn('Failed to auto-activate pending profile via RPC:', rpcErr.message);
                 }
               } catch (err) {
                 console.warn('Error activating own profile:', err);
@@ -813,7 +894,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const isNative = Capacitor.isNativePlatform();
       const redirectTo = isNative
         ? 'com.wolfpalomar.gymmanagement://login'
-        : buildAppUrl('/dashboard');
+        : buildAppUrl('/auth/callback?intent=login');
 
       if (isNative) {
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -940,7 +1021,11 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       } else {
         useAuthStore.setState({ user: session.user, loading: false, initialized: true });
       }
-    } else if (event === 'INITIAL_SESSION' && !hasStoredAuthSession()) {
+    } else if (
+      event === 'INITIAL_SESSION' &&
+      !hasStoredAuthSession() &&
+      !isOAuthCallbackUrl()
+    ) {
       clearSensitiveAppData();
       syncGlobalStaffPresence(null);
       useAuthStore.setState({ loading: false, initialized: true });

@@ -196,6 +196,7 @@ export const isUserPreferenceKey = (key: string): boolean => {
     'palomar_remembered_login',
     'palomar_seen_notification_ids',
     'preferred_camera_id',
+    'palomar_oauth_login_pending',
   ]);
 
   if (PRESERVED_EXACT_KEYS.has(key)) return true;

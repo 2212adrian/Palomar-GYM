@@ -16,6 +16,37 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.10',
+    date: '2026-11-18',
+    summary:
+      'Responsive Online Registration UI overhaul across mobile, tablet, and desktop; seamless Google account linking and sign-in with automatic @palomargym.noemail email replacement; automatic Online Registration switch activation on cash session open; and Supabase profile RLS/identity RPC fixes.',
+    sections: [
+      {
+        type: 'Online Registration UI & Auto-Activation',
+        items: [
+          'Responsive Workspace Redesign: Streamlined the Online Registration header, ON/OFF toggle control, action toolbar, retention notice, and empty state for clean alignment across mobile, tablet, and desktop while removing redundant URL text and duplicate refresh buttons.',
+          'Automatic Portal Activation on Session Open: Opening a cash drawer session now automatically flips the Online Registration switch ON, while closing all active cash sessions resets it OFF cleanly without overriding manual Admin pauses mid-shift.',
+        ],
+      },
+      {
+        type: 'Google Linking, Email Sync & Single-Session Auth Fix',
+        items: [
+          'Specialized /auth/callback Verification Route: Added a dedicated OAuth callback handler that awaits persisted session storage, secures the active terminal session before routing, and automatically swaps any username@palomargym.noemail placeholder email with the verified Google email.',
+          'Automatic @palomargym.noemail Replacement: Linking Google on username-only accounts now syncs auth.users, email identities, and public.profiles to the linked Google email address cleanly, while reverting cleanly if unlinked (Admin/Staff).',
+          'Seamless Linked Google Sign-In: Hardened session-claim metadata retries and preserved pending OAuth markers across callbacks so logging in with a linked Google account persists cleanly and never triggers false "signed in on another device" logouts.',
+        ],
+      },
+      {
+        type: 'Database RLS & Identity RPC Security Fixes',
+        items: [
+          'Profiles RLS & Registration Security: Updated public.profiles policies with explicit service_role full access and admin/self insert controls backed by SECURITY DEFINER functions (admin_register_user and activate_own_profile) to prevent registration RLS errors.',
+          'Identity Email RPC Trigger Bypass Guard: Scoped self-service email updates inside sync_linked_google_email() and revert_user_to_local_email() via a transaction-local guard while keeping direct client profile edits locked down for Staff.',
+          'SQL Migration Cleanup: Fixed a role syntax typo in the sync_conflicts 24-hour purge cron migration.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.9',
     date: '2026-11-16',
     summary:

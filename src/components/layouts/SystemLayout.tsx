@@ -131,22 +131,15 @@ export const SystemLayout: React.FC = () => {
       const activateAccount = async () => {
         try {
           const { error: rpcError } = await supabase.rpc('activate_own_profile');
-          if (rpcError) {
-            await supabase
-              .from('profiles')
-              .update({ status: 'active' })
-              .eq('id', user.id);
+          if (!rpcError) {
+            useAuthStore.setState((state) => ({
+              profile: state.profile
+                ? { ...state.profile, status: 'active' }
+                : null,
+            }));
           }
-          useAuthStore.setState((state) => ({
-            profile: state.profile
-              ? { ...state.profile, status: 'active' }
-              : null,
-          }));
-        } catch {
-          await supabase
-            .from('profiles')
-            .update({ status: 'active' })
-            .eq('id', user.id);
+        } catch (err) {
+          console.warn('Could not activate pending profile via RPC:', err);
         }
       };
 
