@@ -16,6 +16,42 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.1.11',
+    date: '2026-11-21',
+    summary:
+      'Admin-only Recycle Bin notifications and RBAC hardening, offline logbook UUID resolution, removal of invalid Promo payment enum usage, Sales daily telemetry for all roles, Online Registration QR card on Plans, and Dashboard Top Products breakdown fixes.',
+    sections: [
+      {
+        type: 'Recycle Bin Notifications & Admin-Only Access',
+        items: [
+          'Admin Notification Badges & Popover Tab: Added realtime unread Recycle Bin counts and a dedicated Recycle Bin tab in the notification popover for Admins and SuperAdmins with direct navigation to Sales and Logbook Recycle Bins.',
+          'Strict Staff Restrictions: Hid Recycle Bin buttons, deep-links, and modals from Staff accounts, blocked offline restore replay for non-admins, and enforced PostgreSQL RLS and update trigger guards on soft-deleted attendance, sales, and product records.',
+        ],
+      },
+      {
+        type: 'Offline Logbook & Payment Enum Fixes',
+        items: [
+          'Offline Member UUID Resolution: Enriched offline member caches with subscription and card metadata so search, scans, and pending vault entries resolve member names accurately instead of falling back to raw UUIDs.',
+          'Cache & Enum Alignment: Excluded offline cash-session markers from logbook feeds, standardized local date filtering, and replaced invalid "Promo" payment method enum usage with Cash/Paid across enrollment RPCs and logbook views.',
+        ],
+      },
+      {
+        type: 'Sales Telemetry & Registration QR',
+        items: [
+          'Daily Sales Summary Pill: Opened the Sales desktop header capsule and mobile daily summary bar to all roles, displaying today\'s total income and total products sold.',
+          'Membership Plans QR Card: Added a Customer Online Registration QR Code card with a Copy Link button and enlarged preview modal inside Subscription Plans.',
+        ],
+      },
+      {
+        type: 'Dashboard Sales & Top Products Polish',
+        items: [
+          'Resolved Unlabeled Products: Updated dashboard analytics to read camelCase POS item fields (productName, productId, barcodeId), match historical soft-deleted products, and preserve recorded item unit prices.',
+          'Chart & Leaderboard Cleanup: Removed the horizontal scrollbar under analytics tabs, improved pie chart legend and ranking axis spacing, and filtered leaderboards to products with recorded sales.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.10',
     date: '2026-11-18',
     summary:
