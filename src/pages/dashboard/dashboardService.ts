@@ -132,9 +132,8 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       supabase
         .from('products')
         .select(
-          'id, barcode_id, product_name, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, created_at'
-        )
-        .is('deleted_at', null),
+          'id, barcode_id, product_name, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, deleted_at, created_at'
+        ),
       supabase
         .from('subscriptions')
         .select(
@@ -416,7 +415,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
     let outOfStockCount = 0;
 
     products.forEach((p) => {
-      if (p.status !== 'Active') return;
+      if (p.deleted_at || p.status !== 'Active') return;
 
       const stock = Number(p.stock_quantity || 0);
       const threshold = Number(p.low_stock_alert ?? 5);
@@ -708,12 +707,20 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     // --- Top Sold Products ---
     const productLookupById = new Map<string, any>();
+    const productLookupByBarcode = new Map<string, any>();
     const productLookupByName = new Map<string, any>();
 
     products.forEach((p) => {
-      productLookupById.set(p.id, p);
+      if (p.id != null) {
+        const pid = String(p.id).trim();
+        productLookupById.set(pid, p);
+        productLookupById.set(pid.toLowerCase(), p);
+      }
+      if (p.barcode_id) {
+        productLookupByBarcode.set(String(p.barcode_id).trim().toLowerCase(), p);
+      }
       if (p.product_name) {
-        productLookupByName.set(p.product_name.trim().toLowerCase(), p);
+        productLookupByName.set(String(p.product_name).trim().toLowerCase(), p);
       }
     });
 
@@ -750,33 +757,55 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
       if (itemsList.length > 0) {
         itemsList.forEach((item: any) => {
-          const rawId = item.id || item.product_id || item.productId || '';
-          const rawName = (
-            item.product_name ||
-            item.name ||
-            item.title ||
-            ''
+          const rawId = String(
+            item.productId ?? item.product_id ?? item.id ?? ''
           ).trim();
-          const qty = Number(item.quantity || item.qty || 1) || 1;
+          const rawBarcode = String(
+            item.barcode_id || item.barcodeId || item.barcode || ''
+          ).trim();
+          let rawName = String(
+            item.productName ||
+              item.product_name ||
+              item.name ||
+              item.title ||
+              item.label ||
+              ''
+          ).trim();
+
+          if (!rawName && itemsList.length === 1 && sale.product_name) {
+            rawName = String(sale.product_name)
+              .replace(/^\d+\s*x\s+/i, '')
+              .trim();
+          }
+
+          const qty = Number(item.quantity ?? item.qty ?? 1) || 1;
           const price = Number(
-            item.price || item.selling_price || item.unit_price || 0
+            item.price ?? item.selling_price ?? item.unit_price ?? 0
           );
-          const barcode = item.barcode_id || item.barcode || '';
 
           const matched =
-            (rawId && productLookupById.get(rawId)) ||
+            (rawId &&
+              (productLookupById.get(rawId) ||
+                productLookupById.get(rawId.toLowerCase()))) ||
+            (rawBarcode &&
+              productLookupByBarcode.get(rawBarcode.toLowerCase())) ||
             (rawName && productLookupByName.get(rawName.toLowerCase())) ||
             null;
 
-          const key = matched
-            ? matched.id
-            : rawId || rawName || 'Unknown Product';
           const finalName =
             matched?.product_name || rawName || 'Unlabeled Product';
-          const finalBarcode = matched?.barcode_id || barcode || 'PR-0000';
-          const finalPrice = matched
-            ? Number(matched.selling_price || 0)
-            : price;
+          const key = matched
+            ? String(matched.id)
+            : rawName
+              ? `name:${rawName.toLowerCase()}`
+              : rawId || 'Unknown Product';
+          const finalBarcode = matched?.barcode_id || rawBarcode || 'PR-0000';
+          const finalPrice =
+            price > 0
+              ? price
+              : matched
+                ? Number(matched.selling_price || 0)
+                : 0;
 
           if (!aggregatedSalesMap.has(key)) {
             aggregatedSalesMap.set(key, {
@@ -792,32 +821,50 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
           const entry = aggregatedSalesMap.get(key)!;
           entry.total_sold += qty;
-          entry.total_revenue += qty * (finalPrice || price);
+          entry.total_revenue += qty * finalPrice;
         });
       } else if (sale.product_name) {
-        const rawName = sale.product_name.trim();
-        const matched = productLookupByName.get(rawName.toLowerCase()) || null;
-        const key = matched ? matched.id : rawName;
-        const finalName = matched?.product_name || rawName;
-        const finalPrice = matched
-          ? Number(matched.selling_price || 0)
-          : Number(sale.total_amount || 0);
+        const parts = String(sale.product_name)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-        if (!aggregatedSalesMap.has(key)) {
-          aggregatedSalesMap.set(key, {
-            product_id: key,
-            product_name: finalName,
-            barcode_id: matched?.barcode_id || 'PR-0000',
-            total_sold: 0,
-            total_revenue: 0,
-            unit_price: finalPrice,
-            matched_product: matched,
-          });
-        }
+        const totalSaleAmount = Number(sale.total_amount || 0);
+        const parsedParts = parts.map((part) => {
+          const match = part.match(/^(\d+)\s*x\s+(.+)$/i);
+          const qty = match ? Number(match[1]) || 1 : 1;
+          const name = (match ? match[2] : part).trim();
+          return { qty, name };
+        });
 
-        const entry = aggregatedSalesMap.get(key)!;
-        entry.total_sold += 1;
-        entry.total_revenue += Number(sale.total_amount || finalPrice || 0);
+        parsedParts.forEach(({ qty, name }) => {
+          const matched = productLookupByName.get(name.toLowerCase()) || null;
+          const key = matched ? String(matched.id) : `name:${name.toLowerCase()}`;
+          const finalName = matched?.product_name || name;
+          const matchedPrice = matched ? Number(matched.selling_price || 0) : 0;
+          const lineRev =
+            parsedParts.length === 1 && totalSaleAmount > 0
+              ? totalSaleAmount
+              : qty * matchedPrice;
+          const unitPrice =
+            matchedPrice > 0 ? matchedPrice : qty > 0 ? lineRev / qty : 0;
+
+          if (!aggregatedSalesMap.has(key)) {
+            aggregatedSalesMap.set(key, {
+              product_id: key,
+              product_name: finalName,
+              barcode_id: matched?.barcode_id || 'PR-0000',
+              total_sold: 0,
+              total_revenue: 0,
+              unit_price: unitPrice,
+              matched_product: matched,
+            });
+          }
+
+          const entry = aggregatedSalesMap.get(key)!;
+          entry.total_sold += qty;
+          entry.total_revenue += lineRev;
+        });
       }
     });
 
@@ -855,7 +902,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     if (topProducts.length < 5 && products.length > 0) {
       products
-        .filter((p) => p.status === 'Active')
+        .filter((p) => !p.deleted_at && p.status === 'Active')
         .forEach((p) => {
           const alreadyAdded = topProducts.some(
             (tp) =>
@@ -886,7 +933,10 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         });
     }
 
-    topProducts.sort((a, b) => b.total_sold - a.total_sold);
+    topProducts.sort(
+      (a, b) =>
+        b.total_sold - a.total_sold || b.total_revenue - a.total_revenue
+    );
 
     // --- Recent Activity Feed ---
     const activityItems: ActivityFeedItem[] = [];

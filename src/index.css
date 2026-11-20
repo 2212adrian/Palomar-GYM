@@ -12,6 +12,17 @@
   height: 6px;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Hide default browser scrollbar up/down arrow buttons */
 ::-webkit-scrollbar-button {
   display: none;

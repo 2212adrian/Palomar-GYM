@@ -222,9 +222,9 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   return (
     <div className="bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xs overflow-hidden transition-all">
       {/* ─── ADAPTIVE BROWSER-TABBED HEADER BAR ─── */}
-      <div className="border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/90 dark:bg-[#0c0e12]/60 px-3 sm:px-5 pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/90 dark:bg-[#0c0e12]/60 px-3 sm:px-5 pt-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         {/* TAB BUTTONS */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 md:pb-0 -mx-1 px-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:pb-0 -mx-1 px-1">
           {/* TAB 1: COMBINED */}
           <button
             id="tab-btn-combined"
@@ -601,15 +601,15 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-3">
                   {salesChartView === 'pie' ? (
-                    <div className="h-70 sm:h-80 w-full flex items-center justify-center p-2">
+                    <div className="h-80 sm:h-88 w-full flex items-center justify-center p-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
                             data={pieProductData}
                             cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={95}
+                            cy="45%"
+                            innerRadius={56}
+                            outerRadius={90}
                             paddingAngle={4}
                             dataKey="value"
                             nameKey="name"
@@ -638,12 +638,12 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           />
                           <Legend
                             verticalAlign="bottom"
-                            height={40}
                             iconType="circle"
+                            wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
                             formatter={(val) => (
                               <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                                {val.length > 18
-                                  ? val.slice(0, 18) + '...'
+                                {val.length > 20
+                                  ? val.slice(0, 20) + '...'
                                   : val}
                               </span>
                             )}
@@ -652,10 +652,12 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <div className="h-70 sm:h-80 w-full">
+                    <div className="h-76 sm:h-84 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
-                          data={topProducts.slice(0, 5)}
+                          data={topProducts
+                            .filter((p) => (p.total_sold || 0) > 0)
+                            .slice(0, 5)}
                           layout="vertical"
                           margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                         >
@@ -673,11 +675,11 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                           <YAxis
                             dataKey="product_name"
                             type="category"
-                            width={100}
+                            width={116}
                             tick={{ fontSize: 11, fill: '#64748b' }}
                             tickFormatter={(name) =>
-                              name.length > 14
-                                ? name.slice(0, 14) + '...'
+                              name.length > 16
+                                ? name.slice(0, 16) + '...'
                                 : name
                             }
                           />
@@ -726,7 +728,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                       Top Seller Leaderboard
                     </h4>
                     <div className="space-y-3">
-                      {topProducts.slice(0, 4).map((p, idx) => (
+                      {topProducts
+                        .filter((p) => (p.total_sold || 0) > 0)
+                        .slice(0, 5)
+                        .map((p, idx) => (
                         <div
                           key={p.id}
                           className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60 dark:border-slate-800 last:border-0 last:pb-0"
