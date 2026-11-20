@@ -22,6 +22,7 @@ import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 import {
   stagePendingTransaction,
   getDecryptedPendingTransactions,
@@ -77,6 +78,18 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   products: parentProducts,
   onRestoreSuccess,
 }) => {
+  const { user, profile } = useAuthStore() as any;
+  const isAdmin = useMemo(() => {
+    if (isSuperAdmin(user?.email)) return true;
+    const roleStr = (
+      profile?.role ||
+      user?.user_metadata?.role ||
+      user?.app_metadata?.role ||
+      ''
+    ).toLowerCase();
+    return roleStr === 'admin' || roleStr === 'superadmin';
+  }, [user, profile]);
+
   const [deletedTransactions, setDeletedTransactions] = useState<any[]>([]);
   const [dbProducts, setDbProducts] = useState<any[]>(parentProducts);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,6 +110,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
   // Fetch soft-deleted records with resilient offline caching & sync awareness
   const fetchDeletedTransactions = async () => {
+    if (!isAdmin) return;
     setLoading(true);
     const recycleCacheKey = 'sales_recycle_bin_cache';
     const isOnline = typeof navigator === 'undefined' || navigator.onLine;
@@ -192,13 +206,13 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAdmin) {
       fetchDeletedTransactions();
       setSelectedIds([]);
       setCurrentPage(1);
       setSearchQuery('');
     }
-  }, [isOpen]);
+  }, [isOpen, isAdmin]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -446,6 +460,10 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const handleBulkRestore = async (selectedList: any[]) => {
+    if (!isAdmin) {
+      toast.error('Restricted: Only Administrators can restore deleted sales.');
+      return;
+    }
     const isOnline = typeof navigator === 'undefined' || navigator.onLine;
     let latestProds = dbProducts;
 
@@ -564,7 +582,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
 
         // Add restored sales back into active sales session cache
         try {
-          const todayDateStr = new Date().toISOString().substring(0, 10);
+          const todayDateStr = format(new Date(), 'yyyy-MM-dd');
           const salesCacheKey = `sales_sanitized_${todayDateStr}_v3`;
           const activeSalesRaw = sessionStorage.getItem(salesCacheKey) || localStorage.getItem(salesCacheKey);
           const activeList = activeSalesRaw ? JSON.parse(activeSalesRaw) : [];
@@ -714,7 +732,7 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
     restorableTransactionsOnPage.length > 0 &&
     restorableTransactionsOnPage.every((t: any) => selectedIds.includes(t.id));
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAdmin) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-left">

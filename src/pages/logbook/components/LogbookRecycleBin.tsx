@@ -161,6 +161,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   );
 
   const fetchDeletedLogs = useCallback(async () => {
+    if (!isAdmin) return;
     setLoading(true);
     const recycleCacheKey = 'logbook_recycle_bin_cache';
     const isOnline = typeof navigator === 'undefined' || navigator.onLine;
@@ -281,10 +282,10 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAdmin) {
       fetchActiveAttendance();
       fetchDeletedLogs();
       setSelectedIds([]);
@@ -292,7 +293,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
       setSearchQuery('');
       setExpandedGroupKeys(new Set());
     }
-  }, [isOpen, fetchDeletedLogs, fetchActiveAttendance]);
+  }, [isOpen, isAdmin, fetchDeletedLogs, fetchActiveAttendance]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -525,6 +526,10 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   };
 
   const handleBulkRestore = async (selectedList: LogItem[]) => {
+    if (!isAdmin) {
+      toast.error('Restricted: Only Administrators can restore attendance logs.');
+      return;
+    }
     if (selectedList.length === 0) return;
     setLoading(true);
     try {
@@ -647,7 +652,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         } catch {}
 
         try {
-          const todayDateStr = new Date().toISOString().substring(0, 10);
+          const todayDateStr = new Date().toLocaleDateString('en-CA');
           const activeKey = `logbook_sanitized_${todayDateStr}_v3`;
           const activeRaw =
             sessionStorage.getItem(activeKey) || localStorage.getItem(activeKey);
@@ -664,7 +669,7 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
             basePrice: l.amountPaid,
             gcashFee: 0,
             cardFee: l.cardFee || 0,
-            paymentStatus: l.amountPaid > 0 ? 'Paid' : 'Promo',
+            paymentStatus: 'Paid',
             status: 'Active',
             isSubscription: false,
             deletable: true,
@@ -937,9 +942,11 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
 
   const isSelectionActive = selectedIds.length > 0;
 
+  if (!isOpen || !isAdmin) return null;
+
   return createPortal(
     <Modal
-      isOpen={isOpen}
+      isOpen={isOpen && isAdmin}
       onClose={onClose}
       title="Logbook Recycle Bin"
       className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-[9999]"

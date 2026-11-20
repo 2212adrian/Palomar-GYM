@@ -36,10 +36,15 @@ import {
   Trash2,
   Ban,
   AlertTriangle,
+  QrCode,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
+import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../../../lib/supabase/client';
+import { buildPublicPortalUrl } from '../../../lib/appUrl';
 import { getServerNow } from '../../../lib/serverTime';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
@@ -4177,6 +4182,21 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
     prefillData?: OnlineRegistration;
   }>({ isOpen: false, mode: null, plan: null });
 
+  const registrationUrl = useMemo(() => buildPublicPortalUrl('/register'), []);
+  const [showRegQrModal, setShowRegQrModal] = useState(false);
+  const [hasCopiedRegLink, setHasCopiedRegLink] = useState(false);
+
+  const handleCopyRegLink = async () => {
+    try {
+      await navigator.clipboard.writeText(registrationUrl);
+      setHasCopiedRegLink(true);
+      toast.success('Online registration link copied.');
+      setTimeout(() => setHasCopiedRegLink(false), 2000);
+    } catch {
+      toast.error('Unable to copy link automatically.');
+    }
+  };
+
   useEffect(() => {
     const state = location.state as any;
     if (state?.openWizard) {
@@ -4355,43 +4375,25 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         )}
       </AnimatePresence>
 
-      {/* CHOICE 1: SCAN LOBBY QR / SEARCH PRE-REGISTRATION */}
-      <motion.div
-        whileHover={!isOffline && isSessionOpen ? { scale: 1.01 } : {}}
-        transition={{ duration: 0.2 }}
-        onClick={() => {
-          if (isOffline) {
-            toast.error(
-              'Subscriptions locked: Internet connection required to scan or register contracts.',
-              { toastId: 'offline-scan-block' }
-            );
-            return;
-          }
-          if (!isSessionOpen) {
-            toast.warning(
-              'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
-            );
-            return;
-          }
-          setModalConfig({
-            isOpen: true,
-            mode: 'Import',
-            plan: 'Monthly Membership',
-          });
-        }}
-        className={`p-5 rounded-3xl border transition-all flex items-center justify-between shadow-lg max-w-2xl mx-auto select-none ${
-          isOffline
-            ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-            : !isSessionOpen
-              ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-              : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400 cursor-pointer'
+      {/* CHOICE 1: SCAN LOBBY QR / ONLINE REGISTRATION QR */}
+      <div
+        className={`p-4 sm:p-5 rounded-3xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg max-w-3xl mx-auto select-none ${
+          isOffline || !isSessionOpen
+            ? 'border-amber-500/30 bg-(--bg-card)'
+            : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400'
         }`}
       >
-        <div className="flex items-center gap-4 text-left">
-          <div className="p-3 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/30 shrink-0">
-            <Smartphone className="w-7 h-7" />
+        <div className="flex items-start sm:items-center gap-3.5 text-left min-w-0">
+          <div
+            className={`p-2.5 sm:p-3 rounded-2xl border shrink-0 ${
+              isOffline || !isSessionOpen
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                : 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30'
+            }`}
+          >
+            <Smartphone className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
                 Scan QR Code
@@ -4406,55 +4408,85 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
                 </span>
               ) : null}
             </div>
-            <h4 className="font-heading text-base text-slate-900 dark:text-white uppercase leading-none font-bold">
+            <h4 className="font-heading text-sm sm:text-base text-slate-900 dark:text-white uppercase leading-tight font-bold">
               Use Camera or Pre-Registered Code
             </h4>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-tight">
-              Scan a pre-registered QR code or manually enter the pre-registration code to auto-fill member details and proceed with subscription enrollment.
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-snug">
+              Scan a pre-registered code to enroll, or show the online registration QR code for walk-in customers.
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          disabled={!isSessionOpen || isOffline}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isOffline) {
-              toast.error(
-                'Subscriptions locked: Internet connection required to scan or register contracts.',
-                { toastId: 'offline-scan-block' }
-              );
-              return;
-            }
-            if (!isSessionOpen) {
-              toast.warning(
-                'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
-              );
-              return;
-            }
-            setModalConfig({
-              isOpen: true,
-              mode: 'Import',
-              plan: 'Monthly Membership',
-            });
-          }}
-          className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none shrink-0 shadow-md transition-all ${
-            isOffline || !isSessionOpen
-              ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-              : 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
-          }`}
-        >
-          {isOffline ? (
-            <span className="flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Locked Offline
-            </span>
-          ) : !isSessionOpen ? (
-            'Session Closed'
-          ) : (
-            'Scan Lobby QR'
-          )}
-        </button>
-      </motion.div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+          <button
+            type="button"
+            disabled={!isSessionOpen || isOffline}
+            onClick={() => {
+              if (isOffline) {
+                toast.error(
+                  'Subscriptions locked: Internet connection required to scan or register contracts.',
+                  { toastId: 'offline-scan-block' }
+                );
+                return;
+              }
+              if (!isSessionOpen) {
+                toast.warning(
+                  'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                );
+                return;
+              }
+              setModalConfig({
+                isOpen: true,
+                mode: 'Import',
+                plan: 'Monthly Membership',
+              });
+            }}
+            className={`flex-1 md:flex-none py-2.5 px-3.5 sm:px-4 font-bold rounded-xl text-[9.5px] font-heading tracking-wider uppercase border-none shrink-0 shadow-md transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
+              isOffline || !isSessionOpen
+                ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                : 'bg-blue-600 hover:bg-blue-500 active:scale-95 text-white cursor-pointer'
+            }`}
+          >
+            {isOffline ? (
+              <>
+                <Lock className="w-3.5 h-3.5" />
+                <span>Locked Offline</span>
+              </>
+            ) : !isSessionOpen ? (
+              <>
+                <Lock className="w-3.5 h-3.5" />
+                <span>Session Closed</span>
+              </>
+            ) : (
+              <span>Scan Lobby QR</span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowRegQrModal(true)}
+            title="Show Customer Online Registration QR Code"
+            className="flex-1 md:flex-none py-2.5 px-3.5 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading text-[9.5px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all whitespace-nowrap"
+          >
+            <QrCode className="w-3.5 h-3.5 shrink-0" />
+            <span>Online Reg QR</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopyRegLink}
+            title="Copy Online Registration Link"
+            aria-label="Copy Online Registration Link"
+            className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 active:scale-95 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-all shadow-xs shrink-0"
+          >
+            {hasCopiedRegLink ? (
+              <Check className="w-4 h-4 text-emerald-500" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* CHOICE 2: MANUAL PLAN CATALOG */}
       {isLoadingSettings ? (
@@ -4839,6 +4871,84 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
           onOnboardingSuccess?.();
         }}
       />
+
+      {showRegQrModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in select-none"
+            onClick={() => setShowRegQrModal(false)}
+          >
+            <div
+              className="bg-white dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setShowRegQrModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                aria-label="Close QR modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="space-y-1 pt-1">
+                <span className="text-[9.5px] font-heading font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 block">
+                  Wolf Palomar Gym
+                </span>
+                <h3 className="font-heading text-base font-black uppercase text-slate-900 dark:text-white">
+                  Scan to Register Online
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Point your phone camera at this QR code to open the member pre-registration portal.
+                </p>
+              </div>
+
+              <div className="inline-flex p-4 bg-white rounded-3xl border-2 border-slate-200 shadow-lg mx-auto">
+                <QRCodeSVG
+                  value={registrationUrl}
+                  size={220}
+                  level="M"
+                  bgColor="#ffffff"
+                  fgColor="#0f172a"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-white/10 text-[10px] font-mono text-slate-600 dark:text-slate-300 break-all">
+                {registrationUrl}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyRegLink}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-md"
+                >
+                  {hasCopiedRegLink ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy Link</span>
+                    </>
+                  )}
+                </button>
+                <a
+                  href={registrationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-4 rounded-xl bg-slate-200 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 text-slate-800 dark:text-white font-heading text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open</span>
+                </a>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

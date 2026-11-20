@@ -65,6 +65,10 @@ import {
   type SessionSummaryInfo,
 } from '../../components/ui/ClosedSessionGroup';
 import { useNavbarStore } from '../../stores/useNavbarStore';
+import {
+  useNotificationStore,
+  formatBadgeCount,
+} from '../../stores/useNotificationStore';
 
 // Separated Modular Components
 import { OfficialReceipt } from '../../components/ui/OfficialReceipt';
@@ -389,7 +393,18 @@ export const Sales: React.FC = () => {
   stagedDeletionsRef.current = stagedDeletions;
 
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
+  const salesRecycleBinCount = useNotificationStore(
+    (s) => s.salesRecycleBinCount
+  );
   const [selectedProductsCount, setSelectedProductsCount] = useState(0);
+
+  useEffect(() => {
+    const state = location.state as any;
+    if (state?.openRecycleBin && role === 'admin') {
+      setIsRecycleBinOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate, role]);
 
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
@@ -579,7 +594,14 @@ export const Sales: React.FC = () => {
               created_at: p.createdAt,
               sync_status: p.status || 'pending',
             }))
-            .filter((s) => (s.created_at || '').startsWith(dateStr));
+            .filter((s) => {
+              if (!s.created_at) return false;
+              try {
+                return format(new Date(s.created_at), 'yyyy-MM-dd') === dateStr;
+              } catch {
+                return false;
+              }
+            });
 
           if (pendingSales.length > 0) {
             setTransactions((prev) => {
@@ -726,7 +748,14 @@ export const Sales: React.FC = () => {
               created_at: p.createdAt,
               sync_status: p.status || 'pending',
             }))
-            .filter((s) => (s.created_at || '').startsWith(dateStr));
+            .filter((s) => {
+              if (!s.created_at) return false;
+              try {
+                return format(new Date(s.created_at), 'yyyy-MM-dd') === dateStr;
+              } catch {
+                return false;
+              }
+            });
 
           if (pendingSales.length > 0) {
             setTransactions((prev) => {
@@ -992,6 +1021,32 @@ export const Sales: React.FC = () => {
 
   const activeSalesCount = useMemo(() => {
     return dayTransactions.length;
+  }, [dayTransactions]);
+
+  const activeDayProductsCount = useMemo(() => {
+    return dayTransactions.reduce((acc, tx) => {
+      let parsedItems: any[] | null = null;
+      if (Array.isArray(tx.items)) {
+        parsedItems = tx.items;
+      } else if (typeof tx.items === 'string' && tx.items.trim()) {
+        try {
+          const maybeArr = JSON.parse(tx.items);
+          if (Array.isArray(maybeArr)) parsedItems = maybeArr;
+        } catch {
+          parsedItems = null;
+        }
+      }
+      if (parsedItems && parsedItems.length > 0) {
+        return (
+          acc +
+          parsedItems.reduce(
+            (sum: number, item: any) => sum + (Number(item.quantity) || 1),
+            0
+          )
+        );
+      }
+      return acc + (Number(tx.quantity) || 1);
+    }, 0);
   }, [dayTransactions]);
 
   const activeItemsSold = useMemo(() => {
@@ -1464,62 +1519,67 @@ export const Sales: React.FC = () => {
     if ((activeView as string) === 'register') {
       setActions(
         <div className="flex items-center gap-2 sm:gap-2.5 animate-fade-in">
-          {role === 'admin' && (
-            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
-                  <DynamicBanknoteIcon trend={revenueTrend} />
-                </div>
-                <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
-                  <AnimatedCurrency value={activeRevenue} />
-                </span>
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 backdrop-blur-md shadow-xs select-none">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center">
+                <DynamicBanknoteIcon trend={revenueTrend} />
               </div>
-
-              <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
-
-              <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
-                <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="font-heading font-bold text-xs tracking-wide">
-                  {activeSalesCount}
-                  <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
-                    {activeSalesCount === 1 ? 'sale' : 'sales'}
-                  </span>
-                </span>
-              </div>
+              <span className="font-heading font-black text-sm tracking-tight text-slate-900 dark:text-emerald-400">
+                <AnimatedCurrency value={activeRevenue} />
+              </span>
             </div>
-          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              if (!canOperateSession) {
-                toast.warning(
-                  'Recycle Bin is unavailable while the cash session is closed.'
-                );
-                return;
+            <div className="w-px h-4 bg-slate-300 dark:bg-zinc-700/80" />
+
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300">
+              <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="font-heading font-bold text-xs tracking-wide">
+                {activeDayProductsCount}
+                <span className="ml-1 text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-medium">
+                  {activeDayProductsCount === 1 ? 'product' : 'products'}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!canOperateSession) {
+                  toast.warning(
+                    'Recycle Bin is unavailable while the cash session is closed.'
+                  );
+                  return;
+                }
+                if (stagedDeletionsRef.current.length > 0) {
+                  stagedDeletionsRef.current.forEach((tx) =>
+                    handleConfirmDelete(String(tx.id))
+                  );
+                }
+                setIsRecycleBinOpen(true);
+              }}
+              disabled={!canOperateSession}
+              title={
+                !canOperateSession
+                  ? 'Recycle Bin is locked: Cash session is closed'
+                  : 'Recycle Bin'
               }
-              if (stagedDeletionsRef.current.length > 0) {
-                stagedDeletionsRef.current.forEach((tx) =>
-                  handleConfirmDelete(String(tx.id))
-                );
-              }
-              setIsRecycleBinOpen(true);
-            }}
-            disabled={!canOperateSession}
-            title={
-              !canOperateSession
-                ? 'Recycle Bin is locked: Cash session is closed'
-                : 'Recycle Bin'
-            }
-            className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-              !canOperateSession
-                ? 'opacity-50 cursor-not-allowed'
-                : 'cursor-pointer active:scale-95'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>RECYCLE BIN</span>
-          </button>
+              className={`relative h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
+                !canOperateSession
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer active:scale-95'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>RECYCLE BIN</span>
+              {salesRecycleBinCount > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
+                  {formatBadgeCount(salesRecycleBinCount)}
+                </span>
+              )}
+            </button>
+          )}
 
           <button
             type="button"
@@ -1555,19 +1615,21 @@ export const Sales: React.FC = () => {
       } else {
         setActions(
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-3 w-full sm:w-auto justify-end animate-fade-in">
-            <Button
-              onClick={() => {
-                window.dispatchEvent(
-                  new CustomEvent('trigger-product-recovery')
-                );
-              }}
-              title="Recycle Bin"
-              variant="secondary"
-              className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
-              <span>RECYCLE BIN</span>
-            </Button>
+            {role === 'admin' && (
+              <Button
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('trigger-product-recovery')
+                  );
+                }}
+                title="Recycle Bin"
+                variant="secondary"
+                className="py-1.5 px-2.5 lg:py-2 lg:px-3.5 w-auto! text-[11px] lg:text-xs flex items-center gap-1 lg:gap-1.5 font-bold animate-fade-in whitespace-nowrap cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-amber-500 shrink-0" />
+                <span>RECYCLE BIN</span>
+              </Button>
+            )}
 
             <Button
               onClick={() =>
@@ -1617,6 +1679,7 @@ export const Sales: React.FC = () => {
     activeView,
     activeRevenue,
     activeSalesCount,
+    activeDayProductsCount,
     ratesConfig,
     selectedProductsCount,
     setActions,
@@ -1624,6 +1687,7 @@ export const Sales: React.FC = () => {
     isSessionOpen,
     isLocked,
     getLockReason,
+    salesRecycleBinCount,
   ]);
 
   const undoToastItems: UndoItem[] = useMemo(() => {
@@ -1799,7 +1863,7 @@ export const Sales: React.FC = () => {
                             setIsRefreshingEmpty(true);
                             try {
                               sessionStorage.removeItem(
-                                `sales_sanitized_${dateStr}`
+                                `sales_sanitized_${dateStr}_v3`
                               );
                               await fetchTransactions(false);
                             } finally {
@@ -2412,7 +2476,7 @@ export const Sales: React.FC = () => {
       )}
 
       {/* DAILY RECYCLE BIN MODAL */}
-      {isRecycleBinOpen && (
+      {role === 'admin' && isRecycleBinOpen && (
         <SalesRecycleBin
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
@@ -2450,56 +2514,60 @@ export const Sales: React.FC = () => {
             }`}
           >
             <div className="flex items-center gap-2.5 text-xs font-heading font-bold text-(--color-text) select-none min-w-0 pr-2">
-              {role === 'admin' && (
-                <>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <DynamicBanknoteIcon trend={revenueTrend} />
-                    <span className="text-[11px]">
-                      <AnimatedCurrency value={activeRevenue} />
-                    </span>
-                  </div>
-                  <span className="text-slate-300 dark:text-zinc-700">•</span>
-                </>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <DynamicBanknoteIcon trend={revenueTrend} />
+                <span className="text-[11px]">
+                  <AnimatedCurrency value={activeRevenue} />
+                </span>
+              </div>
+              <span className="text-slate-300 dark:text-zinc-700">•</span>
               <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300 truncate">
                 <ShoppingBag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-[11px] truncate">
-                  {activeSalesCount} Sales
+                  {activeDayProductsCount}{' '}
+                  {activeDayProductsCount === 1 ? 'Product' : 'Products'}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                disabled={!isSessionOpen}
-                onClick={() => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Recycle Bin is unavailable while the cash session is closed.'
-                    );
-                    return;
+              {role === 'admin' && (
+                <button
+                  type="button"
+                  disabled={!isSessionOpen}
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Recycle Bin is unavailable while the cash session is closed.'
+                      );
+                      return;
+                    }
+                    if (stagedDeletionsRef.current.length > 0) {
+                      stagedDeletionsRef.current.forEach((tx) =>
+                        handleConfirmDelete(String(tx.id))
+                      );
+                    }
+                    setIsRecycleBinOpen(true);
+                  }}
+                  className={`relative w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
+                    !isSessionOpen
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    !isSessionOpen
+                      ? 'Recycle Bin is locked: Cash session is closed'
+                      : 'Recycle Bin'
                   }
-                  if (stagedDeletionsRef.current.length > 0) {
-                    stagedDeletionsRef.current.forEach((tx) =>
-                      handleConfirmDelete(String(tx.id))
-                    );
-                  }
-                  setIsRecycleBinOpen(true);
-                }}
-                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-colors ${
-                  !isSessionOpen
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
-                }`}
-                title={
-                  !isSessionOpen
-                    ? 'Recycle Bin is locked: Cash session is closed'
-                    : 'Recycle Bin'
-                }
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {salesRecycleBinCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center shadow-sm border border-white dark:border-zinc-900">
+                      {formatBadgeCount(salesRecycleBinCount)}
+                    </span>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"

@@ -10,6 +10,7 @@ const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISPATCHED_NOTIF_IDS_KEY = 'palomar_dispatched_notification_ids';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
 const DISMISSED_MEMBER_KEY = 'palomar_dismissed_member_alerts';
+const DISMISSED_RECYCLE_KEY = 'palomar_dismissed_recycle_alerts';
 
 // Helper functions for localStorage persisted IDs
 const getStoredIds = (key: string): string[] => {
@@ -123,6 +124,15 @@ export interface ExpiringMemberSub {
   daysRemaining: number;
 }
 
+export interface RecycleBinAlertItem {
+  id: string;
+  source: 'sales' | 'logbook';
+  title: string;
+  subtitle: string;
+  amount: number;
+  deleted_at: string;
+}
+
 interface NotificationState {
   incidentUnreadCount: number;
   stockAlertsCount: number;
@@ -130,12 +140,16 @@ interface NotificationState {
   lowStockCount: number;
   expiringSubsCount: number;
   pendingCashApprovalsCount: number;
+  salesRecycleBinCount: number;
+  logbookRecycleBinCount: number;
   unreadBadgeCount: number;
 
   pendingCashApprovals: PendingCashApproval[];
   unreadIncidents: UnreadIncident[];
   stockAlertProducts: StockAlertProduct[];
   expiringMembers: ExpiringMemberSub[];
+  recycleBinSales: RecycleBinAlertItem[];
+  recycleBinLogbook: RecycleBinAlertItem[];
 
   browserPermission: NotificationPermission;
   isNotificationOpen: boolean;
@@ -159,7 +173,7 @@ interface NotificationState {
   markIncidentRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   dismissAlert: (
-    type: 'cash' | 'incident' | 'stock' | 'member',
+    type: 'cash' | 'incident' | 'stock' | 'member' | 'recycle',
     id: string
   ) => void;
   subscribeRealtime: (
@@ -181,12 +195,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   lowStockCount: 0,
   expiringSubsCount: 0,
   pendingCashApprovalsCount: 0,
+  salesRecycleBinCount: 0,
+  logbookRecycleBinCount: 0,
   unreadBadgeCount: 0,
 
   pendingCashApprovals: [],
   unreadIncidents: [],
   stockAlertProducts: [],
   expiringMembers: [],
+  recycleBinSales: [],
+  recycleBinLogbook: [],
 
   browserPermission:
     typeof window !== 'undefined' && 'Notification' in window
@@ -206,6 +224,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       ...state.unreadIncidents.map((i) => `incident_${i.id}`),
       ...state.stockAlertProducts.map((p) => `stock_${p.id}`),
       ...state.expiringMembers.map((m) => `member_${m.id}`),
+      ...state.recycleBinSales.map((r) => `recycle_sale_${r.id}`),
+      ...state.recycleBinLogbook.map((r) => `recycle_logbook_${r.id}`),
     ];
 
     const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
@@ -315,6 +335,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
     const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
     const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
+    const dismissedRecycleIds = new Set(getStoredIds(DISMISSED_RECYCLE_KEY));
     const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
     const dispatchedIdsSet = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
     let hasNewDispatches = false;
@@ -584,6 +605,91 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       }
     }
 
+    // 5. RECYCLE BIN ITEMS (Sales & Logbooks - Admins Only)
+    let recycleSalesList: RecycleBinAlertItem[] = [];
+    let recycleLogbookList: RecycleBinAlertItem[] = [];
+
+    if (isAdminUser) {
+      try {
+        const [delSalesRes, delAttRes] = await Promise.all([
+          supabase
+            .from('sales')
+            .select(
+              'id, product_name, items, total_amount, payment_method, deleted_at, receipt_no'
+            )
+            .not('deleted_at', 'is', null)
+            .order('deleted_at', { ascending: false })
+            .limit(25),
+          supabase
+            .from('attendance')
+            .select(
+              'id, customer_name, customer_type, plan_name, entry_fee, payment_method, deleted_at'
+            )
+            .not('deleted_at', 'is', null)
+            .neq('customer_type', 'New Membership')
+            .order('deleted_at', { ascending: false })
+            .limit(25),
+        ]);
+
+        if (!delSalesRes.error && delSalesRes.data) {
+          recycleSalesList = delSalesRes.data
+            .filter((s: any) => !dismissedRecycleIds.has(`sale_${s.id}`))
+            .map((s: any) => {
+              const itemLabel =
+                Array.isArray(s.items) && s.items.length > 0
+                  ? (s.items[0].productName ||
+                      s.items[0].product_name ||
+                      'Sale Item') +
+                    (s.items.length > 1 ? ` +${s.items.length - 1}` : '')
+                  : s.product_name || 'Sales Transaction';
+              const item: RecycleBinAlertItem = {
+                id: String(s.id),
+                source: 'sales',
+                title: itemLabel,
+                subtitle: `${s.payment_method || 'Cash'} • ${s.receipt_no ? `#${String(s.receipt_no).slice(-6)}` : 'Deleted Sale'}`,
+                amount: Number(s.total_amount || 0),
+                deleted_at: s.deleted_at,
+              };
+              const key = `recycle_sale_${item.id}`;
+              if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+                triggerBrowserNotification('🗑️ Sale Moved to Recycle Bin', {
+                  body: `${item.title} (₱${item.amount.toFixed(2)}) is awaiting review in Sales Recycle Bin.`,
+                });
+                dispatchedIdsSet.add(key);
+                hasNewDispatches = true;
+              }
+              return item;
+            });
+        }
+
+        if (!delAttRes.error && delAttRes.data) {
+          recycleLogbookList = delAttRes.data
+            .filter((a: any) => !dismissedRecycleIds.has(`logbook_${a.id}`))
+            .map((a: any) => {
+              const item: RecycleBinAlertItem = {
+                id: String(a.id),
+                source: 'logbook',
+                title: a.customer_name || 'Guest',
+                subtitle: `${a.plan_name || a.customer_type || 'Check-In'} • ${a.payment_method || 'Cash'}`,
+                amount: Number(a.entry_fee || 0),
+                deleted_at: a.deleted_at,
+              };
+              const key = `recycle_logbook_${item.id}`;
+              if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+                triggerBrowserNotification('🗑️ Logbook Entry in Recycle Bin', {
+                  body: `${item.title} (${item.subtitle}) is in Logbook Recycle Bin.`,
+                });
+                dispatchedIdsSet.add(key);
+                hasNewDispatches = true;
+              }
+              return item;
+            });
+        }
+      } catch (err) {
+        console.warn('Failed to load recycle bin notifications:', err);
+      }
+    }
+
     if (hasNewDispatches) {
       saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedIdsSet));
     }
@@ -594,6 +700,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       ...unreadList.map((i) => `incident_${i.id}`),
       ...stockAlertList.map((p) => `stock_${p.id}`),
       ...expiringList.map((m) => `member_${m.id}`),
+      ...recycleSalesList.map((r) => `recycle_sale_${r.id}`),
+      ...recycleLogbookList.map((r) => `recycle_logbook_${r.id}`),
     ];
 
     const unreadBadge = allCurrentItemKeys.filter(
@@ -607,10 +715,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       lowStockCount: lowStock,
       expiringSubsCount: expiringCount,
       pendingCashApprovalsCount: pendingApprovals,
+      salesRecycleBinCount: recycleSalesList.length,
+      logbookRecycleBinCount: recycleLogbookList.length,
       pendingCashApprovals: pendingApprovalsList,
       unreadIncidents: unreadList,
       stockAlertProducts: stockAlertList,
       expiringMembers: expiringList,
+      recycleBinSales: recycleSalesList,
+      recycleBinLogbook: recycleLogbookList,
       unreadBadgeCount: unreadBadge,
     });
   },
@@ -733,12 +845,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           .in('id', unreadIds);
       }
 
-      // 2. Persist dismissed stock and member alert IDs
+      // 2. Persist dismissed stock, member, and recycle alert IDs
       const currentStockIds = state.stockAlertProducts.map((p) => p.id);
       const currentMemberIds = state.expiringMembers.map((m) => m.id);
+      const currentRecycleKeys = [
+        ...state.recycleBinSales.map((r) => `sale_${r.id}`),
+        ...state.recycleBinLogbook.map((r) => `logbook_${r.id}`),
+      ];
 
       const existingDismissedStock = getStoredIds(DISMISSED_STOCK_KEY);
       const existingDismissedMembers = getStoredIds(DISMISSED_MEMBER_KEY);
+      const existingDismissedRecycle = getStoredIds(DISMISSED_RECYCLE_KEY);
 
       saveStoredIds(
         DISMISSED_STOCK_KEY,
@@ -748,6 +865,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         DISMISSED_MEMBER_KEY,
         Array.from(new Set([...existingDismissedMembers, ...currentMemberIds]))
       );
+      saveStoredIds(
+        DISMISSED_RECYCLE_KEY,
+        Array.from(new Set([...existingDismissedRecycle, ...currentRecycleKeys]))
+      );
 
       // 3. Mark all seen
       const seenSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
@@ -755,6 +876,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       state.unreadIncidents.forEach((i) => seenSet.add(`incident_${i.id}`));
       state.stockAlertProducts.forEach((p) => seenSet.add(`stock_${p.id}`));
       state.expiringMembers.forEach((m) => seenSet.add(`member_${m.id}`));
+      state.recycleBinSales.forEach((r) => seenSet.add(`recycle_sale_${r.id}`));
+      state.recycleBinLogbook.forEach((r) => seenSet.add(`recycle_logbook_${r.id}`));
       saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
 
       set({
@@ -766,6 +889,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         stockAlertProducts: [],
         expiringSubsCount: 0,
         expiringMembers: [],
+        salesRecycleBinCount: 0,
+        logbookRecycleBinCount: 0,
+        recycleBinSales: [],
+        recycleBinLogbook: [],
         unreadBadgeCount: 0,
       });
     } catch (err) {
@@ -824,6 +951,30 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           expiringMembers: filtered,
           expiringSubsCount: filtered.length,
         };
+      } else if (type === 'recycle') {
+        const existingDismissed = getStoredIds(DISMISSED_RECYCLE_KEY);
+        saveStoredIds(
+          DISMISSED_RECYCLE_KEY,
+          Array.from(new Set([...existingDismissed, id]))
+        );
+
+        if (id.startsWith('sale_')) {
+          const rawId = id.slice(5);
+          seenSet.add(`recycle_sale_${rawId}`);
+          const filtered = state.recycleBinSales.filter((r) => r.id !== rawId);
+          updatedState = {
+            recycleBinSales: filtered,
+            salesRecycleBinCount: filtered.length,
+          };
+        } else if (id.startsWith('logbook_')) {
+          const rawId = id.slice(8);
+          seenSet.add(`recycle_logbook_${rawId}`);
+          const filtered = state.recycleBinLogbook.filter((r) => r.id !== rawId);
+          updatedState = {
+            recycleBinLogbook: filtered,
+            logbookRecycleBinCount: filtered.length,
+          };
+        }
       }
 
       saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
@@ -880,6 +1031,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cash_sessions' },
+        triggerDebouncedFetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales' },
+        triggerDebouncedFetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
         triggerDebouncedFetch
       )
       .subscribe((status) => {

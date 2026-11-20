@@ -239,7 +239,20 @@ const generateUniqueWalkInName = (
   return `${cleanBase} (${nextNumber})`;
 };
 
-const getInitialCachedMemberProfiles = (): MemberProfile[] => {
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const isUuidLike = (val?: string | null): boolean =>
+  Boolean(val && UUID_REGEX.test(val.trim()));
+
+const readCachedSubscriptionsAndCards = (): {
+  subscriptions: Subscription[];
+  cards: MemberCard[];
+  members: Member[];
+} => {
+  let subscriptions: Subscription[] = [];
+  let cards: MemberCard[] = [];
+  let members: Member[] = [];
   try {
     const cachedRaw =
       (typeof sessionStorage !== 'undefined'
@@ -248,74 +261,113 @@ const getInitialCachedMemberProfiles = (): MemberProfile[] => {
       (typeof localStorage !== 'undefined'
         ? localStorage.getItem('members_sanitized_cache')
         : null);
-    if (!cachedRaw) return [];
-    const parsed = JSON.parse(cachedRaw);
-    const mList: Member[] = Array.isArray(parsed)
-      ? parsed
-      : Array.isArray(parsed?.members)
-        ? parsed.members
-        : [];
-    const sList: Subscription[] = Array.isArray(parsed?.subscriptions)
-      ? parsed.subscriptions
-      : [];
-    const cList: MemberCard[] = Array.isArray(parsed?.cards)
-      ? parsed.cards
-      : [];
+    if (cachedRaw) {
+      const parsed = JSON.parse(cachedRaw);
+      if (Array.isArray(parsed)) {
+        members = parsed;
+      } else {
+        if (Array.isArray(parsed?.members)) members = parsed.members;
+        if (Array.isArray(parsed?.subscriptions)) subscriptions = parsed.subscriptions;
+        if (Array.isArray(parsed?.cards)) cards = parsed.cards;
+      }
+    }
 
-    if (mList.length === 0) return [];
+    if (cards.length === 0) {
+      const cardsRaw =
+        (typeof localStorage !== 'undefined'
+          ? localStorage.getItem('palomar_cards_cache_v1')
+          : null) ||
+        (typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem('palomar_cards_cache_v1')
+          : null);
+      if (cardsRaw) {
+        const parsedCards = JSON.parse(cardsRaw);
+        if (Array.isArray(parsedCards)) cards = parsedCards;
+      }
+    }
+  } catch {
+    // ignore storage read error
+  }
+  return { subscriptions, cards, members };
+};
 
-    const now = new Date();
-    return mList.map((m) => {
-      const activeSub = sList.find(
-        (s) => s.member_id === m.member_id && s.status === 'Active'
+const mapRawMembersWithCache = (
+  mList: Member[],
+  sListOverride?: Subscription[],
+  cListOverride?: MemberCard[]
+): MemberProfile[] => {
+  if (!Array.isArray(mList) || mList.length === 0) return [];
+  const cachedMeta = readCachedSubscriptionsAndCards();
+  const sList =
+    sListOverride && sListOverride.length > 0
+      ? sListOverride
+      : cachedMeta.subscriptions;
+  const cList =
+    cListOverride && cListOverride.length > 0 ? cListOverride : cachedMeta.cards;
+
+  const now = getServerNow();
+  return mList.map((m) => {
+    const activeSub = sList.find(
+      (s) =>
+        (s.member_id === m.member_id || s.member_id === m.id) &&
+        s.status === 'Active'
+    );
+    const membershipName = activeSub ? activeSub.plan_name : 'No Active Plan';
+    const expDateStr = activeSub
+      ? new Date(activeSub.end_date).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : 'N/A';
+    let calculatedStatus: MemberProfile['status'] = 'Expired';
+    if (m.status === 'Suspended') {
+      calculatedStatus = 'Suspended';
+    } else if (activeSub) {
+      const diffDays = Math.ceil(
+        (new Date(activeSub.end_date).getTime() - now.getTime()) /
+          (1000 * 60 * 60 * 24)
       );
-      let membershipName = activeSub ? activeSub.plan_name : 'No Active Plan';
-      let expDateStr = activeSub
-        ? new Date(activeSub.end_date).toLocaleDateString('en-US', {
+      if (diffDays <= 0) calculatedStatus = 'Expired';
+      else if (diffDays <= 7) calculatedStatus = 'Expires Soon';
+      else calculatedStatus = 'Active';
+    }
+    const memberCards = cList
+      .filter((c) => c.member_id === m.member_id || c.member_id === m.id)
+      .map((c) => c.card_number);
+
+    return {
+      id: m.id,
+      name:
+        m.full_name && !isUuidLike(m.full_name)
+          ? m.full_name
+          : m.member_id || 'Unknown Member',
+      memberId: m.member_id,
+      membership: membershipName,
+      status: calculatedStatus,
+      phone: m.phone || '',
+      email: m.email || '',
+      address: m.address || '',
+      regDate: m.created_at
+        ? new Date(m.created_at).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
             year: 'numeric',
           })
-        : 'N/A';
-      let calculatedStatus: MemberProfile['status'] = 'Expired';
-      if (m.status === 'Suspended') {
-        calculatedStatus = 'Suspended';
-      } else if (activeSub) {
-        const diffDays = Math.ceil(
-          (new Date(activeSub.end_date).getTime() - now.getTime()) /
-            (1000 * 60 * 60 * 24)
-        );
-        if (diffDays <= 0) calculatedStatus = 'Expired';
-        else if (diffDays <= 7) calculatedStatus = 'Expires Soon';
-        else calculatedStatus = 'Active';
-      }
-      const memberCards = cList
-        .filter((c) => c.member_id === m.member_id)
-        .map((c) => c.card_number);
+        : 'N/A',
+      expDate: expDateStr,
+      lastVisit: 'Recent',
+      todayVisits: 0,
+      cardNumbers: memberCards,
+      avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
+    };
+  });
+};
 
-      return {
-        id: m.id,
-        name: m.full_name,
-        memberId: m.member_id,
-        membership: membershipName,
-        status: calculatedStatus,
-        phone: m.phone || '',
-        email: m.email || '',
-        address: m.address || '',
-        regDate: m.created_at
-          ? new Date(m.created_at).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })
-          : 'N/A',
-        expDate: expDateStr,
-        lastVisit: 'Recent',
-        todayVisits: 0,
-        cardNumbers: memberCards,
-        avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
-      };
-    });
+const getInitialCachedMemberProfiles = (): MemberProfile[] => {
+  try {
+    const { members, subscriptions, cards } = readCachedSubscriptionsAndCards();
+    return mapRawMembersWithCache(members, subscriptions, cards);
   } catch {
     return [];
   }
@@ -643,7 +695,11 @@ export const LogbookRecordAttendance: React.FC<
       try {
         const vaultItems = await getDecryptedPendingTransactions();
         pendingAttendance = vaultItems
-          .filter((v: any) => v.type === 'attendance')
+          .filter(
+            (v: any) =>
+              v.type === 'attendance' &&
+              v.payload?.action !== 'CASH_SESSION_OPEN_OFFLINE'
+          )
           .map((v: any) => ({
             id: v.id,
             ...v.payload,
@@ -689,9 +745,31 @@ export const LogbookRecordAttendance: React.FC<
   }, [memberSearch, todayLogs]);
 
   const handleSelectMember = useCallback((member: MemberProfile) => {
+    let safeName = (member.name || '').trim();
+    if (!safeName || isUuidLike(safeName)) {
+      const fromRef = dynamicMembersRef.current.find(
+        (m) =>
+          (member.id && m.id === member.id) ||
+          (member.memberId && m.memberId === member.memberId)
+      );
+      if (fromRef?.name && !isUuidLike(fromRef.name)) {
+        safeName = fromRef.name;
+      } else {
+        const { members: cachedM } = readCachedSubscriptionsAndCards();
+        const foundCached = cachedM.find(
+          (m) =>
+            (member.id && m.id === member.id) ||
+            (member.memberId && m.member_id === member.memberId)
+        );
+        if (foundCached?.full_name && !isUuidLike(foundCached.full_name)) {
+          safeName = foundCached.full_name;
+        }
+      }
+    }
+
     const client: SelectedClient = {
       id: member.id,
-      name: member.name.toUpperCase(),
+      name: (safeName || member.memberId || 'MEMBER').toUpperCase(),
       memberId: member.memberId,
       phone: member.phone,
       regDate: member.regDate,
@@ -803,9 +881,11 @@ export const LogbookRecordAttendance: React.FC<
 
         const freshMatch = members.find(
           (m: Member) =>
-            m.member_id.toUpperCase() === cleanIdUpper ||
-            m.member_id.toUpperCase() === rawUpper ||
-            m.full_name.toUpperCase() === cleanIdUpper ||
+            (m.member_id || '').toUpperCase() === cleanIdUpper ||
+            (m.member_id || '').toUpperCase() === rawUpper ||
+            (m.id || '').toUpperCase() === cleanIdUpper ||
+            (m.id || '').toUpperCase() === rawUpper ||
+            (m.full_name || '').toUpperCase() === cleanIdUpper ||
             (m.phone && m.phone.trim() === cleanId)
         );
 
@@ -815,36 +895,14 @@ export const LogbookRecordAttendance: React.FC<
           setShowLiveScanner(false);
           setFilterMode('member');
 
-          const activeSub = subscriptions.find(
-            (s: Subscription) =>
-              s.member_id === freshMatch.member_id && s.status === 'Active'
-          );
-          const planName = activeSub ? activeSub.plan_name : 'No Active Plan';
+          const enriched = mapRawMembersWithCache(
+            [freshMatch],
+            subscriptions
+          )[0];
 
-          const resolvedPhoto = resolveAvatarUrl(
-            freshMatch.image_url || freshMatch.avatar_url
-          );
+          handleSelectMember(enriched);
 
-          handleSelectMember({
-            id: freshMatch.id,
-            name: freshMatch.full_name,
-            memberId: freshMatch.member_id,
-            membership: planName,
-            status: activeSub ? 'Active' : 'Expired',
-            phone: freshMatch.phone || '',
-            email: freshMatch.email || '',
-            address: freshMatch.address || '',
-            regDate: freshMatch.created_at || 'N/A',
-            expDate: activeSub
-              ? new Date(activeSub.end_date).toLocaleDateString()
-              : 'N/A',
-            lastVisit: 'Recent',
-            todayVisits: 0,
-            cardNumbers: [],
-            avatarUrl: resolvedPhoto,
-          });
-
-          toast.success(`Verified: ${freshMatch.full_name}`, {
+          toast.success(`Verified: ${enriched.name}`, {
             toastId: 'verified-member-toast',
           });
           setTimeout(() => {
@@ -858,11 +916,20 @@ export const LogbookRecordAttendance: React.FC<
 
       stopAllCameraTracks();
       setShowLiveScanner(false);
-      setFilterMode('non-member');
-      setMemberSearch(cleanId);
-      toast.info(`Scanned: "${cleanId}". Select pass type to proceed.`, {
-        toastId: 'scanned-guest-toast',
-      });
+      if (isUuidLike(cleanId) || isUuidLike(raw)) {
+        toast.error(
+          'Member QR ID was recognized, but the profile was not found in offline cache. Search by name instead.',
+          { toastId: 'uuid-not-found-toast' }
+        );
+        setFilterMode('member');
+        setMemberSearch('');
+      } else {
+        setFilterMode('non-member');
+        setMemberSearch(cleanId);
+        toast.info(`Scanned: "${cleanId}". Select pass type to proceed.`, {
+          toastId: 'scanned-guest-toast',
+        });
+      }
       setTimeout(() => {
         isProcessingScanRef.current = false;
       }, 800);
@@ -897,25 +964,10 @@ export const LogbookRecordAttendance: React.FC<
         dynamicMembersRef.current = cached;
       }
 
-      // Also query IndexedDB immediately to ensure offline access
+      // Also query IndexedDB immediately to ensure offline access with cached subscriptions & cards
       getCachedMembersFromIndexedDB().then((idbList) => {
         if (Array.isArray(idbList) && idbList.length > 0 && dynamicMembersRef.current.length === 0) {
-          const mapped: MemberProfile[] = idbList.map((m: any) => ({
-            id: m.id,
-            name: m.full_name,
-            memberId: m.member_id,
-            membership: 'Member',
-            status: (m.status === 'Suspended' ? 'Suspended' : 'Active') as MemberProfile['status'],
-            phone: m.phone || '',
-            email: m.email || '',
-            address: m.address || '',
-            regDate: 'N/A',
-            expDate: 'N/A',
-            lastVisit: 'Recent',
-            todayVisits: 0,
-            cardNumbers: [],
-            avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
-          }));
+          const mapped = mapRawMembersWithCache(idbList as Member[]);
           setDynamicMembers(mapped);
           dynamicMembersRef.current = mapped;
         }
@@ -949,13 +1001,16 @@ export const LogbookRecordAttendance: React.FC<
     const query = initialSearch.trim().toLowerCase();
     const cleanQuery = extractCleanMemberId(query).toLowerCase();
 
-    if (dynamicMembers.length > 0) {
-      const matchedMember = dynamicMembers.find(
+    const tryMatchMembers = (list: MemberProfile[]): boolean => {
+      if (list.length === 0) return false;
+      const matchedMember = list.find(
         (m) =>
-          m.memberId.toLowerCase() === cleanQuery ||
-          m.memberId.toLowerCase() === query ||
-          m.name.toLowerCase() === query ||
-          m.name.toLowerCase().includes(query) ||
+          (m.memberId || '').toLowerCase() === cleanQuery ||
+          (m.memberId || '').toLowerCase() === query ||
+          (m.id || '').toLowerCase() === cleanQuery ||
+          (m.id || '').toLowerCase() === query ||
+          (m.name || '').toLowerCase() === query ||
+          (m.name || '').toLowerCase().includes(query) ||
           m.phone === query ||
           m.cardNumbers.some(
             (c) => c.toLowerCase() === query || c.toLowerCase() === cleanQuery
@@ -965,10 +1020,45 @@ export const LogbookRecordAttendance: React.FC<
       if (matchedMember) {
         setFilterMode('member');
         handleSelectMember(matchedMember);
-      } else {
-        setFilterMode('non-member');
-        setMemberSearch(initialSearch.trim().toUpperCase());
+        return true;
       }
+      return false;
+    };
+
+    const activeList =
+      dynamicMembers.length > 0
+        ? dynamicMembers
+        : getInitialCachedMemberProfiles();
+
+    if (activeList.length > 0) {
+      if (!tryMatchMembers(activeList)) {
+        if (isUuidLike(initialSearch.trim())) {
+          setFilterMode('member');
+          setMemberSearch('');
+        } else {
+          setFilterMode('non-member');
+          setMemberSearch(initialSearch.trim().toUpperCase());
+        }
+      }
+    } else {
+      getCachedMembersFromIndexedDB()
+        .then((idbList) => {
+          const enriched = mapRawMembersWithCache(idbList as Member[]);
+          if (enriched.length > 0) {
+            setDynamicMembers(enriched);
+            dynamicMembersRef.current = enriched;
+            if (!tryMatchMembers(enriched)) {
+              if (isUuidLike(initialSearch.trim())) {
+                setFilterMode('member');
+                setMemberSearch('');
+              } else {
+                setFilterMode('non-member');
+                setMemberSearch(initialSearch.trim().toUpperCase());
+              }
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen, initialSearch, dynamicMembers, handleSelectMember]);
 
@@ -1117,36 +1207,21 @@ export const LogbookRecordAttendance: React.FC<
     if (filtered.length === 0) {
       getCachedMembersFromIndexedDB().then((idbList) => {
         if (Array.isArray(idbList) && idbList.length > 0) {
-          const idbMatched = idbList
-            .filter((m: any) => {
-              const name = (m.full_name || '').toLowerCase();
-              const memId = (m.member_id || '').toLowerCase();
-              const phone = (m.phone || '').toLowerCase();
-              return (
-                name.includes(query) ||
-                memId.includes(query) ||
-                phone.includes(query)
-              );
-            })
-            .map((m: any) => ({
-              id: m.id,
-              name: m.full_name,
-              memberId: m.member_id,
-              membership: 'Member',
-              status: (m.status === 'Suspended' ? 'Suspended' : 'Active') as MemberProfile['status'],
-              phone: m.phone || '',
-              email: m.email || '',
-              address: m.address || '',
-              regDate: 'N/A',
-              expDate: 'N/A',
-              lastVisit: 'Recent',
-              todayVisits: 0,
-              cardNumbers: [],
-              avatarUrl: resolveAvatarUrl(m.image_url || m.avatar_url),
-            }));
+          const idbRawMatched = idbList.filter((m: any) => {
+            const name = (m.full_name || '').toLowerCase();
+            const memId = (m.member_id || '').toLowerCase();
+            const rowId = (m.id || '').toLowerCase();
+            const phone = (m.phone || '').toLowerCase();
+            return (
+              name.includes(query) ||
+              memId.includes(query) ||
+              rowId === query ||
+              phone.includes(query)
+            );
+          });
 
-          if (idbMatched.length > 0) {
-            setSuggestions(idbMatched);
+          if (idbRawMatched.length > 0) {
+            setSuggestions(mapRawMembersWithCache(idbRawMatched as Member[]));
           }
         }
       }).catch(() => {});
@@ -1351,6 +1426,25 @@ export const LogbookRecordAttendance: React.FC<
         selectedClient.name,
         todayLogs
       );
+    } else if (!finalCustomerName || isUuidLike(finalCustomerName)) {
+      const resolvedMember = dynamicMembersRef.current.find(
+        (m) =>
+          (selectedClient.id && m.id === selectedClient.id) ||
+          (selectedClient.memberId && m.memberId === selectedClient.memberId)
+      );
+      if (resolvedMember?.name && !isUuidLike(resolvedMember.name)) {
+        finalCustomerName = resolvedMember.name.toUpperCase();
+      } else {
+        const { members: cachedM } = readCachedSubscriptionsAndCards();
+        const foundM = cachedM.find(
+          (m) =>
+            (selectedClient.id && m.id === selectedClient.id) ||
+            (selectedClient.memberId && m.member_id === selectedClient.memberId)
+        );
+        if (foundM?.full_name && !isUuidLike(foundM.full_name)) {
+          finalCustomerName = foundM.full_name.toUpperCase();
+        }
+      }
     }
 
     const currentProcessor =
@@ -1379,7 +1473,7 @@ export const LogbookRecordAttendance: React.FC<
       cash_session_id: sessionId || null,
     };
 
-    const auditDescription = `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Promo/Free'}.`;
+    const auditDescription = `Recorded check-in for "${finalCustomerName}" (${selectedClient.isWalkIn ? 'Walk-In' : 'Member'} - ${derivedBilling.title}): Entry Fee ₱${derivedBilling.totalDue.toFixed(2)} via ${derivedBilling.totalDue > 0 ? paymentMethod : 'Cash'}.`;
 
     if (!isOnline) {
       try {
@@ -1398,7 +1492,7 @@ export const LogbookRecordAttendance: React.FC<
           customerName: finalCustomerName,
           customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
           categoryOrPlan: derivedBilling.title,
-          paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+          paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
           amountPaid: derivedBilling.totalDue,
           basePrice: derivedBilling.subtotal,
           gcashFee: gcashFeeVal,
@@ -1406,7 +1500,7 @@ export const LogbookRecordAttendance: React.FC<
           gcashRefNo: gcashRefVal,
           referenceNumber: gcashRefVal,
           paymentRef: gcashRefVal,
-          paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+          paymentStatus: 'Paid',
           status: selectedClient.isWalkIn
             ? 'Active'
             : selectedClient.status || 'Active',
@@ -1461,7 +1555,7 @@ export const LogbookRecordAttendance: React.FC<
         customerName: finalCustomerName,
         customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
         categoryOrPlan: derivedBilling.title,
-        paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+        paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
         amountPaid: derivedBilling.totalDue,
         basePrice: derivedBilling.subtotal,
         gcashFee: gcashFeeVal,
@@ -1469,7 +1563,7 @@ export const LogbookRecordAttendance: React.FC<
         gcashRefNo: gcashRefVal,
         referenceNumber: gcashRefVal,
         paymentRef: gcashRefVal,
-        paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+        paymentStatus: 'Paid',
         status: selectedClient.isWalkIn
           ? 'Active'
           : selectedClient.status || 'Active',
@@ -1513,7 +1607,7 @@ export const LogbookRecordAttendance: React.FC<
             customerName: finalCustomerName,
             customerType: selectedClient.isWalkIn ? 'Walk-In' : 'Existing Member',
             categoryOrPlan: derivedBilling.title,
-            paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Promo',
+            paymentMethod: derivedBilling.totalDue > 0 ? paymentMethod : 'Cash',
             amountPaid: derivedBilling.totalDue,
             basePrice: derivedBilling.subtotal,
             gcashFee: gcashFeeVal,
@@ -1521,7 +1615,7 @@ export const LogbookRecordAttendance: React.FC<
             gcashRefNo: gcashRefVal,
             referenceNumber: gcashRefVal,
             paymentRef: gcashRefVal,
-            paymentStatus: derivedBilling.totalDue > 0 ? 'Paid' : 'Promo',
+            paymentStatus: 'Paid',
             status: selectedClient.isWalkIn
               ? 'Active'
               : selectedClient.status || 'Active',

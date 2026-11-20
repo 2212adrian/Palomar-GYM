@@ -21,6 +21,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
+import { useAuthStore } from '../../../stores/authStore';
+import { isSuperAdmin } from '../../../constants/auth';
 
 interface DeletedProduct {
   id: string;
@@ -45,6 +47,18 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   onClose,
   onRestoreSuccess,
 }) => {
+  const { user, profile } = useAuthStore() as any;
+  const isAdmin = useMemo(() => {
+    if (isSuperAdmin(user?.email)) return true;
+    const roleStr = (
+      profile?.role ||
+      user?.user_metadata?.role ||
+      user?.app_metadata?.role ||
+      ''
+    ).toLowerCase();
+    return roleStr === 'admin' || roleStr === 'superadmin';
+  }, [user, profile]);
+
   const [deletedItems, setDeletedItems] = useState<DeletedProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,6 +70,7 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   const itemsPerPage = 5;
 
   const fetchDeletedProducts = async () => {
+    if (!isAdmin) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -77,13 +92,13 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAdmin) {
       fetchDeletedProducts();
       setSelectedIds([]);
       setCurrentPage(1);
       setSearchQuery('');
     }
-  }, [isOpen]);
+  }, [isOpen, isAdmin]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -262,6 +277,10 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   const startIndex = (clampedPage - 1) * itemsPerPage;
 
   const handleBulkRestore = async (selectedList: any[]) => {
+    if (!isAdmin) {
+      toast.error('Restricted: Only Administrators can restore deleted products.');
+      return;
+    }
     if (selectedList.length === 0) return;
     setLoading(true);
 
@@ -413,6 +432,8 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   const isAllOnPageSelected =
     currentPageItems.length > 0 &&
     currentPageItems.every((t: any) => selectedIds.includes(t.id));
+
+  if (!isOpen || !isAdmin) return null;
 
   return createPortal(
     <Modal

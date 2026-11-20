@@ -70,12 +70,65 @@ import { TimelineCard, type LogRecord } from '../../components/ui/TimelineCard';
 import { VirtualWindowList } from '../../components/common/VirtualWindowList';
 import { MembersList } from '../members/MembersList';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
+import {
+  useNotificationStore,
+  formatBadgeCount,
+} from '../../stores/useNotificationStore';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import {
   getDecryptedPendingTransactions,
   dropPendingTransaction,
   stagePendingTransaction,
 } from '../../lib/offlineVault';
+
+const LOGBOOK_UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const resolveOfflineCustomerName = (
+  memberId?: string | null,
+  rawName?: string | null,
+  fallbackLabel = 'Guest'
+): string => {
+  const cleanName = String(rawName || '').trim();
+  if (cleanName && !LOGBOOK_UUID_REGEX.test(cleanName)) {
+    return cleanName;
+  }
+
+  const lookupKey = (
+    memberId ||
+    (LOGBOOK_UUID_REGEX.test(cleanName) ? cleanName : '')
+  )
+    .trim()
+    .toLowerCase();
+
+  if (lookupKey) {
+    try {
+      const cachedRaw =
+        sessionStorage.getItem('members_sanitized_cache') ||
+        localStorage.getItem('members_sanitized_cache');
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw);
+        const list = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.members)
+            ? parsed.members
+            : [];
+        const matched = list.find(
+          (m: any) =>
+            String(m.member_id || '').toLowerCase() === lookupKey ||
+            String(m.id || '').toLowerCase() === lookupKey
+        );
+        if (matched?.full_name && !LOGBOOK_UUID_REGEX.test(matched.full_name)) {
+          return matched.full_name.toUpperCase();
+        }
+      }
+    } catch {
+      // ignore cache parse errors
+    }
+  }
+
+  return memberId ? `Member #${memberId}` : fallbackLabel;
+};
 
 // DYNAMIC BANKNOTE ICON WITH POPPING / EXPLODE EFFECT
 const DynamicBanknoteIcon: React.FC<{
@@ -743,7 +796,11 @@ export const LogbookPage: React.FC = () => {
         id: tx.id,
         timestamp: tx.createdAt,
         memberId: pl.member_id || null,
-        customerName: pl.customer_name || 'Guest',
+        customerName: resolveOfflineCustomerName(
+          pl.member_id,
+          pl.customer_name,
+          'Guest'
+        ),
         customerType: pl.customer_type || 'Walk-In',
         categoryOrPlan: pl.plan_name || 'Regular Pass',
         paymentMethod: pl.payment_method || 'Cash',
@@ -754,7 +811,7 @@ export const LogbookPage: React.FC = () => {
         gcashRefNo: pl.gcash_ref_no || '',
         referenceNumber: pl.gcash_ref_no || '',
         paymentRef: pl.gcash_ref_no || '',
-        paymentStatus: fee > 0 ? 'Paid' : 'Promo',
+        paymentStatus: 'Paid',
         status: 'Active',
         isSubscription: false,
         deletable: true,
@@ -799,7 +856,11 @@ export const LogbookPage: React.FC = () => {
         id: tx.id,
         timestamp: tx.createdAt,
         memberId: pl.member_id || null,
-        customerName: pl.customer_name || 'Member',
+        customerName: resolveOfflineCustomerName(
+          pl.member_id,
+          pl.customer_name,
+          'Member'
+        ),
         customerType: 'Physical Card',
         categoryOrPlan:
           pl.item_description || 'Physical Membership Card Fee',
@@ -826,7 +887,11 @@ export const LogbookPage: React.FC = () => {
         id: tx.id,
         timestamp: tx.createdAt,
         memberId: pl.member_id || null,
-        customerName: pl.customer_name || 'Member',
+        customerName: resolveOfflineCustomerName(
+          pl.member_id,
+          pl.customer_name,
+          'Member'
+        ),
         customerType: pl.customer_type || 'New Membership',
         categoryOrPlan:
           pl.item_description ||
@@ -911,14 +976,19 @@ export const LogbookPage: React.FC = () => {
               .filter(
                 (tx) =>
                   (tx.status === 'pending' || tx.status === 'conflict') &&
+                  tx.payload?.action !== 'CASH_SESSION_OPEN_OFFLINE' &&
                   (tx.type === 'attendance' ||
                     tx.type === 'subscription' ||
                     tx.type === 'card_purchase' ||
                     tx.type === 'batch_card_purchase')
               )
               .filter((tx) => {
-                const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
-                return txDate === dateStr;
+                if (!tx.createdAt) return false;
+                try {
+                  return format(new Date(tx.createdAt), 'yyyy-MM-dd') === dateStr;
+                } catch {
+                  return false;
+                }
               })
               .map(mapPendingTxToLogRecord);
           } catch {}
@@ -999,9 +1069,8 @@ export const LogbookPage: React.FC = () => {
                 gcashRefNo: row.gcash_ref_no,
                 referenceNumber: row.gcash_ref_no,
                 paymentRef: row.gcash_ref_no,
-                paymentStatus: (row.payment_status === 'Promo' ||
-                row.payment_status === 'Unpaid'
-                  ? row.payment_status
+                paymentStatus: (row.payment_status === 'Unpaid'
+                  ? 'Unpaid'
                   : 'Paid') as 'Paid' | 'Unpaid' | 'Promo',
                 status: 'Active',
                 isSubscription: Boolean(row.is_subscription),
@@ -1089,7 +1158,7 @@ export const LogbookPage: React.FC = () => {
                 gcashRefNo: a.gcash_ref_no || '',
                 referenceNumber: a.gcash_ref_no || '',
                 paymentRef: a.gcash_ref_no || '',
-                paymentStatus: entryFee > 0 ? 'Paid' : 'Promo',
+                paymentStatus: 'Paid',
                 status: 'Active',
                 isSubscription: false,
                 deletable: true,
@@ -1170,14 +1239,19 @@ export const LogbookPage: React.FC = () => {
             .filter(
               (tx) =>
                 (tx.status === 'pending' || tx.status === 'conflict') &&
+                tx.payload?.action !== 'CASH_SESSION_OPEN_OFFLINE' &&
                 (tx.type === 'attendance' ||
                   tx.type === 'subscription' ||
                   tx.type === 'card_purchase' ||
                   tx.type === 'batch_card_purchase')
             )
             .filter((tx) => {
-              const txDate = tx.createdAt ? tx.createdAt.slice(0, 10) : '';
-              return txDate === dateStr;
+              if (!tx.createdAt) return false;
+              try {
+                return format(new Date(tx.createdAt), 'yyyy-MM-dd') === dateStr;
+              } catch {
+                return false;
+              }
             })
             .map(mapPendingTxToLogRecord);
         } catch (vaultErr) {
@@ -1319,19 +1393,26 @@ export const LogbookPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
+  const logbookRecycleBinCount = useNotificationStore(
+    (s) => s.logbookRecycleBinCount
+  );
 
   const [selectedReceiptLog, setSelectedReceiptLog] =
     useState<LogRecord | null>(null);
 
   useEffect(() => {
-    if (location.state && (location.state as any).openAttendanceModal) {
-      const searchName = (location.state as any).initialSearch || '';
+    const state = location.state as any;
+    if (state?.openAttendanceModal) {
+      const searchName = state.initialSearch || '';
       setInitialSearchVal(searchName);
       setIsCreateModalOpen(true);
 
       navigate(location.pathname, { replace: true, state: {} });
+    } else if (state?.openRecycleBin && role === 'admin') {
+      setIsRecycleBinOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state, location.pathname, navigate]);
+  }, [location.state, location.pathname, navigate, role]);
 
   const dayLogs = useMemo(() => deduplicateBatchCards(logs), [logs]);
 
@@ -1494,7 +1575,7 @@ export const LogbookPage: React.FC = () => {
         ...prev.filter((item) => String(item.id) !== normalizedLog.id),
       ];
       sessionStorage.setItem(
-        `logbook_sanitized_${dateStr}`,
+        `logbook_sanitized_${dateStr}_v3`,
         JSON.stringify(updated)
       );
       return updated;
@@ -2516,37 +2597,44 @@ export const LogbookPage: React.FC = () => {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (!isSessionOpen) {
-                toast.warning(
-                  'Recycle Bin is unavailable while the cash session is closed.'
-                );
-                return;
+          {role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Recycle Bin is unavailable while the cash session is closed.'
+                  );
+                  return;
+                }
+                if (stagedDeletionsRef.current.length > 0) {
+                  stagedDeletionsRef.current.forEach((log) =>
+                    handleConfirmDelete(String(log.id))
+                  );
+                }
+                setIsRecycleBinOpen(true);
+              }}
+              disabled={!canOperateSession}
+              title={
+                !canOperateSession
+                  ? 'Recycle Bin is locked: Cash session is closed'
+                  : 'Recycle Bin'
               }
-              if (stagedDeletionsRef.current.length > 0) {
-                stagedDeletionsRef.current.forEach((log) =>
-                  handleConfirmDelete(String(log.id))
-                );
-              }
-              setIsRecycleBinOpen(true);
-            }}
-            disabled={!canOperateSession}
-            title={
-              !canOperateSession
-                ? 'Recycle Bin is locked: Cash session is closed'
-                : 'Recycle Bin'
-            }
-            className={`h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
-              !canOperateSession
-                ? 'opacity-50 cursor-not-allowed'
-                : 'cursor-pointer active:scale-95'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>RECYCLE BIN</span>
-          </button>
+              className={`relative h-10 px-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-100/80 dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800 text-xs font-heading font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-xs ${
+                !canOperateSession
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer active:scale-95'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>RECYCLE BIN</span>
+              {logbookRecycleBinCount > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
+                  {formatBadgeCount(logbookRecycleBinCount)}
+                </span>
+              )}
+            </button>
+          )}
 
           <button
             type="button"
@@ -2672,6 +2760,7 @@ export const LogbookPage: React.FC = () => {
     activeCheckinsCount,
     revenueTrend,
     isBatterySaver,
+    logbookRecycleBinCount,
   ]);
 
   useEffect(() => {
@@ -2880,7 +2969,7 @@ export const LogbookPage: React.FC = () => {
                             setIsRefreshingEmpty(true);
                             try {
                               sessionStorage.removeItem(
-                                `logbook_sanitized_${dateStr}`
+                                `logbook_sanitized_${dateStr}_v3`
                               );
                               await fetchAttendanceFromSupabase(false);
                             } finally {
@@ -3543,7 +3632,7 @@ export const LogbookPage: React.FC = () => {
         />
       )}
 
-      {isRecycleBinOpen && (
+      {role === 'admin' && isRecycleBinOpen && (
         <LogbookRecycleBin
           isOpen={isRecycleBinOpen}
           onClose={() => setIsRecycleBinOpen(false)}
@@ -3606,36 +3695,43 @@ export const LogbookPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                disabled={!isSessionOpen}
-                onClick={() => {
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Recycle Bin is unavailable while the cash session is closed.'
-                    );
-                    return;
+              {role === 'admin' && (
+                <button
+                  type="button"
+                  disabled={!isSessionOpen}
+                  onClick={() => {
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Recycle Bin is unavailable while the cash session is closed.'
+                      );
+                      return;
+                    }
+                    if (stagedDeletionsRef.current.length > 0) {
+                      stagedDeletionsRef.current.forEach((log) =>
+                        handleConfirmDelete(String(log.id))
+                      );
+                    }
+                    setIsRecycleBinOpen(true);
+                  }}
+                  className={`relative w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-all ${
+                    !isSessionOpen
+                      ? 'opacity-40 cursor-not-allowed'
+                      : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
+                  }`}
+                  title={
+                    !isSessionOpen
+                      ? 'Recycle Bin is locked: Cash session is closed'
+                      : 'Recycle Bin'
                   }
-                  if (stagedDeletionsRef.current.length > 0) {
-                    stagedDeletionsRef.current.forEach((log) =>
-                      handleConfirmDelete(String(log.id))
-                    );
-                  }
-                  setIsRecycleBinOpen(true);
-                }}
-                className={`w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center transition-all ${
-                  !isSessionOpen
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'hover:bg-amber-500/20 cursor-pointer active:scale-95'
-                }`}
-                title={
-                  !isSessionOpen
-                    ? 'Recycle Bin is locked: Cash session is closed'
-                    : 'Recycle Bin'
-                }
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {logbookRecycleBinCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center shadow-sm border border-white dark:border-zinc-900">
+                      {formatBadgeCount(logbookRecycleBinCount)}
+                    </span>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"

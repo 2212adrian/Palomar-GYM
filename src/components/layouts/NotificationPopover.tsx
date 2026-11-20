@@ -20,6 +20,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import {
@@ -34,7 +35,7 @@ interface NotificationPopoverProps {
   onClose: () => void;
 }
 
-type TabType = 'all' | 'approvals' | 'incidents' | 'stock' | 'members';
+type TabType = 'all' | 'approvals' | 'incidents' | 'stock' | 'members' | 'recycle';
 
 export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   isOpen,
@@ -58,9 +59,13 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
+    salesRecycleBinCount,
+    logbookRecycleBinCount,
     unreadIncidents,
     stockAlertProducts,
     expiringMembers,
+    recycleBinSales,
+    recycleBinLogbook,
     browserPermission,
     checkBrowserPermission,
     requestBrowserPermission,
@@ -72,11 +77,16 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     markBadgeSeen,
   } = useNotificationStore();
 
+  const recycleCount = isAdmin
+    ? salesRecycleBinCount + logbookRecycleBinCount
+    : 0;
+
   const totalNotifications =
     pendingCashApprovalsCount +
     incidentUnreadCount +
     stockAlertsCount +
-    expiringSubsCount;
+    expiringSubsCount +
+    recycleCount;
 
   useEffect(() => {
     setMounted(true);
@@ -202,6 +212,16 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     handleNavigate('/members/list', { state: { openMemberId: memberId } });
   };
 
+  const handleRecycleItemClick = (
+    source: 'sales' | 'logbook',
+    itemId: string
+  ) => {
+    dismissAlert('recycle', `${source === 'sales' ? 'sale' : 'logbook'}_${itemId}`);
+    handleNavigate(source === 'sales' ? '/sales' : '/logbook', {
+      state: { openRecycleBin: true },
+    });
+  };
+
   const showApprovals =
     (activeTab === 'all' || activeTab === 'approvals') &&
     pendingCashApprovals.length > 0;
@@ -214,9 +234,13 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   const showMembers =
     (activeTab === 'all' || activeTab === 'members') &&
     expiringMembers.length > 0;
+  const showRecycle =
+    isAdmin &&
+    (activeTab === 'all' || activeTab === 'recycle') &&
+    recycleCount > 0;
 
   const hasItemsInTab =
-    showApprovals || showIncidents || showStock || showMembers;
+    showApprovals || showIncidents || showStock || showMembers || showRecycle;
 
   if (!mounted || typeof document === 'undefined') return null;
 
@@ -368,6 +392,21 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                   >
                     <Clock className="w-3 h-3" />
                     <span>Expiring ({expiringSubsCount})</span>
+                  </button>
+                )}
+
+                {isAdmin && recycleCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('recycle')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-heading font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                      activeTab === 'recycle'
+                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 shadow-xs border border-amber-500/30 font-black'
+                        : 'text-slate-500 hover:text-amber-500'
+                    }`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Recycle ({recycleCount})</span>
                   </button>
                 )}
               </div>
@@ -728,6 +767,115 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                             </div>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* RECYCLE BIN (SALES & LOGBOOKS) SECTION (Admins Only) */}
+                  {showRecycle && (
+                    <div className="space-y-1.5 pt-2">
+                      {activeTab === 'all' && (
+                        <div className="flex items-center justify-between px-1.5 pb-1">
+                          <span className="text-[9px] font-heading font-black tracking-wider uppercase text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                            <Trash2 className="w-3 h-3" />
+                            Recycle Bin (Sales &amp; Logbooks)
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {salesRecycleBinCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleNavigate('/sales', {
+                                    state: { openRecycleBin: true },
+                                  })
+                                }
+                                className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
+                              >
+                                Sales ({salesRecycleBinCount}){' '}
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                            )}
+                            {logbookRecycleBinCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleNavigate('/logbook', {
+                                    state: { openRecycleBin: true },
+                                  })
+                                }
+                                className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
+                              >
+                                Logbooks ({logbookRecycleBinCount}){' '}
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        {[
+                          ...recycleBinSales,
+                          ...recycleBinLogbook,
+                        ]
+                          .sort(
+                            (a, b) =>
+                              new Date(b.deleted_at).getTime() -
+                              new Date(a.deleted_at).getTime()
+                          )
+                          .slice(0, activeTab === 'recycle' ? 12 : 4)
+                          .map((item) => {
+                            const isSales = item.source === 'sales';
+                            return (
+                              <div
+                                key={`${item.source}-${item.id}`}
+                                onClick={() =>
+                                  handleRecycleItemClick(item.source, item.id)
+                                }
+                                className="p-2.5 rounded-xl bg-slate-50/70 dark:bg-zinc-900/60 hover:bg-slate-100 dark:hover:bg-zinc-800/80 border border-slate-200/60 dark:border-white/5 transition-all cursor-pointer flex items-center justify-between gap-2.5 group"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+                                    <Trash2 className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`px-1.5 py-0.2 rounded text-[8px] font-heading font-black uppercase shrink-0 ${
+                                          isSales
+                                            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                                            : 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                        }`}
+                                      >
+                                        {isSales ? 'Sales' : 'Logbook'}
+                                      </span>
+                                      <h5 className="font-heading text-xs font-bold text-slate-900 dark:text-white truncate">
+                                        {item.title}
+                                      </h5>
+                                    </div>
+                                    <span className="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate block mt-0.5">
+                                      {item.subtitle} • ₱{item.amount.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dismissAlert(
+                                      'recycle',
+                                      `${isSales ? 'sale' : 'logbook'}_${item.id}`
+                                    );
+                                  }}
+                                  className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                                  title="Dismiss alert"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
                   )}

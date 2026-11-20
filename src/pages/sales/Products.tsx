@@ -451,7 +451,10 @@ export const Products: React.FC<ProductsProps> = ({
   useEffect(() => {
     const handleCreate = () => handleCreateClick();
     const handlePrint = () => setShowPrintModal(true);
-    const handleRecovery = () => setShowRecoveryModal(true);
+    const handleRecovery = () => {
+      if (!isAdmin) return;
+      setShowRecoveryModal(true);
+    };
     const handleStockMovements = () => setShowStockMovementModal(true);
 
     window.addEventListener('trigger-product-create', handleCreate);
@@ -465,7 +468,7 @@ export const Products: React.FC<ProductsProps> = ({
       window.removeEventListener('trigger-product-recovery', handleRecovery);
       window.removeEventListener('trigger-product-stock-movements', handleStockMovements);
     };
-  }, [products]);
+  }, [products, isAdmin]);
 
   useEffect(() => {
     fetchProducts(false); // Initial load displays the skeleton
@@ -2694,13 +2697,15 @@ const handleSaveProduct = async (e: React.FormEvent, bulkItems?: any[]) => {
         )}
 
       {/* Product Recovery Bin Modal */}
-      <ProductRecoveryModal
-        isOpen={showRecoveryModal}
-        onClose={() => setShowRecoveryModal(false)}
-        onRestoreSuccess={() => {
-          fetchProducts(true);
-        }}
-      />
+      {isAdmin && (
+        <ProductRecoveryModal
+          isOpen={showRecoveryModal}
+          onClose={() => setShowRecoveryModal(false)}
+          onRestoreSuccess={() => {
+            fetchProducts(true);
+          }}
+        />
+      )}
 
       {/* QUICK-SCAN FULL SCREEN BARCODE MODAL */}
       {barcodeModalProduct &&

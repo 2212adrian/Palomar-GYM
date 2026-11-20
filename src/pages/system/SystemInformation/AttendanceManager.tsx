@@ -582,7 +582,6 @@ export const AttendanceManager: React.FC<AttendanceManagerProps> = ({
               >
                 <option value="Paid">Paid</option>
                 <option value="Unpaid">Unpaid</option>
-                <option value="Promo">Promo</option>
               </select>
             </div>
           </div>

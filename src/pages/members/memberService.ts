@@ -844,7 +844,7 @@ export const subscriptionService = {
           localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) return parsed;
+          if (Array.isArray(parsed)) return [];
           if (parsed && Array.isArray(parsed.subscriptions)) {
             return parsed.subscriptions;
           }

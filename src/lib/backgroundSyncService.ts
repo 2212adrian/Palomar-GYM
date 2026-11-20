@@ -235,8 +235,14 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         continue;
       }
 
-      // ─── A2. SALE RESTORE TRANSACTIONS (DUAL-OFFLINE CONFLICT RESOLVED) ───
+      // ─── A2. SALE RESTORE TRANSACTIONS (ADMIN ONLY) ───
       if (item.type === 'sale_restore') {
+        if (!isSyncAdmin) {
+          console.warn('[Sync] Restricted: Staff cannot restore items from Sales Recycle Bin. Dropping queued action.');
+          successfullySyncedIds.push(item.id);
+          result.droppedCount++;
+          continue;
+        }
         const payload = item.payload;
         const targetSaleId = payload.saleId || payload.id;
 
@@ -414,8 +420,14 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         continue;
       }
 
-      // ─── B2. ATTENDANCE RESTORE TRANSACTIONS ───
+      // ─── B2. ATTENDANCE RESTORE TRANSACTIONS (ADMIN ONLY) ───
       if (item.type === 'attendance_restore') {
+        if (!isSyncAdmin) {
+          console.warn('[Sync] Restricted: Staff cannot restore items from Logbook Recycle Bin. Dropping queued action.');
+          successfullySyncedIds.push(item.id);
+          result.droppedCount++;
+          continue;
+        }
         const payload = item.payload;
         const targetAttendanceId = payload.attendanceId || payload.id;
 
