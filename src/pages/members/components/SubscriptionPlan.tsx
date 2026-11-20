@@ -42,7 +42,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Html5Qrcode } from 'html5-qrcode';
-import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../../../lib/supabase/client';
 import { buildPublicPortalUrl } from '../../../lib/appUrl';
 import { getServerNow } from '../../../lib/serverTime';
@@ -62,6 +61,7 @@ import {
 import { getEffectiveRates } from '../../../lib/ratesService';
 import {
   OfficialReceipt,
+  generateOfflineQrDataUrl,
   type OfficialReceiptRef,
 } from '../../../components/ui/OfficialReceipt';
 import {
@@ -4183,6 +4183,13 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   }>({ isOpen: false, mode: null, plan: null });
 
   const registrationUrl = useMemo(() => buildPublicPortalUrl('/register'), []);
+  const registrationQrDataUrl = useMemo(() => {
+    try {
+      return generateOfflineQrDataUrl(registrationUrl, 220);
+    } catch {
+      return '';
+    }
+  }, [registrationUrl]);
   const [showRegQrModal, setShowRegQrModal] = useState(false);
   const [hasCopiedRegLink, setHasCopiedRegLink] = useState(false);
 
@@ -4904,13 +4911,17 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
               </div>
 
               <div className="inline-flex p-4 bg-white rounded-3xl border-2 border-slate-200 shadow-lg mx-auto">
-                <QRCodeSVG
-                  value={registrationUrl}
-                  size={220}
-                  level="M"
-                  bgColor="#ffffff"
-                  fgColor="#0f172a"
-                />
+                {registrationQrDataUrl ? (
+                  <img
+                    src={registrationQrDataUrl}
+                    alt="Online Registration QR Code"
+                    className="w-[220px] h-[220px] block object-contain"
+                  />
+                ) : (
+                  <div className="w-[220px] h-[220px] flex items-center justify-center text-xs font-mono text-slate-400">
+                    QR Unavailable
+                  </div>
+                )}
               </div>
 
               <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-white/10 text-[10px] font-mono text-slate-600 dark:text-slate-300 break-all">
