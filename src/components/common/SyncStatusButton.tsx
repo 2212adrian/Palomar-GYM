@@ -1,9 +1,9 @@
 // src/components/common/SyncStatusButton.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, CloudOff, RefreshCw, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { getDecryptedPendingTransactions, type DecryptedTransaction } from '../../lib/offlineVault';
-import { executeOfflineSync, resolveConflictAction } from '../../lib/backgroundSyncService';
+import { resolveConflictAction } from '../../lib/backgroundSyncService';
 import { SyncConflictDashboard } from './SyncConflictDashboard';
 import { useAuthStore } from '../../stores/authStore';
 import { useActionQueueStore } from '../../stores/useActionQueueStore';
@@ -16,14 +16,12 @@ export const SyncStatusButton: React.FC = () => {
     isSuperAdmin(user?.email) || profile?.role?.toLowerCase() === 'admin'
   );
 
-  const { queueCount, toggleDrawer } = useActionQueueStore();
+  const { queueCount, isSyncing, toggleDrawer } = useActionQueueStore();
 
   const [conflicts, setConflicts] = useState<DecryptedTransaction[]>([]);
   const [cloudConflictCount, setCloudConflictCount] = useState<number>(0);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const isSyncInProgressRef = useRef<boolean>(false);
 
   const refreshVaultStatus = useCallback(async () => {
     try {
@@ -125,27 +123,6 @@ export const SyncStatusButton: React.FC = () => {
       clearInterval(interval);
     };
   }, [refreshVaultStatus]);
-
-  useEffect(() => {
-    const isOnline = typeof navigator !== 'undefined' && navigator.onLine;
-    if (pendingCount > 0 && isOnline && !isSyncInProgressRef.current) {
-      isSyncInProgressRef.current = true;
-      setIsSyncing(true);
-
-      executeOfflineSync()
-        .then((result) => {
-          refreshVaultStatus();
-          if (result.syncedCount > 0) {
-            toast.success(`Automatically synchronized ${result.syncedCount} transaction(s).`);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          isSyncInProgressRef.current = false;
-          setIsSyncing(false);
-        });
-    }
-  }, [pendingCount, refreshVaultStatus]);
 
   const handleResolve = async (
     id: string,

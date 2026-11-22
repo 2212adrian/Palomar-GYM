@@ -88,6 +88,7 @@ export const Dashboard: React.FC = () => {
     lowStockCount: 0,
     outOfStockCount: 0,
     newMembersThisMonth: 0,
+    last7DaysRevenue: [],
   });
 
   const [revenueTimeline, setRevenueTimeline] = useState<

@@ -38,9 +38,14 @@ import {
   Barcode as BarcodeIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { toast } from 'react-toastify';
 import { Capacitor } from '@capacitor/core';
+import {
+  CameraBarcodeScanner,
+  getFriendlyCameraError,
+  stopMediaStreamTracks,
+  type CameraDeviceInfo,
+} from '../../lib/cameraScanner';
 import { useAuthStore } from '../../stores/authStore';
 import { useScannerStore } from '../../stores/useScannerStore';
 import {
@@ -76,16 +81,7 @@ const playBeepSound = () => {
   }
 };
 
-const getCameraErrorMessage = (err: any): string => {
-  const msg = typeof err === 'string' ? err : err?.message || String(err || '');
-  const lower = msg.toLowerCase();
-  if (lower.includes('notallowederror') || lower.includes('permission'))
-    return 'Permission denied by browser';
-  if (lower.includes('notreadableerror') || lower.includes('in use'))
-    return 'Camera is busy or in use';
-  if (lower.includes('notfounderror')) return 'Camera hardware not found';
-  return msg || 'Camera initialization failed';
-};
+const getCameraErrorMessage = getFriendlyCameraError;
 
 interface ScannerPageProps {
   isOpen?: boolean;
@@ -117,7 +113,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const qrRegionId = 'hybrid-qr-reader';
 
   // Active Scanner References
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRef = useRef<CameraBarcodeScanner | null>(null);
   const stopPromiseRef = useRef<Promise<void> | null>(null);
   const isExitingRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
@@ -190,10 +186,15 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>(
     'environment'
   );
-  const [cameras,] = useState<Array<{ id: string; label: string }>>(
-    []
-  );
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [cameras, setCameras] = useState<CameraDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('preferred_camera_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [activeCameraId, setActiveCameraId] = useState<string>('');
 
   const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
 
@@ -286,41 +287,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         if (scannerRef.current) {
           const instance = scannerRef.current;
           scannerRef.current = null;
-          if (instance.isScanning) {
-            try {
-              await instance.stop();
-            } catch {
-              // ignore stop error
-            }
-          }
-          try {
-            instance.clear();
-          } catch {
-            // ignore clear error
-          }
+          await instance.stop();
         }
       } catch (err) {
         console.warn('Camera stop warning:', err);
       } finally {
-        const qrRegion = document.getElementById(qrRegionId);
-        const videoElements = qrRegion
-          ? qrRegion.querySelectorAll('video')
-          : document.querySelectorAll('video');
-        videoElements.forEach((video) => {
-          if (video.srcObject) {
-            const stream = video.srcObject as MediaStream;
-            if (stream && stream.getTracks) {
-              stream.getTracks().forEach((track) => {
-                try {
-                  track.stop();
-                  track.enabled = false;
-                } catch {}
-              });
-            }
-            video.srcObject = null;
-          }
-        });
-
+        stopMediaStreamTracks(qrRegionId);
         setTorchEnabled(false);
         setHasTorchCapability(false);
       }
@@ -340,6 +312,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
   const toggleTorch = async () => {
     try {
+      const nextTorch = !torchEnabled;
+      if (scannerRef.current) {
+        await scannerRef.current.toggleTorch(nextTorch);
+        setTorchEnabled(nextTorch);
+        return;
+      }
       const videoElement = document.querySelector(
         `#${qrRegionId} video`
       ) as HTMLVideoElement | null;
@@ -347,7 +325,6 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         const stream = videoElement.srcObject as MediaStream;
         const track = stream.getVideoTracks()[0];
         if (track) {
-          const nextTorch = !torchEnabled;
           await track.applyConstraints({
             advanced: [{ torch: nextTorch } as any],
           });
@@ -359,7 +336,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     }
   };
 
-  const handleProcessScan = async (rawCode: string) => {
+  const handleProcessScan = async (
+    rawCode: string,
+    source: 'camera' | 'manual' = 'camera'
+  ) => {
     let cleanCode = rawCode.replace(/[\x00-\x1F\x7F-\x9F\uFFFD]/g, '').trim();
     if (!cleanCode) return;
 
@@ -381,7 +361,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     }
 
     const now = Date.now();
-    const SCAN_COOLDOWN_MS = 800;
+    const SCAN_COOLDOWN_MS = 1400;
 
     if (
       lastScannedRef.current.code.toUpperCase() === cleanCode.toUpperCase() &&
@@ -461,6 +441,16 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         const existingItem = currentCart.find(
           (item) => item.product.id === scannedProduct.id
         );
+
+        // Camera barcode scan should scan each product only once while already selected in cart
+        if (existingItem && source === 'camera') {
+          toast.info(
+            `"${scannedProduct.productName}" is already selected in cart. Adjust quantity using + / - buttons.`,
+            { toastId: `already-selected-${scannedProduct.id}` }
+          );
+          return;
+        }
+
         const currentQty = existingItem ? existingItem.quantity : 0;
         const targetQty = currentQty + 1;
 
@@ -474,6 +464,23 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
         playBeepSound();
         triggerSuccessAnimation();
+
+        const nextCart = (() => {
+          const existingIdx = currentCart.findIndex(
+            (item) => item.product.id === scannedProduct.id
+          );
+          if (existingIdx > -1) {
+            const updated = [...currentCart];
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              quantity: targetQty,
+              product: scannedProduct,
+            };
+            return updated;
+          }
+          return [...currentCart, { product: scannedProduct, quantity: 1 }];
+        })();
+        productCartRef.current = nextCart;
 
         setProductCart((prev) => {
           const existingIdx = prev.findIndex(
@@ -556,6 +563,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     }
   };
 
+  // Update scan mode dynamically without tearing down active camera stream
+  useEffect(() => {
+    scannerRef.current?.setMode(scanMode);
+  }, [scanMode]);
+
   // Camera Lifecycle
   useEffect(() => {
     if (!isOpen) {
@@ -574,101 +586,63 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
     const initScanner = async () => {
       await forceStopCamera();
-      // Allow camera driver 200ms to cleanly release sensor lock
-      await new Promise((r) => setTimeout(r, 200));
+      // Allow camera driver 150ms to cleanly release sensor lock
+      await new Promise((r) => setTimeout(r, 150));
       if (isCancelled || isExitingRef.current) return;
 
       const element = document.getElementById(qrRegionId);
       if (!element || isCancelled || isExitingRef.current) return;
 
       try {
-        const formatsToSupport = [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.UPC_A,
-        ];
+        const scanner = new CameraBarcodeScanner();
+        scannerRef.current = scanner;
 
-        const html5QrCode = new Html5Qrcode(qrRegionId, {
-          verbose: false,
-          formatsToSupport,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
-        });
-        scannerRef.current = html5QrCode;
-
-        // Use facingMode string constraint to select primary front or rear lens cleanly
-        const cameraConfig: any = selectedCameraId
-          ? { deviceId: { exact: selectedCameraId } }
-          : { facingMode };
-
-        // Dynamic low-end device optimization: mobile and Capacitor devices run at 14fps 960x540
-        // to avoid CPU throttling on budget chipsets, while desktop remains at full 1280x720 20fps.
         const isMobileOrCapacitor =
           Capacitor.isNativePlatform() ||
           (typeof window !== 'undefined' && window.innerWidth < 1024);
 
-        const scanConfig = {
-          fps: isBatterySaver ? 10 : isMobileOrCapacitor ? 14 : 20,
-          videoConstraints: {
-            facingMode: selectedCameraId ? undefined : facingMode,
-            width: { ideal: isMobileOrCapacitor ? 960 : 1280 },
-            height: { ideal: isMobileOrCapacitor ? 540 : 720 },
-          },
-        };
+        const targetFps = isBatterySaver ? 8 : isMobileOrCapacitor ? 10 : 12;
 
         try {
-          await html5QrCode.start(
-            cameraConfig,
-            scanConfig,
-            async (decodedText) => {
-              if (!isCancelled && !isExitingRef.current) {
-                await handleProcessScan(decodedText.trim());
+          await scanner.start({
+            containerId: qrRegionId,
+            mode: scanModeRef.current,
+            deviceId: selectedCameraId || undefined,
+            facingMode,
+            fps: targetFps,
+            onStreamReady: ({
+              hasTorch,
+              activeDeviceId,
+              cameras: detectedCameras,
+            }) => {
+              if (isCancelled || isExitingRef.current) return;
+              setHasTorchCapability(hasTorch);
+              if (detectedCameras.length > 0) {
+                setCameras(detectedCameras);
+              }
+              if (activeDeviceId) {
+                setActiveCameraId(activeDeviceId);
               }
             },
-            () => {}
-          );
+            onDecode: async (decodedText) => {
+              if (!isCancelled && !isExitingRef.current) {
+                await handleProcessScan(decodedText.trim(), 'camera');
+              }
+            },
+          });
         } catch (startErr) {
-          // If a specific deviceId or exact facingMode was rejected, fallback to generic constraint
-          console.warn('Initial camera start failed, retrying fallback:', startErr);
-          await html5QrCode.start(
-            { facingMode },
-            {
-              fps: isBatterySaver ? 10 : isMobileOrCapacitor ? 14 : 20,
-              videoConstraints: {
-                width: { ideal: isMobileOrCapacitor ? 960 : 1280 },
-                height: { ideal: isMobileOrCapacitor ? 540 : 720 },
-              },
-            },
-            async (decodedText) => {
-              if (!isCancelled && !isExitingRef.current) {
-                await handleProcessScan(decodedText.trim());
-              }
-            },
-            () => {}
-          );
+          if (selectedCameraId) {
+            setSelectedCameraId('');
+            localStorage.removeItem('preferred_camera_id');
+            return;
+          }
+          throw startErr;
         }
 
         if (isCancelled || isExitingRef.current) {
           await forceStopCamera();
           return;
         }
-
-        try {
-          const videoElement = document.querySelector(
-            `#${qrRegionId} video`
-          ) as HTMLVideoElement | null;
-          if (videoElement && videoElement.srcObject) {
-            const stream = videoElement.srcObject as MediaStream;
-            const track = stream.getVideoTracks()[0];
-            if (track && track.getCapabilities) {
-              const capabilities = track.getCapabilities() as any;
-              setHasTorchCapability(Boolean(capabilities?.torch));
-            }
-          }
-        } catch {}
       } catch (err) {
         if (!isCancelled) {
           if (selectedCameraId) {
@@ -702,18 +676,31 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim() || isProcessing) return;
-    await handleProcessScan(manualCode);
+    await handleProcessScan(manualCode, 'manual');
     setManualCode('');
   };
 
   const handleCameraChange = (cameraId: string) => {
     setSelectedCameraId(cameraId);
-    localStorage.setItem('preferred_camera_id', cameraId);
+    try {
+      if (cameraId) {
+        localStorage.setItem('preferred_camera_id', cameraId);
+      } else {
+        localStorage.removeItem('preferred_camera_id');
+      }
+    } catch {}
   };
 
   const handleCycleCamera = () => {
     if (isSwitchingCamera) return;
     setIsSwitchingCamera(true);
+    if (cameras.length > 1) {
+      const currentId = activeCameraId || selectedCameraId;
+      const idx = cameras.findIndex((c) => c.id === currentId);
+      const nextCam = cameras[(idx + 1) % cameras.length];
+      handleCameraChange(nextCam.id);
+      return;
+    }
     setSelectedCameraId('');
     localStorage.removeItem('preferred_camera_id');
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
@@ -1010,7 +997,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed inset-0 z-[15000] bg-slate-950/95 dark:bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
+            className="fixed inset-0 z-[15000] bg-slate-950/[0.97] dark:bg-black/[0.97] flex flex-col items-center justify-between p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] overflow-y-auto font-sans select-none"
           >
             <div
               id="scanner-hidden-file-reader"
@@ -1481,7 +1468,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                   initial={{ opacity: 0, y: -16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
-                  className="w-full max-w-lg flex items-center justify-between px-3.5 py-2 bg-slate-900/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl shrink-0 z-10"
+                  className="w-full max-w-lg flex items-center justify-between px-3.5 py-2 bg-slate-900/95 dark:bg-zinc-900/95 rounded-2xl border border-white/10 shadow-2xl shrink-0 z-10"
                 >
                   <div className="flex items-center gap-2.5">
                     <div
@@ -1551,7 +1538,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                 </motion.div>
 
                 {/* SCAN MODE TOGGLE BAR */}
-                <div className="w-full max-w-xs mt-2 mb-1 flex items-center p-1 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-lg z-10">
+                <div className="w-full max-w-xs mt-2 mb-1 flex items-center p-1 bg-zinc-900/95 border border-white/10 rounded-2xl shadow-lg z-10">
                   <button
                     type="button"
                     onClick={() => setScanMode('qr')}
@@ -1581,22 +1568,14 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
                 {/* CENTER VIEWPORT */}
                 <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-1 gap-2.5 min-h-0">
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{
-                      opacity: 1,
-                      scale: 1,
+                  <div
+                    style={{
                       boxShadow:
                         scanFeedback === 'success'
                           ? '0 0 50px rgba(16, 185, 129, 0.5)'
                           : scanMode === 'barcode'
                             ? '0 0 40px rgba(245, 158, 11, 0.25)'
                             : '0 0 40px rgba(6, 182, 212, 0.25)',
-                    }}
-                    transition={{
-                      layout: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
-                      duration: 0.25,
                     }}
                     className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 w-full ${
                       isCartExpanded
@@ -1689,7 +1668,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                               duration: scanMode === 'barcode' ? 1.0 : 1.5,
                               ease: 'easeInOut',
                             }}
-                            className={`absolute left-2 right-2 h-0.5 rounded-full ${
+                            className={`absolute left-2 right-2 h-0.5 rounded-full will-change-transform ${
                               scanMode === 'barcode'
                                 ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_20px_#f59e0b]'
                                 : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_20px_#22d3ee]'
@@ -1701,7 +1680,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 
                     {!isCartExpanded && (
                       <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0 shadow-lg">
+                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0 shadow-lg">
                           <span
                             className={`w-2 h-2 rounded-full ${
                               isProcessing
@@ -1718,16 +1697,17 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           </span>
                         </div>
 
-                        <div className="pointer-events-auto flex items-center gap-1.5">
+                        <div className="pointer-events-auto flex items-center gap-1.5 min-w-0">
                           {cameras.length > 1 && (
-                            <div className="hidden sm:flex items-center bg-black/75 backdrop-blur-md border border-white/15 rounded-xl px-2 py-1 shadow-md">
-                              <Camera className="w-3.5 h-3.5 text-cyan-400 mr-1.5 shrink-0" />
+                            <div className="flex items-center bg-black/80 border border-white/15 rounded-full px-2.5 py-1 shadow-md max-w-36 sm:max-w-44">
+                              <Camera className="w-3 h-3 text-cyan-400 mr-1.5 shrink-0" />
                               <select
-                                value={selectedCameraId}
+                                value={selectedCameraId || activeCameraId || cameras[0]?.id || ''}
                                 onChange={(e) =>
                                   handleCameraChange(e.target.value)
                                 }
-                                className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer max-w-40 truncate"
+                                className="bg-transparent text-white text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer w-full truncate"
+                                title="Select Camera Device"
                               >
                                 {cameras.map((cam, idx) => (
                                   <option
@@ -1749,7 +1729,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                               e.stopPropagation();
                               handleCycleCamera();
                             }}
-                            className={`px-3 py-1 rounded-full bg-black/75 hover:bg-black/90 backdrop-blur-md text-white border border-white/15 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md ${
+                            className={`px-3 py-1 rounded-full bg-black/80 hover:bg-black/95 text-white border border-white/15 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md shrink-0 ${
                               isSwitchingCamera ? 'opacity-50 cursor-wait' : ''
                             }`}
                             title="Flip / Switch Camera"
@@ -1762,9 +1742,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             <span>
                               {isSwitchingCamera
                                 ? 'Switching...'
-                                : facingMode === 'user'
-                                  ? 'Front'
-                                  : 'Back'}
+                                : cameras.length > 1
+                                  ? 'Switch'
+                                  : facingMode === 'user'
+                                    ? 'Front'
+                                    : 'Back'}
                             </span>
                           </button>
                         </div>
@@ -1778,7 +1760,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 1.2 }}
                           transition={{ duration: 0.25 }}
-                          className="absolute inset-0 bg-emerald-500/35 backdrop-blur-[2px] flex items-center justify-center pointer-events-none z-20"
+                          className="absolute inset-0 bg-emerald-500/35 flex items-center justify-center pointer-events-none z-20"
                         >
                           <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_40px_#10b981] animate-bounce">
                             <Check className="w-9 h-9 stroke-3" />
@@ -1786,7 +1768,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </motion.div>
+                  </div>
 
                   {/* RECENTLY SCANNED PRODUCT BANNER */}
                   <AnimatePresence mode="wait">

@@ -10,6 +10,12 @@ import {
 } from 'lucide-react';
 import type { DashboardMetrics } from '../types';
 import { formatPHP, formatNumber } from '../dashboardService';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  Tooltip as RechartsTooltip,
+} from 'recharts';
 
 interface TopSummaryCardsProps {
   metrics: DashboardMetrics;
@@ -71,6 +77,7 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
           <div className="mt-2.5 sm:mt-3 min-w-0 space-y-1.5">
             <div className="w-20 sm:w-24 h-3 rounded bg-slate-200 dark:bg-slate-800" />
             <div className="w-24 sm:w-28 h-6 sm:h-7 rounded-lg bg-slate-200 dark:bg-slate-800" />
+            <div className="w-full h-7 rounded bg-slate-100 dark:bg-slate-800/50" />
             <div className="flex items-center justify-between pt-0.5">
               <div className="w-14 h-2.5 sm:h-3 rounded bg-slate-100 dark:bg-slate-800/60" />
               <div className="w-3 h-3 rounded bg-slate-100 dark:bg-slate-800/60" />
@@ -208,12 +215,78 @@ export const TopSummaryCards: React.FC<TopSummaryCardsProps> = ({
         </div>
 
         <div className="mt-2.5 sm:mt-3 min-w-0">
-          <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
-            Today's Gross Sales
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block truncate">
+              Today's Gross Sales
+            </span>
+            <span className="text-[9px] font-mono font-bold text-indigo-500/80 dark:text-indigo-400/80 shrink-0">
+              7D Trend
+            </span>
+          </div>
           <div className="text-lg sm:text-2xl font-black text-indigo-600 dark:text-indigo-400 font-heading mt-0.5 truncate">
             {formatPHP(metrics.todayTotalRevenue)}
           </div>
+
+          {/* 7-Day Daily Revenue Sparkline */}
+          <div
+            className="h-9 w-full mt-1.5 -mx-0.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {metrics.last7DaysRevenue && metrics.last7DaysRevenue.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={metrics.last7DaysRevenue}
+                  margin={{ top: 2, right: 2, left: 2, bottom: 2 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="summaryRevenueSparkGrad"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <RechartsTooltip
+                    cursor={{ stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '2 2' }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length > 0) {
+                        const pt = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900/95 text-white border border-slate-700/80 rounded-lg px-2 py-1 shadow-lg text-[10px] font-mono whitespace-nowrap pointer-events-none">
+                            <div className="text-slate-300 font-semibold">{pt.label}</div>
+                            <div className="font-bold text-indigo-300">
+                              {formatPHP(pt.totalRevenue)}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="totalRevenue"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#summaryRevenueSparkGrad)"
+                    isAnimationActive={false}
+                    dot={false}
+                    activeDot={{ r: 3, fill: '#6366f1', stroke: '#fff', strokeWidth: 1.5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-end pb-1">
+                <div className="w-full h-0.5 rounded-full bg-indigo-500/20" />
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-1 gap-1">
             <span className="truncate">
               POS: {formatPHP(metrics.todaySalesRevenue)}

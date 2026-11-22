@@ -4,6 +4,14 @@ export type TimeRangeFilter = 'today' | 'week' | 'month' | 'year' | 'custom';
 
 export type DashboardTab = 'combined' | 'sales' | 'logbook' | 'cash' | 'reports';
 
+export interface DailySparklinePoint {
+  date: string;
+  label: string;
+  totalRevenue: number;
+  salesRevenue: number;
+  logbookRevenue: number;
+}
+
 export interface DashboardMetrics {
   activeMembersCount: number;
   totalMembersCount: number;
@@ -21,6 +29,7 @@ export interface DashboardMetrics {
   lowStockCount: number;
   outOfStockCount: number;
   newMembersThisMonth: number;
+  last7DaysRevenue?: DailySparklinePoint[];
 }
 
 export interface AttendanceHourData {

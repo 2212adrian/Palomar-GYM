@@ -23,11 +23,13 @@ import {
   type DecryptedValidatedBackup,
 } from './utils/encryptedCsvBackup';
 import type { DuplicateAction } from './utils/csvDataMigration';
+import defaultLogo from '../../assets/icon.png';
 import {
   Database,
   ShieldAlert,
   RefreshCw,
   Calendar,
+  CalendarDays,
   Info,
   Archive,
   PlusCircle,
@@ -43,6 +45,16 @@ import {
   FileLock2,
   CheckCircle2,
   XCircle,
+  Eye,
+  Search,
+  Building,
+  Target,
+  Clock,
+  Trophy,
+  CreditCard,
+  Smartphone,
+  Percent,
+  User,
 } from 'lucide-react';
 
 interface BackupItem {
@@ -64,6 +76,14 @@ export const DatabaseBackup: React.FC = () => {
   // Manual Backup Dialog State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [backupNotes, setBackupNotes] = useState<string>('');
+
+  // Backup Relevance & Contents Inspector Modal State
+  const [inspectTarget, setInspectTarget] = useState<BackupItem | null>(null);
+  const [inspectPayload, setInspectPayload] = useState<Record<string, any[]> | null>(null);
+  const [isInspectLoading, setIsInspectLoading] = useState<boolean>(false);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [selectedInspectTable, setSelectedInspectTable] = useState<string>('sales');
+  const [inspectSearch, setInspectSearch] = useState<string>('');
 
   // Restore Modal State
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState<boolean>(false);
@@ -286,13 +306,143 @@ export const DatabaseBackup: React.FC = () => {
     return () => clearInterval(timer);
   }, [isRestoreModalOpen]);
 
-  const handleCreateBackup = async () => {
-    if (activeSession) {
-      toast.error(
-        'Cannot create a database backup while a cash session is active. Please close the cash drawer first.'
+  const HIDDEN_BACKUP_OVERVIEW_TABLES = new Set([
+    'app_releases',
+    'audit_logs',
+    'online_registrations',
+    'gym_profile',
+    'gym_profile_settings',
+    'migration_audit_logs',
+    'receipts',
+    'sync_conflicts',
+    'system_config',
+    'system_config_flags',
+    'revenue_goals',
+    'rates_config',
+    'rates_payments_config',
+  ]);
+
+  const BACKUP_TABLE_LABELS: Record<string, { label: string; group: string }> = {
+    sales: { label: 'Sales & POS Records', group: 'Core' },
+    attendance: { label: 'Logbook & Check-Ins', group: 'Core' },
+    members: { label: 'Member List', group: 'Core' },
+    products: { label: 'Product List & Stock', group: 'Core' },
+    stock_movements: { label: 'Stock Movements', group: 'Core' },
+    subscriptions: { label: 'Subscriptions & Plans', group: 'Core' },
+    cash_sessions: { label: 'Cash Drawer Sessions', group: 'Ledger' },
+    cash_transactions: { label: 'Cash In / Out Movements', group: 'Ledger' },
+    cards: { label: 'Physical NFC / QR Cards', group: 'Operations' },
+    member_cards: { label: 'Assigned Member Cards', group: 'Operations' },
+    profiles: { label: 'Staff Profiles & Roles', group: 'System' },
+    incident_reports: { label: 'Incident Reports', group: 'Operations' },
+  };
+
+  const PRIORITY_INSPECT_TABLES = [
+    'sales',
+    'attendance',
+    'members',
+    'products',
+    'stock_movements',
+    'subscriptions',
+    'cash_sessions',
+    'cash_transactions',
+    'member_cards',
+    'cards',
+    'incident_reports',
+    'profiles',
+  ];
+
+  const EXCLUDED_IMPORTANT_ITEMS = [
+    {
+      title: 'Auth Logins & Passwords (auth.users)',
+      reason: 'Managed directly by Supabase Auth; not stored inside public table JSON snapshots.',
+    },
+    {
+      title: 'Uploaded Avatars & Logos (Storage)',
+      reason: 'Image blobs and stored backup files live in object storage buckets rather than table rows.',
+    },
+    {
+      title: 'Backup Archive Index (database_backups)',
+      reason: 'Skipped intentionally to prevent recursive snapshots inside each backup file.',
+    },
+    {
+      title: 'Unsynced Offline Browser Vault',
+      reason: 'Pending offline entries on a device are not included until synced to Supabase.',
+    },
+  ];
+
+  const handleInspectBackup = async (backup: BackupItem) => {
+    setInspectTarget(backup);
+    setInspectPayload(null);
+    setInspectError(null);
+    setInspectSearch('');
+    setIsInspectLoading(true);
+
+    try {
+      let rawPayload: any = null;
+
+      const { data: dbRow } = await supabase
+        .from('database_backups')
+        .select('*')
+        .eq('id', backup.id)
+        .maybeSingle();
+
+      const candidatePayload =
+        dbRow?.payload ?? (dbRow as any)?.backup_data ?? null;
+
+      if (candidatePayload) {
+        rawPayload =
+          typeof candidatePayload === 'string'
+            ? JSON.parse(candidatePayload)
+            : candidatePayload;
+      } else if (backup.filename) {
+        const { data: blobData, error: storageErr } = await supabase.storage
+          .from('backups')
+          .download(backup.filename);
+        if (storageErr) throw storageErr;
+        if (blobData) {
+          const text = await blobData.text();
+          rawPayload = JSON.parse(text);
+        }
+      }
+
+      if (!rawPayload || typeof rawPayload !== 'object') {
+        throw new Error('Backup snapshot payload is empty or unavailable.');
+      }
+
+      const normalized: Record<string, any[]> = {};
+      Object.entries(rawPayload).forEach(([key, val]) => {
+        if (Array.isArray(val)) {
+          normalized[key] = val;
+        }
+      });
+
+      setInspectPayload(normalized);
+
+      const visibleKeys = Object.keys(normalized).filter(
+        (k) => !HIDDEN_BACKUP_OVERVIEW_TABLES.has(k)
       );
-      return;
+      const firstPopulated =
+        PRIORITY_INSPECT_TABLES.find(
+          (k) =>
+            !HIDDEN_BACKUP_OVERVIEW_TABLES.has(k) &&
+            normalized[k] &&
+            normalized[k].length > 0
+        ) ||
+        visibleKeys.find((k) => normalized[k].length > 0) ||
+        visibleKeys[0] ||
+        'sales';
+      setSelectedInspectTable(firstPopulated);
+    } catch (err: any) {
+      setInspectError(
+        err?.message || 'Unable to load backup contents for preview.'
+      );
+    } finally {
+      setIsInspectLoading(false);
     }
+  };
+
+  const handleCreateBackup = async () => {
     try {
       setIsCreating(true);
       const customNoteText = backupNotes.trim() || 'Manual recovery point';
@@ -976,7 +1126,21 @@ export const DatabaseBackup: React.FC = () => {
       headerClassName: 'text-right',
       cellClassName: 'text-right',
       render: (b) => (
-        <div className="flex items-center justify-end gap-2 sm:gap-2.5">
+        <div
+          className="flex items-center justify-end gap-2 sm:gap-2.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Open Backup Overview */}
+          <button
+            type="button"
+            onClick={() => handleInspectBackup(b)}
+            className="px-2.5 py-1.5 bg-blue-500/10 hover:bg-blue-600 text-blue-600 dark:text-blue-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-blue-500/20 whitespace-nowrap flex items-center gap-1"
+            title="Open Backup Overview"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>View</span>
+          </button>
+
           {/* Exposed Archive / Unarchive Button */}
           {b.type !== 'archived' ? (
             <button
@@ -1203,7 +1367,7 @@ export const DatabaseBackup: React.FC = () => {
               Active Cash Session Detected
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-              A cash session is currently open. You must close the active cash drawer session before performing database backups or system restorations.
+              A cash session is currently open. Saving backups remains available, while restoring snapshots or importing encrypted data requires closing the active cash drawer session first.
             </p>
           </div>
         </div>
@@ -1310,22 +1474,10 @@ export const DatabaseBackup: React.FC = () => {
             </button>
 
             <button
-              disabled={!!activeSession}
-              onClick={() => {
-                if (activeSession) {
-                  toast.error(
-                    'Please close the active cash session before saving a backup.'
-                  );
-                  return;
-                }
-                setIsCreateModalOpen(true);
-              }}
-              title={
-                activeSession
-                  ? 'Close the active cash session before saving a backup'
-                  : undefined
-              }
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10 disabled:opacity-40 disabled:cursor-not-allowed"
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              title="Save a database backup checkpoint anytime"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-heading tracking-widest uppercase rounded-lg transition-all cursor-pointer shadow-lg shadow-emerald-600/10"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               SAVE TODAY'S BACKUP
@@ -1543,6 +1695,7 @@ export const DatabaseBackup: React.FC = () => {
             itemsPerPage={responsiveItemsPerPage}
             loading={isLoading}
             loadingLabel="Loading backup records..."
+            onRowClick={(b) => handleInspectBackup(b)}
           />
         </div>
 
@@ -1594,7 +1747,8 @@ export const DatabaseBackup: React.FC = () => {
               return (
                 <div
                   key={b.id}
-                  className="p-4 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-3 shadow-xs text-left"
+                  onClick={() => handleInspectBackup(b)}
+                  className="p-4 rounded-2xl border border-(--border-color) bg-(--bg-card) space-y-3 shadow-xs text-left cursor-pointer hover:border-blue-500/40 transition-all"
                 >
                   {/* Header: Icon, Date Title & PHT timestamp */}
                   <div className="flex items-start gap-3">
@@ -1646,7 +1800,19 @@ export const DatabaseBackup: React.FC = () => {
                   </div>
 
                   {/* Actions Row */}
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-(--border-color)">
+                  <div
+                    className="flex items-center justify-between gap-2 pt-2 border-t border-(--border-color)"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleInspectBackup(b)}
+                      className="py-1.5 px-2.5 bg-blue-500/10 hover:bg-blue-600 text-blue-600 dark:text-blue-400 hover:text-white text-[10px] font-heading tracking-wider uppercase rounded-lg transition-all cursor-pointer font-bold border border-blue-500/20 flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>View</span>
+                    </button>
+
                     {b.type !== 'archived' ? (
                       <button
                         type="button"
@@ -1783,17 +1949,8 @@ export const DatabaseBackup: React.FC = () => {
 
               <button
                 type="button"
-                disabled={!!activeSession}
-                onClick={() => {
-                  if (activeSession) {
-                    toast.error(
-                      'Please close the active cash session before saving a backup.'
-                    );
-                    return;
-                  }
-                  setIsCreateModalOpen(true);
-                }}
-                className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs font-heading font-black tracking-wider uppercase shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4 shrink-0" />
                 <span>SAVE</span>
@@ -1836,6 +1993,28 @@ export const DatabaseBackup: React.FC = () => {
               onChange={(e) => setBackupNotes(e.target.value)}
               className="w-full px-4 py-2.5 border border-(--border-color) rounded-lg text-sm bg-(--bg-page) text-(--color-text) placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
             />
+          </div>
+
+          {/* Included vs Not Included Relevance Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-heading font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 text-[10px]">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Included in Backup</span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                Sales, Logbook Check-Ins, Member List, Product List &amp; Stock Movements, Subscriptions, Cash Sessions &amp; Movements, Assigned Cards, Staff Profiles, Gym Profile, Revenue Goals, and Rates &amp; Tax Config.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-heading font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 text-[10px]">
+                <XCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Not Included</span>
+              </div>
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                Auth passwords &amp; OAuth tokens, Storage photos/avatars, Backup history table, and unsynced offline browser items.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
@@ -2128,7 +2307,7 @@ export const DatabaseBackup: React.FC = () => {
           }
         }}
         title="Import Encrypted Backup Data"
-        className="max-w-2xl w-full"
+        className="max-w-2xl w-full p-6 sm:p-8"
       >
         <form
           onSubmit={handleConfirmEncryptedImport}
@@ -2406,6 +2585,875 @@ export const DatabaseBackup: React.FC = () => {
             )}
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: Backup Overview */}
+      <Modal
+        isOpen={Boolean(inspectTarget)}
+        onClose={() => {
+          setInspectTarget(null);
+          setInspectPayload(null);
+          setInspectError(null);
+        }}
+        title="Backup Overview"
+        className="max-w-4xl w-full text-left p-6 sm:p-8"
+      >
+        {inspectTarget && (() => {
+          const isUuidValue = (val: unknown): boolean => {
+            if (typeof val !== 'string') return false;
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              val.trim()
+            );
+          };
+
+          const formatPhtDateOnly = (raw?: string | null): string => {
+            if (!raw) return '—';
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return String(raw).slice(0, 10);
+            return d.toLocaleDateString('en-US', {
+              timeZone: 'Asia/Manila',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            });
+          };
+
+          const formatPhtDateTime = (raw?: string | null): string => {
+            if (!raw) return '—';
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return String(raw).slice(0, 16);
+            return d.toLocaleString('en-US', {
+              timeZone: 'Asia/Manila',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            });
+          };
+
+          const formatDenominationsSummary = (row: any): string => {
+            const rawDenom =
+              row?.closing_denominations ??
+              row?.closing_breakdown ??
+              row?.denominations ??
+              row?.cash_breakdown ??
+              row?.opening_denominations;
+            if (!rawDenom) return '';
+            let obj: any = rawDenom;
+            if (typeof rawDenom === 'string') {
+              try {
+                obj = JSON.parse(rawDenom);
+              } catch {
+                return '';
+              }
+            }
+            if (!obj || typeof obj !== 'object') return '';
+
+            const labelMap: Record<string, { label: string; value: number }> = {
+              bill_1000: { label: '₱1,000', value: 1000 },
+              bill_500: { label: '₱500', value: 500 },
+              bill_200: { label: '₱200', value: 200 },
+              bill_100: { label: '₱100', value: 100 },
+              bill_50: { label: '₱50', value: 50 },
+              bill_20: { label: '₱20', value: 20 },
+              coin_20: { label: '₱20c', value: 20 },
+              coin_10: { label: '₱10', value: 10 },
+              coin_5: { label: '₱5', value: 5 },
+              coin_1: { label: '₱1', value: 1 },
+              coin_025: { label: '25¢', value: 0.25 },
+              '1000': { label: '₱1,000', value: 1000 },
+              '500': { label: '₱500', value: 500 },
+              '200': { label: '₱200', value: 200 },
+              '100': { label: '₱100', value: 100 },
+              '50': { label: '₱50', value: 50 },
+              '20': { label: '₱20', value: 20 },
+              '10': { label: '₱10', value: 10 },
+              '5': { label: '₱5', value: 5 },
+              '1': { label: '₱1', value: 1 },
+              '0.25': { label: '25¢', value: 0.25 },
+            };
+
+            const parts: string[] = [];
+            let totalCounted = 0;
+            Object.entries(obj).forEach(([k, v]) => {
+              const count = Number(v || 0);
+              if (count > 0) {
+                const meta = labelMap[k];
+                if (meta) {
+                  parts.push(`${meta.label}×${count}`);
+                  totalCounted += meta.value * count;
+                } else if (!isNaN(Number(k))) {
+                  parts.push(`₱${k}×${count}`);
+                  totalCounted += Number(k) * count;
+                }
+              }
+            });
+
+            if (parts.length === 0) return '';
+            return `Denoms: ${parts.join(', ')} (₱${totalCounted.toLocaleString('en-PH', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })})`;
+          };
+
+          // Build relationship lookup maps from snapshot rows to replace every UUID with real names
+          const memberMap = new Map<string, any>();
+          (inspectPayload?.members || []).forEach((m: any) => {
+            if (m?.member_id) memberMap.set(String(m.member_id), m);
+            if (m?.id) memberMap.set(String(m.id), m);
+          });
+
+          const productMap = new Map<string, any>();
+          (inspectPayload?.products || []).forEach((p: any) => {
+            if (p?.id) productMap.set(String(p.id), p);
+            if (p?.barcode_id) productMap.set(String(p.barcode_id), p);
+          });
+
+          const profileMap = new Map<string, any>();
+          (inspectPayload?.profiles || []).forEach((p: any) => {
+            if (p?.id) profileMap.set(String(p.id), p);
+          });
+
+          const sessionMap = new Map<string, any>();
+          (inspectPayload?.cash_sessions || []).forEach((s: any) => {
+            if (s?.id) sessionMap.set(String(s.id), s);
+          });
+
+          const tableEntries = inspectPayload
+            ? Object.entries(inspectPayload)
+                .filter(([tableName]) => !HIDDEN_BACKUP_OVERVIEW_TABLES.has(tableName))
+                .sort(([a], [b]) => {
+                  const idxA = PRIORITY_INSPECT_TABLES.indexOf(a);
+                  const idxB = PRIORITY_INSPECT_TABLES.indexOf(b);
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return a.localeCompare(b);
+                })
+            : [];
+
+          const totalIncludedRecords = tableEntries.reduce(
+            (sum, [, rows]) => sum + rows.length,
+            0
+          );
+
+          const formatCellPreview = (row: any) => {
+            if (!row || typeof row !== 'object') {
+              return { title: String(row), subtitle: '', right: '' };
+            }
+
+            if (selectedInspectTable === 'sales') {
+              const prod = productMap.get(String(row.product_id || ''));
+              const prodName =
+                (!isUuidValue(row.product_name) && row.product_name) ||
+                prod?.product_name ||
+                'POS Sale';
+              const actorName =
+                (!isUuidValue(row.processed_by_name) && row.processed_by_name) ||
+                profileMap.get(String(row.processed_by || ''))?.username ||
+                '';
+              const qtyLabel = row.quantity ? `${row.quantity}× ` : '';
+              return {
+                title: `${qtyLabel}${prodName}`,
+                subtitle: `${row.receipt_no || 'No Receipt'} • ${row.payment_method || 'Cash'}${actorName ? ` • By ${actorName}` : ''}${row.created_at ? ` • ${formatPhtDateTime(row.created_at)}` : ''}${row.deleted_at ? ' • [In Recycle Bin]' : ''}`,
+                right: `₱${Number(row.total_amount || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'attendance') {
+              const member = memberMap.get(String(row.member_id || ''));
+              const customerName =
+                (!isUuidValue(row.customer_name) && row.customer_name) ||
+                member?.full_name ||
+                'Walk-In Guest';
+              return {
+                title: customerName,
+                subtitle: `${row.customer_type || 'Entry'} • ${row.payment_method || 'Cash'}${row.created_at ? ` • ${formatPhtDateTime(row.created_at)}` : ''}${row.deleted_at ? ' • [In Recycle Bin]' : ''}`,
+                right: `₱${Number(row.entry_fee || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'members') {
+              return {
+                title: row.full_name || 'Member',
+                subtitle: `${row.member_id || 'No Member ID'} • ${row.phone || 'No phone'} • ${row.status || 'Active'}`,
+                right: row.membership_plan || row.customer_type || '',
+              };
+            }
+
+            if (selectedInspectTable === 'products') {
+              return {
+                title: row.product_name || 'Product',
+                subtitle: `Barcode: ${row.barcode_id || 'N/A'} • Stock: ${row.stock_quantity ?? row.stock ?? 0}${row.category ? ` • ${row.category}` : ''}`,
+                right: `₱${Number(row.selling_price || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'stock_movements') {
+              const prod = productMap.get(String(row.product_id || ''));
+              const prodName =
+                (!isUuidValue(row.product_name) && row.product_name) ||
+                prod?.product_name ||
+                'Product Stock Adjustment';
+              const actorName =
+                (!isUuidValue(row.created_by_name) && row.created_by_name) ||
+                profileMap.get(String(row.created_by || ''))?.username ||
+                'Staff';
+              const qtyDelta = Number(row.quantity_added ?? 0);
+              const signedQty = `${qtyDelta >= 0 ? '+' : ''}${qtyDelta}`;
+              const moveLabel = String(row.movement_type || 'RESTOCK').toUpperCase();
+              const noteText =
+                row.note && !isUuidValue(row.note) ? ` • "${row.note}"` : '';
+              return {
+                title: `${prodName} (${moveLabel})`,
+                subtitle: `Stock: ${row.previous_stock ?? 0} → ${row.new_stock ?? 0} • By ${actorName}${noteText}${row.created_at ? ` • ${formatPhtDateTime(row.created_at)}` : ''}`,
+                right: `${signedQty} units`,
+              };
+            }
+
+            if (selectedInspectTable === 'subscriptions') {
+              const member = memberMap.get(String(row.member_id || ''));
+              const memberName =
+                (!isUuidValue(row.member_name) && row.member_name) ||
+                (!isUuidValue(row.customer_name) && row.customer_name) ||
+                member?.full_name ||
+                '';
+              const planLabel = String(row.plan_type || 'Subscription').toUpperCase();
+              return {
+                title: memberName
+                  ? `${memberName} — ${planLabel} Plan`
+                  : `${planLabel} Plan (${row.member_id || 'Member'})`,
+                subtitle: `${row.member_id || ''}${row.receipt_number ? ` • ${row.receipt_number}` : ''} • ${row.status || 'Active'} • ${formatPhtDateOnly(row.start_date)} → ${formatPhtDateOnly(row.end_date)} • ${row.payment_method || 'Cash'}`,
+                right: `₱${Number(row.price || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'cash_sessions') {
+              const openedDate = formatPhtDateTime(row.opened_at || row.created_at);
+              const closedLabel = row.closed_at
+                ? `Closed ${formatPhtDateTime(row.closed_at)}`
+                : 'Open Session';
+              const denomSummary = formatDenominationsSummary(row);
+              const titleLabel = row.session_number
+                ? `Session #${row.session_number} • ${formatPhtDateOnly(row.opened_at || row.created_at)}`
+                : `Cash Session • ${formatPhtDateOnly(row.opened_at || row.created_at)}`;
+              return {
+                title: titleLabel,
+                subtitle: `Opened: ${openedDate} • ${closedLabel} • By ${row.opened_by_name || 'Staff'}${denomSummary ? ` • ${denomSummary}` : ' • No denomination count'}`,
+                right:
+                  row.closing_actual_cash !== null &&
+                  row.closing_actual_cash !== undefined
+                    ? `Float ₱${Number(row.opening_float || 0).toFixed(2)} → ₱${Number(row.closing_actual_cash).toFixed(2)}`
+                    : `Float ₱${Number(row.opening_float || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'cash_transactions') {
+              const typeMap: Record<string, string> = {
+                cash_in: 'Cash In',
+                cash_out: 'Cash Out',
+                digital_in: 'Digital In',
+              };
+              const typeLabel = typeMap[row.type] || String(row.type || 'Movement').toUpperCase();
+              const rawReason =
+                (!isUuidValue(row.reason) && row.reason) ||
+                (!isUuidValue(row.description) && row.description) ||
+                (!isUuidValue(row.notes) && row.notes) ||
+                (!isUuidValue(row.category) && row.category) ||
+                '';
+              const linkedSession = sessionMap.get(String(row.session_id || ''));
+              const actorName =
+                (!isUuidValue(row.performed_by_name) && row.performed_by_name) ||
+                profileMap.get(String(row.performed_by || ''))?.username ||
+                'Staff';
+              const sessionTag = linkedSession?.session_number
+                ? ` • Session #${linkedSession.session_number}`
+                : '';
+              const refTag =
+                row.reference_number && !isUuidValue(row.reference_number)
+                  ? ` • Ref: ${row.reference_number}`
+                  : '';
+              return {
+                title: rawReason ? `${typeLabel}: ${rawReason}` : typeLabel,
+                subtitle: `${String(row.status || 'completed').toUpperCase()} • By ${actorName}${sessionTag}${refTag}${row.created_at ? ` • ${formatPhtDateTime(row.created_at)}` : ''}`,
+                right: `${row.type === 'cash_out' ? '-' : '+'}₱${Number(row.amount || 0).toFixed(2)}`,
+              };
+            }
+
+            if (selectedInspectTable === 'member_cards') {
+              const member = memberMap.get(String(row.member_id || ''));
+              const memberName =
+                (!isUuidValue(row.member_name) && row.member_name) ||
+                (!isUuidValue(row.full_name) && row.full_name) ||
+                member?.full_name ||
+                '';
+              return {
+                title: memberName
+                  ? `${memberName} (${row.member_id || ''})`
+                  : `Member ${row.member_id || 'Card'}`,
+                subtitle: `${row.card_type || 'QR'} Card v${row.version ?? 1} • ${row.status || 'Active'} • Payment: ${row.payment_status || 'PAID'} • Claim: ${row.claim_status || 'UNCLAIMED'}${row.issued_at ? ` • Issued ${formatPhtDateOnly(row.issued_at)}` : ''}`,
+                right:
+                  row.card_fee_paid !== null && row.card_fee_paid !== undefined
+                    ? `₱${Number(row.card_fee_paid).toFixed(2)}`
+                    : row.status || '',
+              };
+            }
+
+            if (selectedInspectTable === 'cards') {
+              const member = memberMap.get(String(row.member_id || ''));
+              const holderName =
+                (!isUuidValue(row.holder_name) && row.holder_name) ||
+                (!isUuidValue(row.member_name) && row.member_name) ||
+                member?.full_name ||
+                '';
+              const cardCode =
+                (!isUuidValue(row.card_code) && row.card_code) ||
+                (!isUuidValue(row.card_number) && row.card_number) ||
+                'Physical Card';
+              return {
+                title: holderName ? `${holderName} — ${cardCode}` : cardCode,
+                subtitle: `${row.card_type || 'QR/NFC'} • ${row.status || 'Available'}${row.issued_at ? ` • ${formatPhtDateOnly(row.issued_at)}` : ''}`,
+                right: row.status || '',
+              };
+            }
+
+            if (selectedInspectTable === 'profiles') {
+              return {
+                title: row.username || row.email || 'Staff Account',
+                subtitle: `${row.email || 'No email'} • Role: ${String(row.role || 'staff').toUpperCase()} • Status: ${String(row.status || 'active').toUpperCase()}`,
+                right: row.created_at ? formatPhtDateOnly(row.created_at) : '',
+              };
+            }
+
+            if (selectedInspectTable === 'incident_reports') {
+              const actorName =
+                (!isUuidValue(row.reported_by_name) && row.reported_by_name) ||
+                profileMap.get(String(row.reported_by || ''))?.username ||
+                '';
+              return {
+                title: row.title || row.subject || row.category || 'Incident Report',
+                subtitle: `Status: ${row.status || 'Unread'}${actorName ? ` • By ${actorName}` : ''}${row.created_at ? ` • ${formatPhtDateTime(row.created_at)}` : ''}`,
+                right: row.severity || row.status || '',
+              };
+            }
+
+            // Generic non-UUID fallback for any remaining table
+            const readableEntries = Object.entries(row).filter(
+              ([k, v]) =>
+                k !== 'id' &&
+                !k.endsWith('_id') &&
+                v !== null &&
+                v !== undefined &&
+                v !== '' &&
+                !isUuidValue(v)
+            );
+            const fallbackTitleCandidate =
+              (!isUuidValue(row.name) && row.name) ||
+              (!isUuidValue(row.username) && row.username) ||
+              (!isUuidValue(row.title) && row.title) ||
+              (!isUuidValue(row.reason) && row.reason) ||
+              (!isUuidValue(row.description) && row.description) ||
+              (readableEntries[0] ? String(readableEntries[0][1]) : 'Record');
+
+            return {
+              title: String(fallbackTitleCandidate),
+              subtitle: readableEntries
+                .slice(0, 3)
+                .map(([k, v]) => `${k}: ${String(v).slice(0, 32)}`)
+                .join(' • '),
+              right: row.created_at ? formatPhtDateOnly(row.created_at) : '',
+            };
+          };
+
+          const activeRows = HIDDEN_BACKUP_OVERVIEW_TABLES.has(selectedInspectTable)
+            ? []
+            : inspectPayload?.[selectedInspectTable] || [];
+
+          const filteredRows = activeRows.filter((row) => {
+            if (!inspectSearch.trim()) return true;
+            const q = inspectSearch.trim().toLowerCase();
+            const preview = formatCellPreview(row);
+            if (
+              preview.title.toLowerCase().includes(q) ||
+              preview.subtitle.toLowerCase().includes(q) ||
+              preview.right.toLowerCase().includes(q)
+            ) {
+              return true;
+            }
+            try {
+              return JSON.stringify(row).toLowerCase().includes(q);
+            } catch {
+              return false;
+            }
+          });
+
+          // Extract 1-row configuration objects for formal layout display
+          const gymProfileRow =
+            inspectPayload?.gym_profile?.[0] ||
+            inspectPayload?.gym_profile_settings?.[0] ||
+            null;
+          const revenueGoalsRow = inspectPayload?.revenue_goals?.[0] || null;
+          const ratesConfigRow =
+            inspectPayload?.rates_config?.[0] ||
+            inspectPayload?.rates_payments_config?.[0] ||
+            null;
+
+          return (
+            <div className="space-y-5 font-body text-left">
+              {/* Header Info Strip */}
+              <div className="p-3.5 rounded-2xl bg-(--bg-page) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="min-w-0">
+                  <div className="font-heading font-bold text-sm text-(--color-text) truncate">
+                    {inspectTarget.notes || inspectTarget.filename}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    {new Date(inspectTarget.created_at).toLocaleString('en-US', {
+                      timeZone: 'Asia/Manila',
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}{' '}
+                    (PHT) • {formatSize(inspectTarget.size_bytes)}
+                  </div>
+                </div>
+                {inspectPayload && (
+                  <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono font-bold text-[10px] shrink-0">
+                    {tableEntries.length} Datasets • {totalIncludedRecords} Records
+                  </span>
+                )}
+              </div>
+
+              {isInspectLoading ? (
+                <div className="p-10 flex flex-col items-center justify-center gap-2 text-xs text-slate-400 font-mono">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                  <span>Reading backup snapshot payload...</span>
+                </div>
+              ) : inspectError ? (
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-500 font-semibold">
+                  {inspectError}
+                </div>
+              ) : inspectPayload ? (
+                <>
+                  {/* Included vs Not Included Comparison */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    {/* Included */}
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/25 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 font-heading font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 text-[10px]">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>Included Datasets ({tableEntries.length})</span>
+                        </span>
+                      </div>
+                      <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+                        {tableEntries.map(([tableName, rows]) => {
+                          const meta = BACKUP_TABLE_LABELS[tableName];
+                          const isSelected = selectedInspectTable === tableName;
+                          return (
+                            <button
+                              key={tableName}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInspectTable(tableName);
+                                setInspectSearch('');
+                              }}
+                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] transition-all cursor-pointer border ${
+                                isSelected
+                                  ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-xs'
+                                  : 'bg-white/70 dark:bg-white/5 border-(--border-color) text-(--color-text) hover:border-emerald-500/40'
+                              }`}
+                            >
+                              <span className="truncate">
+                                {meta?.label || tableName.replace(/_/g, ' ')}
+                              </span>
+                              <span
+                                className={`font-mono text-[10px] px-1.5 py-0.2 rounded ${
+                                  isSelected
+                                    ? 'bg-white/20 text-white'
+                                    : rows.length > 0
+                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
+                                      : 'bg-slate-200 dark:bg-white/10 text-slate-500'
+                                }`}
+                              >
+                                {rows.length}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Not Included */}
+                    <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/25 space-y-2.5">
+                      <div className="flex items-center gap-1.5 font-heading font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 text-[10px]">
+                        <XCircle className="w-4 h-4 shrink-0" />
+                        <span>Not Included (Important Exclusions)</span>
+                      </div>
+                      <div className="space-y-2">
+                        {EXCLUDED_IMPORTANT_ITEMS.map((item) => (
+                          <div
+                            key={item.title}
+                            className="p-2 rounded-lg bg-white/70 dark:bg-white/5 border border-(--border-color) space-y-0.5"
+                          >
+                            <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                              {item.title}
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                              {item.reason}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Inside Snapshot Preview Explorer */}
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h5 className="text-xs font-heading font-black uppercase tracking-wider text-(--color-text)">
+                          Inside:{' '}
+                          {BACKUP_TABLE_LABELS[selectedInspectTable]?.label ||
+                            selectedInspectTable.replace(/_/g, ' ')}{' '}
+                          ({filteredRows.length})
+                        </h5>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Click any included dataset above to inspect stored records.
+                        </p>
+                      </div>
+                      <div className="relative w-full sm:w-56">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={inspectSearch}
+                          onChange={(e) => setInspectSearch(e.target.value)}
+                          placeholder="Search inside table..."
+                          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-[11px] text-(--color-text) outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto rounded-xl border border-(--border-color) bg-(--bg-page) divide-y divide-(--border-color)">
+                      {filteredRows.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400 font-mono">
+                          No records stored in "{BACKUP_TABLE_LABELS[selectedInspectTable]?.label || selectedInspectTable}" for this snapshot.
+                        </div>
+                      ) : (
+                        filteredRows.slice(0, 50).map((row, idx) => {
+                          const preview = formatCellPreview(row);
+                          return (
+                            <div
+                              key={row.id || idx}
+                              className="p-2.5 px-3 flex items-center justify-between gap-3 text-xs hover:bg-slate-100/50 dark:hover:bg-white/[0.02]"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-semibold text-(--color-text) truncate">
+                                  {preview.title}
+                                </div>
+                                <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                                  {preview.subtitle}
+                                </div>
+                              </div>
+                              {preview.right && (
+                                <span className="font-mono font-bold text-xs text-emerald-600 dark:text-emerald-400 shrink-0 text-right">
+                                  {preview.right}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Formal Configuration & Goals Layouts (Single-Row Snapshots) */}
+                  {(gymProfileRow || revenueGoalsRow || ratesConfigRow) && (
+                    <div className="space-y-4 pt-2 border-t border-(--border-color)">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-heading font-black uppercase tracking-wider text-(--color-text)">
+                          Formal System &amp; Rate Configuration Snapshot
+                        </h5>
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                          Restored automatically with snapshot
+                        </span>
+                      </div>
+
+                      {/* 1. Formal Gym Profile Settings */}
+                      {gymProfileRow && (
+                        <div className="p-4 sm:p-5 bg-slate-50/50 dark:bg-neutral-900/20 border border-slate-200 dark:border-white/10 rounded-2xl space-y-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <h6 className="text-xs font-heading tracking-wider uppercase text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                              <Building className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              <span>Gym Profile Settings</span>
+                            </h6>
+                            <div className="w-10 h-10 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#13161a] flex items-center justify-center overflow-hidden shrink-0">
+                              <img
+                                src={gymProfileRow.gym_logo || defaultLogo}
+                                alt="Snapshot Gym Logo"
+                                className="w-full h-full object-contain p-1"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Gym Name
+                              </span>
+                              <span className="font-bold text-slate-900 dark:text-slate-100 block truncate">
+                                {gymProfileRow.gym_name || 'WOLF PALOMAR GYM'}
+                              </span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Business Email
+                              </span>
+                              <span className="font-mono text-slate-900 dark:text-slate-100 block truncate">
+                                {gymProfileRow.email_address || '—'}
+                              </span>
+                            </div>
+                            <div className="sm:col-span-2 p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Physical Address
+                              </span>
+                              <span className="text-slate-800 dark:text-slate-200 block">
+                                {gymProfileRow.gym_address || '—'}
+                              </span>
+                            </div>
+                            <div className="sm:col-span-2 p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Gym Description
+                              </span>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {gymProfileRow.gym_description || '—'}
+                              </p>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Primary Contact (1)
+                              </span>
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+                                {gymProfileRow.contact_name_1 || 'Contact 1'}
+                              </span>
+                              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 block">
+                                {gymProfileRow.contact_number_1 || '—'}
+                              </span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-white dark:bg-[#13161a] border border-slate-200/80 dark:border-white/10 space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Secondary Contact (2)
+                              </span>
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+                                {gymProfileRow.contact_name_2 || 'Contact 2'}
+                              </span>
+                              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 block">
+                                {gymProfileRow.contact_number_2 || '—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. Formal Revenue Goals (4-Card Themed Grid matching RevenueGoalsPage) */}
+                      {revenueGoalsRow && (
+                        <div className="p-4 sm:p-5 bg-white dark:bg-[#161920] border border-slate-200/80 dark:border-slate-800 rounded-2xl space-y-3.5">
+                          <h6 className="text-xs font-heading tracking-wider uppercase text-slate-900 dark:text-white flex items-center gap-2">
+                            <Target className="w-4 h-4 text-[#123c73] dark:text-blue-400" />
+                            <span>Revenue Goals</span>
+                          </h6>
+
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 space-y-1.5">
+                              <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400">
+                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  Daily Target
+                                </span>
+                              </div>
+                              <div className="text-base font-black font-mono text-slate-900 dark:text-white">
+                                ₱{Number(revenueGoalsRow.daily || 0).toLocaleString('en-PH')}
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200/80 dark:border-sky-800/50 space-y-1.5">
+                              <div className="flex items-center justify-between text-sky-700 dark:text-sky-400">
+                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                                  <CalendarDays className="w-3.5 h-3.5" />
+                                  Weekly Target
+                                </span>
+                              </div>
+                              <div className="text-base font-black font-mono text-slate-900 dark:text-white">
+                                ₱{Number(revenueGoalsRow.weekly || 0).toLocaleString('en-PH')}
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/50 space-y-1.5">
+                              <div className="flex items-center justify-between text-blue-700 dark:text-blue-400">
+                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  Monthly Target
+                                </span>
+                              </div>
+                              <div className="text-base font-black font-mono text-slate-900 dark:text-white">
+                                ₱{Number(revenueGoalsRow.monthly || 0).toLocaleString('en-PH')}
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/50 space-y-1.5">
+                              <div className="flex items-center justify-between text-amber-700 dark:text-amber-400">
+                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                                  <Trophy className="w-3.5 h-3.5" />
+                                  Yearly Target
+                                </span>
+                              </div>
+                              <div className="text-base font-black font-mono text-slate-900 dark:text-white">
+                                ₱{Number(revenueGoalsRow.yearly || 0).toLocaleString('en-PH')}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 3. Formal Rates & Payments Config (matching RatesPayments.tsx) */}
+                      {ratesConfigRow && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
+                            <h6 className="text-xs font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
+                              <CreditCard className="w-4 h-4 text-(--color-primary-light)" />
+                              <span>Membership Plan Rates</span>
+                            </h6>
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                  Monthly Plan Rate
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.monthly_rate ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                  Yearly Registration
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.yearly_rate ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
+                            <h6 className="text-xs font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
+                              <User className="w-4 h-4 text-(--color-primary-light)" />
+                              <span>Walk-In Daily Fees</span>
+                            </h6>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">
+                                  Regular
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.regular_walk_in ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">
+                                  Student
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.student_walk_in ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">
+                                  Yearly Daily
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.yearly_walk_in ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
+                            <h6 className="text-xs font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
+                              <Smartphone className="w-4 h-4 text-(--color-primary-light)" />
+                              <span>Additional Charges</span>
+                            </h6>
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                  GCash Surcharge
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.gcash_fee ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                                <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                  New Card Fee
+                                </span>
+                                <span className="font-mono font-bold text-sm text-(--color-text)">
+                                  ₱{Number(ratesConfigRow.new_card_fee ?? 0).toLocaleString('en-PH')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-(--bg-page) border border-(--border-color) rounded-2xl space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h6 className="text-xs font-heading tracking-wider uppercase text-(--color-text) flex items-center gap-2">
+                                <Percent className="w-4 h-4 text-(--color-primary-light)" />
+                                <span>VAT Settings</span>
+                              </h6>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-heading font-bold uppercase ${
+                                  ratesConfigRow.vat_enabled
+                                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                    : 'bg-slate-200 dark:bg-white/10 text-slate-500'
+                                }`}
+                              >
+                                {ratesConfigRow.vat_enabled ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-(--bg-card) border border-(--border-color)">
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                VAT Percentage (%)
+                              </span>
+                              <span className="font-mono font-bold text-sm text-(--color-text)">
+                                {Number(ratesConfigRow.vat_percentage ?? 0)}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : null}
+
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-between items-stretch sm:items-center gap-2 pt-1">
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Read-only snapshot inspection (live database unchanged)
+                </span>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setInspectTarget(null);
+                      setInspectPayload(null);
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

@@ -26,7 +26,12 @@ import {
   BellRing,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Html5Qrcode } from 'html5-qrcode';
+import {
+  CameraBarcodeScanner,
+  listVideoCameras,
+  stopMediaStreamTracks,
+  type CameraDeviceInfo,
+} from '../../../lib/cameraScanner';
 import { supabase } from '../../../lib/supabase/client';
 import { useBatterySaver } from '../../../hooks/useBatterySaver';
 import { getCachedImageUrl } from '../../../lib/cacheUtils';
@@ -147,11 +152,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   );
 
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
-    []
-  );
+  const [cameras, setCameras] = useState<CameraDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const html5QrCodeRef = useRef<CameraBarcodeScanner | null>(null);
 
   const [isMultiAddMode, setIsMultiAddMode] = useState(false);
   const [stagedItems, setStagedItems] = useState<any[]>([]);
@@ -353,7 +356,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   useEffect(() => {
     if (showLiveScanner) {
-      Html5Qrcode.getCameras()
+      listVideoCameras()
         .then((devices) => {
           if (devices && devices.length > 0) {
             setCameras(devices);
@@ -363,7 +366,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 d.label.toLowerCase().includes('rear') ||
                 d.label.toLowerCase().includes('environment')
             );
-            setSelectedCameraId(backCam ? backCam.id : devices[0].id);
+            setSelectedCameraId((prev) => prev || (backCam ? backCam.id : devices[0].id));
           }
         })
         .catch((err) => console.warn('Camera enumeration error:', err));
@@ -375,34 +378,28 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     isStartingRef.current = true;
 
     const targetCam = cameraList[camIdx % cameraList.length];
+    setSelectedCameraId(targetCam.id);
 
     try {
-      if (html5QrCodeRef.current?.isScanning) {
+      if (html5QrCodeRef.current) {
         await html5QrCodeRef.current.stop();
-        try {
-          html5QrCodeRef.current.clear();
-        } catch (e) {}
       }
 
-      const qrReader = new Html5Qrcode('product-form-qr-reader');
-      html5QrCodeRef.current = qrReader;
+      const scanner = new CameraBarcodeScanner();
+      html5QrCodeRef.current = scanner;
 
-      await qrReader.start(
-        targetCam.id,
-        {
-          fps: isBatterySaver ? 10 : 25,
-          qrbox: (w, h) => ({
-            width: Math.min(Math.floor(w * 0.88), 360),
-            height: Math.min(Math.floor(h * 0.5), 160),
-          }),
-          videoConstraints: {
-            deviceId: { exact: targetCam.id },
-            width: { ideal: isBatterySaver ? 640 : 1280 },
-            height: { ideal: isBatterySaver ? 480 : 720 },
-            facingMode: 'environment',
-          },
+      await scanner.start({
+        containerId: 'product-form-qr-reader',
+        mode: 'barcode',
+        deviceId: targetCam.id,
+        facingMode: 'environment',
+        fps: isBatterySaver ? 10 : 20,
+        onStreamReady: ({ cameras: detected }) => {
+          if (detected.length > 0) {
+            setCameras(detected);
+          }
         },
-        (decodedText) => {
+        onDecode: (decodedText) => {
           setFormManufacturerBarcode(decodedText);
           setCombinedInput(decodedText);
           checkRecycleBinForBarcode(decodedText);
@@ -410,13 +407,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           toast.success(`Scanned: ${decodedText}`);
           setShowLiveScanner(false);
         },
-        () => {}
-      );
+      });
     } catch (err) {
       console.warn(`Camera feed failure on camera ${targetCam.id}:`, err);
       if (camIdx === 0 && cameraList.length > 1) {
         isStartingRef.current = false;
-        setTimeout(() => startCameraWithFallback(1, cameraList), 250);
+        setTimeout(() => startCameraWithFallback(1, cameraList), 200);
       } else {
         toast.error('Unable to access camera feed.');
         setShowLiveScanner(false);
@@ -434,29 +430,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     return () => {
       isStartingRef.current = false;
       if (html5QrCodeRef.current) {
-        if (html5QrCodeRef.current.isScanning) {
-          html5QrCodeRef.current
-            .stop()
-            .then(() => {
-              try {
-                html5QrCodeRef.current?.clear();
-              } catch (e) {}
-            })
-            .catch(console.error);
-        } else {
-          try {
-            html5QrCodeRef.current.clear();
-          } catch (e) {}
-        }
+        const instance = html5QrCodeRef.current;
+        html5QrCodeRef.current = null;
+        void instance.stop();
       }
+      stopMediaStreamTracks('product-form-qr-reader');
     };
   }, [showLiveScanner, cameras.length]);
 
   const handleCapturePhotoFromCamera = () => {
     try {
-      const videoEl = document.querySelector(
-        '#product-form-qr-reader video'
-      ) as HTMLVideoElement;
+      const videoEl =
+        html5QrCodeRef.current?.getVideoElement() ||
+        (document.querySelector(
+          '#product-form-qr-reader video'
+        ) as HTMLVideoElement | null);
       if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
         toast.error('Camera feed is still initializing.');
         return;

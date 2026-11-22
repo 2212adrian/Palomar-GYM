@@ -1944,6 +1944,7 @@ export const LogbookPage: React.FC = () => {
               paymentMethod: stagedLog.paymentMethod,
               timestamp: stagedLog.timestamp,
               deletedAt: deletedIso,
+              deletedBy: user?.id || null,
               isCard: isCardRecord(stagedLog),
             },
           });

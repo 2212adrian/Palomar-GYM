@@ -31,7 +31,13 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import {
+  CameraBarcodeScanner,
+  getFriendlyCameraError,
+  listVideoCameras,
+  stopMediaStreamTracks,
+  type CameraDeviceInfo,
+} from '../../../lib/cameraScanner';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { useAuthStore } from '../../../stores/authStore';
@@ -132,16 +138,7 @@ const playBeepSound = () => {
   }
 };
 
-const getCameraErrorMessage = (err: any): string => {
-  const msg = typeof err === 'string' ? err : err?.message || String(err || '');
-  const lower = msg.toLowerCase();
-  if (lower.includes('notallowederror') || lower.includes('permission'))
-    return 'Permission denied by browser';
-  if (lower.includes('notreadableerror') || lower.includes('in use'))
-    return 'Camera is busy or in use';
-  if (lower.includes('notfounderror')) return 'Camera hardware not found';
-  return msg || 'Camera initialization failed';
-};
+const getCameraErrorMessage = getFriendlyCameraError;
 
 const extractCleanMemberId = (rawCode: string): string => {
   let cleaned = (rawCode || '').trim();
@@ -419,11 +416,15 @@ export const LogbookRecordAttendance: React.FC<
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>(
     'environment'
   );
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
-    []
-  );
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const [cameras, setCameras] = useState<CameraDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('preferred_camera_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const scannerRef = useRef<CameraBarcodeScanner | null>(null);
   const isProcessingScanRef = useRef(false);
   const lastScannedTimeRef = useRef(0);
 
@@ -446,37 +447,13 @@ export const LogbookRecordAttendance: React.FC<
   const [isRatesLoading, setIsRatesLoading] = useState(true);
   const [ratesError, setRatesError] = useState<string | null>(null);
 
-  const stopAllCameraTracks = () => {
+  const stopAllCameraTracks = useCallback(() => {
     if (scannerRef.current) {
-      if (scannerRef.current.isScanning) {
-        scannerRef.current
-          .stop()
-          .then(() => {
-            try {
-              scannerRef.current?.clear();
-            } catch (e) {}
-          })
-          .catch(() => {});
-      } else {
-        try {
-          scannerRef.current.clear();
-        } catch (e) {}
-      }
+      void scannerRef.current.stop().catch(() => {});
       scannerRef.current = null;
     }
-
-    const videoElements = document.querySelectorAll('video');
-    videoElements.forEach((video) => {
-      if (video.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => {
-          track.stop();
-          track.enabled = false;
-        });
-        video.srcObject = null;
-      }
-    });
-  };
+    stopMediaStreamTracks('live-qr-reader');
+  }, []);
 
   useEffect(() => {
     if (selectedClient) {
@@ -1068,37 +1045,53 @@ export const LogbookRecordAttendance: React.FC<
       return;
     }
 
-    Html5Qrcode.getCameras()
+    listVideoCameras()
       .then((devices) => {
         if (devices && devices.length > 0) {
           setCameras(devices);
 
-          const backCam = devices.find((d) => {
-            const label = d.label.toLowerCase();
-            return (
-              label.includes('back') ||
-              label.includes('rear') ||
-              label.includes('environment') ||
-              label.includes('facing back')
-            );
+          setSelectedCameraId((prev) => {
+            if (prev && devices.some((d) => d.id === prev)) {
+              return prev;
+            }
+            const backCam = devices.find((d) => {
+              const label = d.label.toLowerCase();
+              return (
+                label.includes('back') ||
+                label.includes('rear') ||
+                label.includes('environment') ||
+                label.includes('facing back')
+              );
+            });
+            return backCam ? backCam.id : devices[0].id;
           });
-
-          const defaultCameraId = backCam ? backCam.id : devices[0].id;
-          setSelectedCameraId(defaultCameraId);
         }
       })
       .catch((err) => console.warn('Camera list error:', err));
-  }, [isOpen, showLiveScanner]);
+  }, [isOpen, showLiveScanner, stopAllCameraTracks]);
 
   const handleCycleCamera = () => {
     isProcessingScanRef.current = false;
     stopAllCameraTracks();
-    setSelectedCameraId('');
-    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+
+    if (cameras.length > 1) {
+      const idx = cameras.findIndex((c) => c.id === selectedCameraId);
+      const next = cameras[(idx + 1) % cameras.length];
+      setSelectedCameraId(next.id);
+      try {
+        localStorage.setItem('preferred_camera_id', next.id);
+      } catch {
+        // ignore storage error
+      }
+      toast.info(`Switched to ${next.label}`, { autoClose: 1400 });
+    } else {
+      setSelectedCameraId('');
+      setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+    }
   };
 
   useEffect(() => {
-    let html5QrCode: Html5Qrcode | null = null;
+    let scanner: CameraBarcodeScanner | null = null;
     let isCancelled = false;
 
     if (!isOpen || !showLiveScanner) {
@@ -1112,61 +1105,50 @@ export const LogbookRecordAttendance: React.FC<
       const element = document.getElementById('live-qr-reader');
       if (!element || isCancelled) return;
 
-      try {
-        const formatsToSupport = [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.UPC_A,
-        ];
+      scanner = new CameraBarcodeScanner();
+      scannerRef.current = scanner;
 
-        html5QrCode = new Html5Qrcode('live-qr-reader', {
-          verbose: false,
-          formatsToSupport,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
-        });
-        scannerRef.current = html5QrCode;
-
-        const cameraConfig: any = selectedCameraId
-          ? { deviceId: { exact: selectedCameraId } }
-          : { facingMode };
-
-        html5QrCode
-          .start(
-            cameraConfig,
-            {
-              fps: isBatterySaver ? 12 : 20,
-              videoConstraints: {
-                facingMode: selectedCameraId ? undefined : facingMode,
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-              },
-            },
-            (decodedText) => {
-              handleBarcodeOrQrScanned(decodedText);
-            },
-            () => {}
-          )
-          .catch((err) => {
-            if (!isCancelled) {
-              const reason = getCameraErrorMessage(err);
-              toast.error(`Camera Error: ${reason}`);
-              setShowLiveScanner(false);
-              stopAllCameraTracks();
+      scanner
+        .start({
+          containerId: 'live-qr-reader',
+          mode: 'hybrid',
+          deviceId: selectedCameraId || undefined,
+          facingMode,
+          fps: isBatterySaver ? 10 : 18,
+          onStreamReady: ({ cameras: listedCameras, activeDeviceId }) => {
+            if (isCancelled) return;
+            if (listedCameras.length > 0) {
+              setCameras(listedCameras);
             }
-          });
-      } catch (e) {
-        console.error('Attendance scanner init error:', e);
-      }
-    }, 200);
+            if (activeDeviceId) {
+              setSelectedCameraId((prev) => prev || activeDeviceId);
+            }
+          },
+          onDecode: (decodedText) => {
+            if (!isCancelled) {
+              handleBarcodeOrQrScanned(decodedText);
+            }
+          },
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            const reason = getCameraErrorMessage(err);
+            toast.error(`Camera Error: ${reason}`);
+            setShowLiveScanner(false);
+            stopAllCameraTracks();
+          }
+        });
+    }, 150);
 
     return () => {
       isCancelled = true;
       clearTimeout(timer);
-      stopAllCameraTracks();
+      if (scanner) {
+        void scanner.stop().catch(() => {});
+      }
+      if (scannerRef.current === scanner) {
+        scannerRef.current = null;
+      }
     };
   }, [
     isOpen,
@@ -1175,6 +1157,7 @@ export const LogbookRecordAttendance: React.FC<
     facingMode,
     handleBarcodeOrQrScanned,
     isBatterySaver,
+    stopAllCameraTracks,
   ]);
 
   const handleMemberSearchChange = (val: string) => {

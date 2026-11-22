@@ -59,8 +59,6 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     incidentUnreadCount,
     stockAlertsCount,
     expiringSubsCount,
-    salesRecycleBinCount,
-    logbookRecycleBinCount,
     unreadIncidents,
     stockAlertProducts,
     expiringMembers,
@@ -77,8 +75,10 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
     markBadgeSeen,
   } = useNotificationStore();
 
+  const recycleSalesAlertCount = recycleBinSales.length;
+  const recycleLogbookAlertCount = recycleBinLogbook.length;
   const recycleCount = isAdmin
-    ? salesRecycleBinCount + logbookRecycleBinCount
+    ? recycleSalesAlertCount + recycleLogbookAlertCount
     : 0;
 
   const totalNotifications =
@@ -781,7 +781,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                             Recycle Bin (Sales &amp; Logbooks)
                           </span>
                           <div className="flex items-center gap-2">
-                            {salesRecycleBinCount > 0 && (
+                            {recycleSalesAlertCount > 0 && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -791,11 +791,11 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                 }
                                 className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
                               >
-                                Sales ({salesRecycleBinCount}){' '}
+                                Sales ({recycleSalesAlertCount}){' '}
                                 <ChevronRight className="w-3 h-3" />
                               </button>
                             )}
-                            {logbookRecycleBinCount > 0 && (
+                            {recycleLogbookAlertCount > 0 && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -805,7 +805,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
                                 }
                                 className="text-[9px] font-heading font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white uppercase flex items-center gap-0.5 cursor-pointer"
                               >
-                                Logbooks ({logbookRecycleBinCount}){' '}
+                                Logbooks ({recycleLogbookAlertCount}){' '}
                                 <ChevronRight className="w-3 h-3" />
                               </button>
                             )}

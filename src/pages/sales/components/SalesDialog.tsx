@@ -11,7 +11,13 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import {
+  CameraBarcodeScanner,
+  getFriendlyCameraError,
+  listVideoCameras,
+  stopMediaStreamTracks,
+  type CameraDeviceInfo,
+} from '../../../lib/cameraScanner';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
@@ -36,16 +42,7 @@ interface CartItem {
   quantity: number | '';
 }
 
-const getCameraErrorMessage = (err: any): string => {
-  const msg = typeof err === 'string' ? err : err?.message || String(err || '');
-  const lower = msg.toLowerCase();
-  if (lower.includes('notallowederror') || lower.includes('permission'))
-    return 'Permission denied by browser';
-  if (lower.includes('notreadableerror') || lower.includes('in use'))
-    return 'Camera is busy or in use';
-  if (lower.includes('notfounderror')) return 'Camera hardware not found';
-  return msg || 'Camera initialization failed';
-};
+const getCameraErrorMessage = getFriendlyCameraError;
 
 export const SalesDialog: React.FC<SalesDialogProps> = ({
   isOpen,
@@ -70,11 +67,10 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   // Live Camera & Scanner State
   const [showLiveScanner, setShowLiveScanner] = useState(false);
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
-    []
-  );
+  const [cameras, setCameras] = useState<CameraDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRef = useRef<CameraBarcodeScanner | null>(null);
+  const cameraScanHandledRef = useRef<boolean>(false);
 
   const isSubmittingRef = useRef(false);
 
@@ -92,34 +88,11 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
 
   const stopAllCameraTracks = () => {
     if (scannerRef.current) {
-      if (scannerRef.current.isScanning) {
-        scannerRef.current
-          .stop()
-          .then(() => {
-            try {
-              scannerRef.current?.clear();
-            } catch (e) {}
-          })
-          .catch(() => {});
-      } else {
-        try {
-          scannerRef.current.clear();
-        } catch (e) {}
-      }
+      const instance = scannerRef.current;
       scannerRef.current = null;
+      void instance.stop();
     }
-
-    const videoElements = document.querySelectorAll('video');
-    videoElements.forEach((video) => {
-      if (video.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => {
-          track.stop();
-          track.enabled = false;
-        });
-        video.srcObject = null;
-      }
-    });
+    stopMediaStreamTracks('sales-qr-reader');
   };
 
   // Fetch rates configurations
@@ -176,9 +149,9 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       return;
     }
 
-    Html5Qrcode.getCameras()
+    listVideoCameras()
       .then((devices) => {
-        if (devices && devices.length > 0) {
+        if (devices.length > 0) {
           setCameras(devices);
 
           const backCam = devices.find((d) => {
@@ -191,8 +164,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
             );
           });
 
-          const defaultCameraId = backCam ? backCam.id : devices[0].id;
-          setSelectedCameraId(defaultCameraId);
+          setSelectedCameraId((prev) => prev || (backCam ? backCam.id : devices[0].id));
         }
       })
       .catch((err) => {
@@ -208,7 +180,7 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     setSelectedCameraId(cameras[nextIndex].id);
   };
 
-  const handleBarcodeScanned = (code: string) => {
+  const handleBarcodeScanned = (code: string, fromCamera = false) => {
     const trimmed = code.trim();
     if (!trimmed) return;
 
@@ -226,15 +198,28 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
     });
 
     if (exactMatch) {
+      const alreadyInCart = cart.some(
+        (item) => item.product.id === exactMatch.id
+      );
+      if (fromCamera && alreadyInCart) {
+        toast.info(
+          `${getProductName(exactMatch)} is already selected in cart.`,
+          { toastId: `sales-already-cart-${exactMatch.id}` }
+        );
+        return;
+      }
       playBeepSound();
       handleAddToCart(exactMatch);
       toast.info(`Added ${getProductName(exactMatch)} to cart.`);
+    } else if (fromCamera) {
+      toast.warning(`Scanned barcode "${trimmed}" — no active product matched.`, {
+        toastId: 'sales-barcode-no-match',
+      });
     }
   };
 
   // Live Camera Scanner lifecycle
   useEffect(() => {
-    let html5QrCode: Html5Qrcode | null = null;
     let isCancelled = false;
 
     if (!isOpen || !showLiveScanner) {
@@ -246,81 +231,59 @@ export const SalesDialog: React.FC<SalesDialogProps> = ({
       const element = document.getElementById('sales-qr-reader');
       if (!element || isCancelled) return;
 
-      try {
-        html5QrCode = new Html5Qrcode('sales-qr-reader', {
-          verbose: false,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.UPC_A,
-          ],
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
+      const scanner = new CameraBarcodeScanner();
+      scannerRef.current = scanner;
+      cameraScanHandledRef.current = false;
+
+      scanner
+        .start({
+          containerId: 'sales-qr-reader',
+          mode: 'hybrid',
+          deviceId: selectedCameraId || undefined,
+          facingMode: 'environment',
+          fps: isBatterySaver ? 10 : 20,
+          onStreamReady: ({ cameras: detectedCameras }) => {
+            if (!isCancelled && detectedCameras.length > 0) {
+              setCameras(detectedCameras);
+            }
           },
-        });
-        scannerRef.current = html5QrCode;
-
-        const cameraConfig = selectedCameraId
-          ? { deviceId: { exact: selectedCameraId } }
-          : { facingMode: 'environment' };
-
-        html5QrCode
-          .start(
-            cameraConfig,
-            {
-              fps: isBatterySaver ? 10 : 25,
-              qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
-                width: Math.min(Math.floor(viewfinderWidth * 0.88), 380),
-                height: Math.min(Math.floor(viewfinderHeight * 0.45), 160),
-              }),
-              videoConstraints: {
-                ...cameraConfig,
-                width: { ideal: isBatterySaver ? 640 : 1280 },
-                height: { ideal: isBatterySaver ? 480 : 720 },
-                facingMode: 'environment',
-              },
-            },
-            (decodedText) => {
-              handleBarcodeScanned(decodedText);
+          onDecode: (decodedText) => {
+            if (isCancelled || cameraScanHandledRef.current) return;
+            cameraScanHandledRef.current = true;
+            handleBarcodeScanned(decodedText, true);
+            setShowLiveScanner(false);
+            stopAllCameraTracks();
+          },
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            const reason = getCameraErrorMessage(err);
+            if (cameras.length > 1 && selectedCameraId) {
+              const currentIndex = cameras.findIndex(
+                (c) => c.id === selectedCameraId
+              );
+              const nextCamera =
+                cameras[(currentIndex + 1) % cameras.length];
+              stopAllCameraTracks();
+              setSelectedCameraId(nextCamera.id);
+              toast.info(
+                `Switching camera: ${nextCamera.label || 'Next Camera'}`
+              );
+            } else {
+              toast.error(`Camera Error: ${reason}`);
               setShowLiveScanner(false);
               stopAllCameraTracks();
-            },
-            () => {}
-          )
-          .catch((err) => {
-            if (!isCancelled) {
-              const reason = getCameraErrorMessage(err);
-              if (cameras.length > 1) {
-                const currentIndex = selectedCameraId
-                  ? cameras.findIndex((c) => c.id === selectedCameraId)
-                  : -1;
-                const nextCamera =
-                  cameras[(currentIndex + 1) % cameras.length];
-                stopAllCameraTracks();
-                setSelectedCameraId(nextCamera.id);
-                toast.info(
-                  `Switching camera: ${nextCamera.label || 'Next Camera'}`
-                );
-              } else {
-                toast.error(`Camera Error: ${reason}`);
-                setShowLiveScanner(false);
-                stopAllCameraTracks();
-              }
             }
-          });
-      } catch (e) {
-        console.error('Sales scanner init error:', e);
-      }
-    }, 250);
+          }
+        });
+    }, 150);
 
     return () => {
       isCancelled = true;
       clearTimeout(timer);
       stopAllCameraTracks();
     };
-  }, [isOpen, showLiveScanner, selectedCameraId]);
+  }, [isOpen, showLiveScanner, selectedCameraId, isBatterySaver]);
 
   const handleStartScan = () => {
     setShowLiveScanner((prev) => !prev);

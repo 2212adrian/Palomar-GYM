@@ -38,6 +38,11 @@ export const Modal: React.FC<ModalProps> = ({
   const baseZIndex = 9999;
   const computedZIndex = customZIndex ?? baseZIndex + currentDepth * 10;
 
+  const hasCustomPadding = /(?:^|\s)(?:!)?p(?:[xytrbl])?-/.test(className);
+  const resolvedClassName = hasCustomPadding
+    ? className
+    : `p-6 sm:p-8 ${className}`;
+
   const modalContent = (
     <AnimatePresence>
       {isOpen && (
@@ -59,7 +64,7 @@ export const Modal: React.FC<ModalProps> = ({
             exit={{ opacity: 0, y: 15, scale: 0.95 }}
             transition={{ duration: 0.25 }}
             /* Safe viewport bounds & center positioning */
-            className={`relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl space-y-4 font-body z-10 my-auto max-h-[85vh] sm:max-h-[90vh] overflow-y-auto ${className}`}
+            className={`relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full shadow-2xl space-y-4 font-body z-10 my-auto max-h-[85vh] sm:max-h-[90vh] overflow-y-auto ${resolvedClassName}`}
           >
             {title && (
               <h3 className="text-lg font-heading text-slate-900 dark:text-white uppercase tracking-wider">

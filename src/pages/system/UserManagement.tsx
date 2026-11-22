@@ -10,6 +10,7 @@ import { Table } from '../../components/ui/Table';
 import type { Column } from '../../components/ui/Table';
 import { toast } from 'react-toastify';
 import { AvatarImage, compressImage } from './PersonalAccount';
+import { ImageZoomModal } from '../scanner/ImageZoomModal';
 import { SUPERADMIN_EMAIL } from '../../constants/auth';
 import { buildAppUrl } from '../../lib/appUrl';
 import {
@@ -30,6 +31,10 @@ import {
   Save,
   RotateCcw,
   Sparkles,
+  History,
+  Calendar,
+  Search,
+  RefreshCw,
 } from 'lucide-react';
 import { triggerHapticButton, triggerHapticFormSuccess } from '../../lib/hapticsService';
 
@@ -47,7 +52,7 @@ interface CreatedAccountInfo {
 }
 
 export const UserManagement: React.FC = () => {
-  const { user, profile } = useAuthStore();
+  const { user, profile, onlineUserIds } = useAuthStore();
   const userRole = profile?.role || user?.app_metadata?.role || 'staff';
 
   // ─── Superadmin identity resolution (Dynamic ENV, Constant, & DB config) ──
@@ -121,12 +126,23 @@ export const UserManagement: React.FC = () => {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Online presence and quick filter state
-  const [onlineUserIds, ] = useState<Set<string>>(new Set());
+  // Quick filter state
   const [activeFilter, setActiveFilter] = useState<
     'all' | 'admin' | 'staff' | 'online' | 'offline' | 'pending' | 'disabled'
   >('all');
   const [mobileSearch, setMobileSearch] = useState<string>('');
+
+  // Zoom Image & Full User Details Modal states
+  const [zoomImage, setZoomImage] = useState<{
+    url: string;
+    title: string;
+  } | null>(null);
+  const [selectedUserDetail, setSelectedUserDetail] = useState<any | null>(
+    null
+  );
+  const [userAuditLogs, setUserAuditLogs] = useState<any[]>([]);
+  const [isLoadingUserLogs, setIsLoadingUserLogs] = useState(false);
+  const [userAuditSearch, setUserAuditSearch] = useState('');
 
   // Credential Handover Modal state
   const [createdAccount, setCreatedAccount] = useState<CreatedAccountInfo | null>(null);
@@ -136,6 +152,42 @@ export const UserManagement: React.FC = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deleteTargetUser, setDeleteTargetUser] = useState<any | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+
+  const fetchUserAuditLogs = async (targetUser: any) => {
+    if (!targetUser?.id) return;
+    try {
+      setIsLoadingUserLogs(true);
+      const cleanName = String(targetUser.username || '')
+        .replace(/"/g, '')
+        .trim();
+      const query = supabase
+        .from('audit_logs')
+        .select('id, user_id, actor_username, action, target_id, details, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      const { data, error } = cleanName
+        ? await query.or(
+            `user_id.eq.${targetUser.id},actor_username.eq."${cleanName}"`
+          )
+        : await query.eq('user_id', targetUser.id);
+
+      if (error) throw error;
+      setUserAuditLogs(data || []);
+    } catch (err) {
+      console.warn('Failed to load user audit logs:', err);
+      setUserAuditLogs([]);
+    } finally {
+      setIsLoadingUserLogs(false);
+    }
+  };
+
+  const handleOpenUserDetail = (targetUser: any) => {
+    setSelectedUserDetail(targetUser);
+    setUserAuditSearch('');
+    setUserAuditLogs([]);
+    fetchUserAuditLogs(targetUser);
+  };
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -958,7 +1010,16 @@ export const UserManagement: React.FC = () => {
         return (
           <div className="font-bold text-(--color-text) flex items-center gap-3">
             <div className="w-8 h-8 rounded-full overflow-hidden bg-(--bg-input) flex items-center justify-center text-xs border border-(--border-color) shrink-0">
-              <AvatarImage src={u.avatar_url} />
+              <AvatarImage
+                src={u.avatar_url}
+                title={`Zoom ${u.username || 'User'}'s photo`}
+                onImageClick={(resolvedUrl) =>
+                  setZoomImage({
+                    url: resolvedUrl,
+                    title: `${u.username || 'System Account'} — Profile Photo`,
+                  })
+                }
+              />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
@@ -1046,7 +1107,10 @@ export const UserManagement: React.FC = () => {
         return (
           <button
             type="button"
-            onClick={() => handleToggleUserRole(u.id, effectiveBaseRole as any)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleUserRole(u.id, effectiveBaseRole as any);
+            }}
             title="Click to toggle account role draft"
             className="hover:opacity-85 cursor-pointer text-left transition-opacity"
           >
@@ -1125,13 +1189,14 @@ export const UserManagement: React.FC = () => {
             {!isSelfUser && !isProtectedAdminAccount(u) && !isSuperAdminAccount(u) && (
               <button
                 type="button"
-                onClick={() =>
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleToggleUserStatus(
                     u.id,
                     compStatus,
                     u.role || 'staff'
-                  )
-                }
+                  );
+                }}
                 title={
                   isAccountDisabled
                     ? 'Account is Disabled. Click to enable access.'
@@ -1181,7 +1246,10 @@ export const UserManagement: React.FC = () => {
           !u.email || u.email.endsWith('@palomargym.noemail');
 
         return (
-          <div className="flex items-center justify-end gap-1.5">
+          <div
+            className="flex items-center justify-end gap-1.5"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Action 1: Edit Profile (Username & Profile Photo) */}
             {!isTargetSuperAdmin && !isProtectedAdmin && (
               <button
@@ -1371,6 +1439,7 @@ export const UserManagement: React.FC = () => {
           itemsPerPage={useResponsiveItemsPerPage()}
           loading={isLoadingUsers}
           loadingLabel="Retrieving system user profiles..."
+          onRowClick={(u) => handleOpenUserDetail(u)}
         />
       </div>
 
@@ -1423,7 +1492,8 @@ export const UserManagement: React.FC = () => {
             return (
               <div
                 key={u.id || u.username}
-                className={`p-4 rounded-2xl border transition-all bg-(--bg-card) shadow-xs ${
+                onClick={() => handleOpenUserDetail(u)}
+                className={`p-4 rounded-2xl border transition-all bg-(--bg-card) shadow-xs cursor-pointer hover:border-blue-500/40 ${
                   isAccountDisabled
                     ? 'border-red-500/25 dark:border-red-500/30'
                     : 'border-(--border-color)'
@@ -1433,7 +1503,16 @@ export const UserManagement: React.FC = () => {
                 <div className="flex items-start justify-between gap-2.5">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-(--bg-input) flex items-center justify-center text-xs border border-(--border-color) shrink-0">
-                      <AvatarImage src={u.avatar_url} />
+                      <AvatarImage
+                        src={u.avatar_url}
+                        title={`Zoom ${u.username || 'User'}'s photo`}
+                        onImageClick={(resolvedUrl) =>
+                          setZoomImage({
+                            url: resolvedUrl,
+                            title: `${u.username || 'System Account'} — Profile Photo`,
+                          })
+                        }
+                      />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1478,9 +1557,10 @@ export const UserManagement: React.FC = () => {
                     ) : (
                       <button
                         type="button"
-                        onClick={() =>
-                          handleToggleUserRole(u.id, effectiveBaseRole as any)
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleUserRole(u.id, effectiveBaseRole as any);
+                        }}
                         className="hover:opacity-85 cursor-pointer transition-opacity"
                         title="Click to toggle account role draft"
                       >
@@ -1562,13 +1642,14 @@ export const UserManagement: React.FC = () => {
                   {!isSelfUser && !isProtectedAdmin && !isTargetSuperAdmin && (
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={(e) => {
+                        e.stopPropagation();
                         handleToggleUserStatus(
                           u.id,
                           compStatus,
                           u.role || 'staff'
-                        )
-                      }
+                        );
+                      }}
                       title={
                         isAccountDisabled
                           ? 'Account is Disabled. Click to enable access.'
@@ -1590,7 +1671,10 @@ export const UserManagement: React.FC = () => {
                 </div>
 
                 {/* Mobile Action Buttons Row */}
-                <div className="mt-3 pt-2.5 border-t border-(--border-color) flex items-center justify-between gap-2">
+                <div
+                  className="mt-3 pt-2.5 border-t border-(--border-color) flex items-center justify-between gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {isSelfUser ? (
                     <span className="text-[10px] text-slate-400 font-mono">
                       Active Session (Signed In)
@@ -1715,10 +1799,26 @@ export const UserManagement: React.FC = () => {
                 <img
                   src={avatarPreviewUrl}
                   alt="Avatar Preview"
-                  className="w-full h-full object-cover"
+                  title="Click to inspect photo"
+                  onClick={() =>
+                    setZoomImage({
+                      url: avatarPreviewUrl,
+                      title: `${editUsername || 'User'} — Profile Preview`,
+                    })
+                  }
+                  className="w-full h-full object-cover cursor-zoom-in"
                 />
               ) : editTargetUser?.avatar_url && !removeExistingAvatar ? (
-                <AvatarImage src={editTargetUser.avatar_url} />
+                <AvatarImage
+                  src={editTargetUser.avatar_url}
+                  title="Click to inspect photo"
+                  onImageClick={(resolvedUrl) =>
+                    setZoomImage({
+                      url: resolvedUrl,
+                      title: `${editUsername || editTargetUser.username || 'User'} — Profile Photo`,
+                    })
+                  }
+                />
               ) : (
                 <div className="w-full h-full bg-slate-800 flex items-center justify-center text-xl font-bold text-white uppercase">
                   {editUsername ? (
@@ -2244,6 +2344,275 @@ export const UserManagement: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* Full User Profile Details & Personal Audit Logs Modal */}
+      <Modal
+        isOpen={Boolean(selectedUserDetail)}
+        onClose={() => setSelectedUserDetail(null)}
+        title="Staff Profile & Committed Audit Log"
+        className="max-w-2xl w-full text-left p-6 sm:p-8"
+      >
+        {selectedUserDetail && (() => {
+          const u = selectedUserDetail;
+          const isSelfUser = u.id === user?.id;
+          const displayEmail = (isSelfUser ? user?.email : u.email) || '—';
+          const isNoEmail = displayEmail.endsWith('@palomargym.noemail');
+          const compStatus = getComputedUserStatus(u);
+          const effectiveRole =
+            drafts[u.id]?.role ||
+            (String(u.role || 'staff').toLowerCase() === 'superadmin'
+              ? 'admin'
+              : u.role || 'staff');
+          const isTargetSuperAdmin =
+            isSuperAdminAccount(u) || isSuperAdminRow(displayEmail);
+          const isProtectedAdmin = isProtectedAdminAccount(u);
+
+          const filteredUserLogs = userAuditLogs.filter((log) => {
+            if (!userAuditSearch.trim()) return true;
+            const q = userAuditSearch.trim().toLowerCase();
+            return (
+              String(log.action || '').toLowerCase().includes(q) ||
+              String(log.details || '').toLowerCase().includes(q)
+            );
+          });
+
+          const createdLabel = u.created_at
+            ? new Date(u.created_at).toLocaleString('en-US', {
+                timeZone: 'Asia/Manila',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })
+            : 'Unavailable';
+
+          return (
+            <div className="space-y-4 font-body text-left">
+              {/* Top Profile Header Card */}
+              <div className="p-4 rounded-2xl bg-(--bg-page) border border-(--border-color) flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-(--bg-input) border border-(--border-color) flex items-center justify-center shrink-0 shadow-xs">
+                    <AvatarImage
+                      src={u.avatar_url}
+                      title="Click to inspect & zoom profile image"
+                      onImageClick={(resolvedUrl) =>
+                        setZoomImage({
+                          url: resolvedUrl,
+                          title: `${u.username || 'Staff'} — Profile Photo`,
+                        })
+                      }
+                      fallbackIcon={
+                        <User className="w-7 h-7 text-slate-400" />
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-base font-heading font-black uppercase tracking-wide text-(--color-text) truncate">
+                        {u.username || 'System Account'}
+                      </h4>
+                      {isSelfUser && (
+                        <span className="text-[9px] bg-(--color-primary) text-white rounded px-1.5 py-0.5 font-mono uppercase font-bold">
+                          YOU
+                        </span>
+                      )}
+                      <span
+                        className={`text-[9px] font-heading tracking-widest px-2 py-0.5 rounded-full uppercase font-bold ${
+                          isTargetSuperAdmin
+                            ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                            : effectiveRole === 'admin'
+                              ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                        }`}
+                      >
+                        {isTargetSuperAdmin ? 'superadmin' : effectiveRole}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      {compStatus === 'online' && (
+                        <span className="inline-flex items-center gap-1.5 text-emerald-500 font-semibold font-mono">
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span>Online Now</span>
+                        </span>
+                      )}
+                      {compStatus === 'offline' && (
+                        <span className="inline-flex items-center gap-1.5 text-slate-400 font-semibold font-mono">
+                          <span className="w-2 h-2 bg-slate-400 rounded-full shrink-0" />
+                          <span>Offline</span>
+                        </span>
+                      )}
+                      {compStatus === 'pending' && (
+                        <span className="inline-flex items-center gap-1.5 text-amber-500 font-semibold font-mono">
+                          <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0" />
+                          <span>Pending Activation</span>
+                        </span>
+                      )}
+                      {compStatus === 'disabled' && (
+                        <span className="inline-flex items-center gap-1.5 text-rose-500 font-semibold font-mono">
+                          <span className="w-2 h-2 bg-rose-500 rounded-full shrink-0" />
+                          <span>Disabled</span>
+                        </span>
+                      )}
+                      {u.avatar_url && (
+                        <span className="text-[10px] text-blue-400 font-mono">
+                          • Click photo to zoom
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!isSelfUser && !isTargetSuperAdmin && !isProtectedAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUserDetail(null);
+                      handleOpenEditProfile(u);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-(--border-color) bg-(--bg-card) hover:border-blue-500/40 text-xs font-heading font-bold uppercase tracking-wider text-(--color-text) flex items-center justify-center gap-1.5 cursor-pointer shrink-0 transition-all"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Edit Profile</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Account Metadata Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color) space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Mail className="w-3 h-3" />
+                    Login Identifier / Email
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-(--color-text) font-semibold truncate">
+                      {displayEmail}
+                    </span>
+                    {isNoEmail && (
+                      <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.2 rounded font-mono shrink-0">
+                        Local
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-(--bg-page) border border-(--border-color) space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Calendar className="w-3 h-3" />
+                    Registered / Created
+                  </span>
+                  <div className="font-mono text-(--color-text) font-semibold">
+                    {createdLabel}
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 p-2.5 rounded-xl bg-(--bg-page) border border-(--border-color) flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    User Account ID
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-400 select-all truncate">
+                    {u.id || 'Unavailable'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Committed User Audit Logs */}
+              <div className="space-y-2.5 pt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-blue-500" />
+                    <h5 className="text-xs font-heading font-black uppercase tracking-wider text-(--color-text)">
+                      Committed Audit Log ({filteredUserLogs.length})
+                    </h5>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative flex-1 sm:w-48">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={userAuditSearch}
+                        onChange={(e) => setUserAuditSearch(e.target.value)}
+                        placeholder="Filter actions..."
+                        className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-[11px] text-(--color-text) outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fetchUserAuditLogs(u)}
+                      disabled={isLoadingUserLogs}
+                      title="Refresh user audit logs"
+                      className="p-1.5 rounded-lg border border-(--border-color) bg-(--bg-page) text-slate-400 hover:text-(--color-text) cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${isLoadingUserLogs ? 'animate-spin' : ''}`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-(--border-color) bg-(--bg-page) divide-y divide-(--border-color)">
+                  {isLoadingUserLogs ? (
+                    <div className="p-6 flex items-center justify-center gap-2 text-xs text-slate-400 font-mono">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      <span>Loading committed actions...</span>
+                    </div>
+                  ) : filteredUserLogs.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400 font-mono">
+                      No audit log entries recorded for this user yet.
+                    </div>
+                  ) : (
+                    filteredUserLogs.map((log) => (
+                      <div key={log.id} className="p-3 space-y-1 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 font-mono font-bold text-[10px]">
+                            {String(log.action || 'SYSTEM_ACTION')}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 whitespace-nowrap">
+                            {log.created_at
+                              ? new Date(log.created_at).toLocaleString('en-US', {
+                                  timeZone: 'Asia/Manila',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })
+                              : ''}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                          {log.details || 'No details recorded.'}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserDetail(null)}
+                  className="px-5 py-2 rounded-xl bg-(--bg-input) text-(--color-text) text-[10px] font-heading tracking-wider uppercase hover:opacity-90 transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      <ImageZoomModal
+        isOpen={Boolean(zoomImage)}
+        onClose={() => setZoomImage(null)}
+        imageUrl={zoomImage?.url || ''}
+        title={zoomImage?.title || 'Profile Photo'}
+      />
     </div>
   );
 };

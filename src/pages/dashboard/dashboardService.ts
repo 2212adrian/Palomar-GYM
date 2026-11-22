@@ -23,6 +23,7 @@ import type {
   BirReportItem,
   TimeRangeFilter,
   SubscriptionPlanBreakdown,
+  DailySparklinePoint,
   SubscriptionBreakdownPoint,
 } from './types';
 
@@ -150,6 +151,13 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         .gte('created_at', earliestIso)
         .order('created_at', { ascending: false }),
     ]);
+
+    if (salesRes.error) {
+      console.warn('[Dashboard] Sales query error:', salesRes.error);
+    }
+    if (productsRes.error) {
+      console.warn('[Dashboard] Products query error:', productsRes.error);
+    }
 
     const members = membersRes.data || [];
     const attendance = attendanceRes.data || [];
@@ -739,7 +747,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
 
     const filteredSales = sales.filter((s) => {
       const d = new Date(s.created_at);
-      return d >= rangeStartDate && d <= now;
+      return d >= rangeStartDate && d <= todayEnd;
     });
 
     filteredSales.forEach((sale) => {
@@ -1100,6 +1108,32 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
         });
       });
 
+    const last7DaysRevenue: DailySparklinePoint[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const targetDate = subDays(now, i);
+      const daySales = sales
+        .filter((s) => isSameDay(new Date(s.created_at), targetDate))
+        .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
+      const dayAttendance = attendance
+        .filter((a) => isSameDay(new Date(a.check_in_time), targetDate))
+        .reduce((acc, a) => acc + getAttendanceFee(a), 0);
+      const daySubs = subscriptions
+        .filter((sub) => isSameDay(new Date(sub.created_at), targetDate))
+        .reduce((acc, sub) => acc + Number(sub.price || 0), 0);
+      const dayCards = standaloneCardReceipts
+        .filter((r) => isSameDay(new Date(r.created_at), targetDate))
+        .reduce((acc, r) => acc + getReceiptFee(r), 0);
+
+      const logRev = dayAttendance + daySubs + dayCards;
+      last7DaysRevenue.push({
+        date: format(targetDate, 'yyyy-MM-dd'),
+        label: format(targetDate, 'EEE (MMM d)'),
+        salesRevenue: daySales,
+        logbookRevenue: logRev,
+        totalRevenue: daySales + logRev,
+      });
+    }
+
     const metrics: DashboardMetrics = {
       activeMembersCount,
       totalMembersCount,
@@ -1117,6 +1151,7 @@ export async function fetchDashboardData(timeRange: TimeRangeFilter = 'month') {
       lowStockCount,
       outOfStockCount,
       newMembersThisMonth,
+      last7DaysRevenue,
     };
 
     // --- Subscription Plan Breakdown (Monthly vs Yearly) ---

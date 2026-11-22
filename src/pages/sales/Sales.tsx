@@ -1310,6 +1310,7 @@ export const Sales: React.FC = () => {
             payload: {
               saleId: stagedTx.id,
               deletedAt: deletedIso,
+              deletedBy: auth.user?.id || null,
               items: stagedTx.items || [],
             },
           });
@@ -1359,9 +1360,13 @@ export const Sales: React.FC = () => {
       }
 
       try {
+        const currentUserId = useAuthStore.getState().user?.id || null;
         const { error } = await supabase
           .from('sales')
-          .update({ deleted_at: new Date().toISOString() })
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: currentUserId,
+          })
           .eq('id', stagedTx.id);
 
         if (error) throw error;

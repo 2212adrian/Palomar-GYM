@@ -30,13 +30,16 @@ import {
 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { ImageZoomModal } from '../scanner/ImageZoomModal';
   
 // Exported to be reused across other user settings components
 export const AvatarImage: React.FC<{
   src: string | null | undefined;
   className?: string;
   fallbackIcon?: React.ReactNode;
-}> = ({ src, className, fallbackIcon }) => {
+  onImageClick?: (resolvedUrl: string) => void;
+  title?: string;
+}> = ({ src, className, fallbackIcon, onImageClick, title }) => {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -87,7 +90,32 @@ export const AvatarImage: React.FC<{
     <img
       src={url}
       alt="Profile avatar"
-      className={className || 'w-full h-full object-cover'}
+      referrerPolicy="no-referrer"
+      title={onImageClick ? title || 'Click to zoom profile photo' : undefined}
+      onClick={
+        onImageClick
+          ? (e) => {
+              e.stopPropagation();
+              onImageClick(url);
+            }
+          : undefined
+      }
+      onKeyDown={
+        onImageClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onImageClick(url);
+              }
+            }
+          : undefined
+      }
+      role={onImageClick ? 'button' : undefined}
+      tabIndex={onImageClick ? 0 : undefined}
+      className={`${className || 'w-full h-full object-cover'} ${
+        onImageClick ? 'cursor-zoom-in hover:opacity-90 transition-opacity' : ''
+      }`}
     />
   );
 };
@@ -220,6 +248,10 @@ export const validateUsernameFormat = (
 export const PersonalAccount: React.FC = () => {
   const { user, profile, checkSession } = useAuthStore();
   const [username, setUsername] = useState(profile?.username || '');
+  const [zoomImage, setZoomImage] = useState<{
+    url: string;
+    title: string;
+  } | null>(null);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<
@@ -1241,6 +1273,13 @@ export const PersonalAccount: React.FC = () => {
                 <div className="w-20 h-20 rounded-full overflow-hidden bg-(--bg-page) border border-(--border-color) flex items-center justify-center">
                   <AvatarImage
                     src={profile?.avatar_url || user?.user_metadata?.avatar_url}
+                    title="Click to inspect profile photo"
+                    onImageClick={(resolvedUrl) =>
+                      setZoomImage({
+                        url: resolvedUrl,
+                        title: `${profile?.username || 'Personal'} — Profile Photo`,
+                      })
+                    }
                     fallbackIcon={
                       <UserIcon className="w-8 h-8 text-slate-500" />
                     }
@@ -2221,6 +2260,13 @@ export const PersonalAccount: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <ImageZoomModal
+        isOpen={Boolean(zoomImage)}
+        onClose={() => setZoomImage(null)}
+        imageUrl={zoomImage?.url || ''}
+        title={zoomImage?.title || 'Profile Photo'}
+      />
     </div>
   );
 };

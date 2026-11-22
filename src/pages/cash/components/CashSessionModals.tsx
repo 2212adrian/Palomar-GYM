@@ -78,6 +78,33 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
   const [directCashInput, setDirectCashInput] = useState('');
   const [closeCooldown, setCloseCooldown] = useState(3);
 
+  const [recycleCounts, setRecycleCounts] = useState<{
+    sales: number;
+    logbook: number;
+  }>({ sales: 0, logbook: 0 });
+
+  const fetchRecycleBinCounts = async () => {
+    try {
+      const [{ count: salesCount }, { count: logbookCount }] =
+        await Promise.all([
+          supabase
+            .from('sales')
+            .select('id', { count: 'exact', head: true })
+            .not('deleted_at', 'is', null),
+          supabase
+            .from('attendance')
+            .select('id', { count: 'exact', head: true })
+            .not('deleted_at', 'is', null),
+        ]);
+      setRecycleCounts({
+        sales: salesCount || 0,
+        logbook: logbookCount || 0,
+      });
+    } catch {
+      // Non-blocking fallback
+    }
+  };
+
   // 3-second cooldown countdown whenever the modal opens
   useEffect(() => {
     if (!isOpen) {
@@ -85,6 +112,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       return;
     }
 
+    fetchRecycleBinCounts();
     setCloseCooldown(3);
     const timer = setInterval(() => {
       setCloseCooldown((prev) => {
@@ -134,7 +162,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
   const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
   const [showConfirmClose, setShowConfirmClose] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (isOffline) {
@@ -167,6 +195,7 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
       return;
     }
 
+    await fetchRecycleBinCounts();
     setShowConfirmClose(true);
   };
 
@@ -725,6 +754,32 @@ export const CloseSessionModal: React.FC<CloseSessionModalProps> = ({
                 </span>
               </div>
             </div>
+
+            {(recycleCounts.sales > 0 || recycleCounts.logbook > 0) && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/10 border border-amber-500/35 text-xs space-y-1.5">
+                <div className="flex items-center gap-2 font-heading font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Recycle Bin Items Detected</span>
+                </div>
+                <p className="text-amber-800 dark:text-amber-200/90 leading-relaxed font-medium">
+                  You currently have{' '}
+                  <strong className="font-bold">
+                    {[
+                      recycleCounts.sales > 0
+                        ? `${recycleCounts.sales} Sales item${recycleCounts.sales === 1 ? '' : 's'}`
+                        : null,
+                      recycleCounts.logbook > 0
+                        ? `${recycleCounts.logbook} Logbook check-in${recycleCounts.logbook === 1 ? '' : 's'}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' and ')}
+                  </strong>{' '}
+                  in the Recycle Bin. Closing this session will permanently purge
+                  and delete all items from both Recycle Bins.
+                </p>
+              </div>
+            )}
 
             <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold leading-relaxed">
               ⚠️ Warning: Closing this session permanently records drawer totals and reconciles the cash shift. This action cannot be undone.

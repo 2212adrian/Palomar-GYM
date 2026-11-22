@@ -608,14 +608,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     // 5. RECYCLE BIN ITEMS (Sales & Logbooks - Admins Only)
     let recycleSalesList: RecycleBinAlertItem[] = [];
     let recycleLogbookList: RecycleBinAlertItem[] = [];
+    let totalSalesRecycleCount = 0;
+    let totalLogbookRecycleCount = 0;
 
     if (isAdminUser) {
+      const currentUserId = useAuthStore.getState().user?.id
+        ? String(useAuthStore.getState().user?.id)
+        : null;
+
       try {
         const [delSalesRes, delAttRes] = await Promise.all([
           supabase
             .from('sales')
             .select(
-              'id, product_name, items, total_amount, payment_method, deleted_at, receipt_no'
+              'id, product_name, items, total_amount, payment_method, deleted_at, deleted_by, receipt_no'
             )
             .not('deleted_at', 'is', null)
             .order('deleted_at', { ascending: false })
@@ -623,7 +629,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           supabase
             .from('attendance')
             .select(
-              'id, customer_name, customer_type, plan_name, entry_fee, payment_method, deleted_at'
+              'id, customer_name, customer_type, plan_name, entry_fee, payment_method, deleted_at, deleted_by'
             )
             .not('deleted_at', 'is', null)
             .neq('customer_type', 'New Membership')
@@ -632,8 +638,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         ]);
 
         if (!delSalesRes.error && delSalesRes.data) {
+          totalSalesRecycleCount = delSalesRes.data.length;
           recycleSalesList = delSalesRes.data
-            .filter((s: any) => !dismissedRecycleIds.has(`sale_${s.id}`))
+            .filter(
+              (s: any) =>
+                !dismissedRecycleIds.has(`sale_${s.id}`) &&
+                !(currentUserId && s.deleted_by && String(s.deleted_by) === currentUserId)
+            )
             .map((s: any) => {
               const itemLabel =
                 Array.isArray(s.items) && s.items.length > 0
@@ -663,8 +674,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         }
 
         if (!delAttRes.error && delAttRes.data) {
+          totalLogbookRecycleCount = delAttRes.data.length;
           recycleLogbookList = delAttRes.data
-            .filter((a: any) => !dismissedRecycleIds.has(`logbook_${a.id}`))
+            .filter(
+              (a: any) =>
+                !dismissedRecycleIds.has(`logbook_${a.id}`) &&
+                !(currentUserId && a.deleted_by && String(a.deleted_by) === currentUserId)
+            )
             .map((a: any) => {
               const item: RecycleBinAlertItem = {
                 id: String(a.id),
@@ -715,8 +731,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       lowStockCount: lowStock,
       expiringSubsCount: expiringCount,
       pendingCashApprovalsCount: pendingApprovals,
-      salesRecycleBinCount: recycleSalesList.length,
-      logbookRecycleBinCount: recycleLogbookList.length,
+      salesRecycleBinCount: totalSalesRecycleCount,
+      logbookRecycleBinCount: totalLogbookRecycleCount,
       pendingCashApprovals: pendingApprovalsList,
       unreadIncidents: unreadList,
       stockAlertProducts: stockAlertList,
@@ -889,8 +905,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         stockAlertProducts: [],
         expiringSubsCount: 0,
         expiringMembers: [],
-        salesRecycleBinCount: 0,
-        logbookRecycleBinCount: 0,
         recycleBinSales: [],
         recycleBinLogbook: [],
         unreadBadgeCount: 0,
@@ -964,7 +978,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           const filtered = state.recycleBinSales.filter((r) => r.id !== rawId);
           updatedState = {
             recycleBinSales: filtered,
-            salesRecycleBinCount: filtered.length,
           };
         } else if (id.startsWith('logbook_')) {
           const rawId = id.slice(8);
@@ -972,7 +985,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           const filtered = state.recycleBinLogbook.filter((r) => r.id !== rawId);
           updatedState = {
             recycleBinLogbook: filtered,
-            logbookRecycleBinCount: filtered.length,
           };
         }
       }

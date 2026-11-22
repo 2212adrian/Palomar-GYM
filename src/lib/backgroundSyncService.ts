@@ -16,6 +16,7 @@ let isCurrentlyOffline = typeof navigator !== 'undefined' ? !navigator.onLine : 
 let offlineDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let onlinePollTimer: ReturnType<typeof setInterval> | null = null;
 let isHandlingOnline = false;
+let activeOfflineSyncPromise: Promise<SyncResult> | null = null;
 let lastRestoredToastTimestamp = 0;
 const RESTORED_COOLDOWN_MS = 8000;
 
@@ -68,6 +69,18 @@ function areSalesIdentical(cloudSale: any, offlinePayload: any): boolean {
  * Executes full reconciliation and sync of local encrypted vault against Supabase.
  */
 export async function executeOfflineSync(): Promise<SyncResult> {
+  if (activeOfflineSyncPromise) {
+    return activeOfflineSyncPromise;
+  }
+
+  activeOfflineSyncPromise = runOfflineSyncInternal().finally(() => {
+    activeOfflineSyncPromise = null;
+  });
+
+  return activeOfflineSyncPromise;
+}
+
+async function runOfflineSyncInternal(): Promise<SyncResult> {
   const result: SyncResult = { syncedCount: 0, conflictCount: 0, droppedCount: 0 };
 
   // 1. Check if Supabase has an active, OPEN cash session
@@ -226,8 +239,13 @@ export async function executeOfflineSync(): Promise<SyncResult> {
   }
 
   const successfullySyncedIds: string[] = [];
+  const markItemPurged = async (id: string) => {
+    successfullySyncedIds.push(id);
+    await purgeTransactionsByIds([id]);
+  };
   const syncedAttendanceInThisRun = new Set<string>();
   const syncedSalesInThisRun = new Set<string>();
+  const syncedCashTxInThisRun = new Set<string>();
 
   for (const item of pendingList) {
     try {
@@ -239,7 +257,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       if (item.type === 'sale_restore') {
         if (!isSyncAdmin) {
           console.warn('[Sync] Restricted: Staff cannot restore items from Sales Recycle Bin. Dropping queued action.');
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           result.droppedCount++;
           continue;
         }
@@ -247,7 +265,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         const targetSaleId = payload.saleId || payload.id;
 
         if (!targetSaleId) {
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           continue;
         }
 
@@ -259,7 +277,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
         if (fetchSaleErr || !cloudSale) {
           console.warn(`[Sync] Sale ${targetSaleId} not found in cloud database for restore:`, fetchSaleErr);
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           continue;
         }
 
@@ -284,7 +302,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
             // ignore audit insert fail
           }
 
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           result.syncedCount++;
           continue;
         }
@@ -392,7 +410,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           });
         } catch {}
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -401,12 +419,19 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       if (item.type === 'sale_delete') {
         const payload = item.payload;
         const targetSaleId = payload.saleId || payload.id;
+        const deletedByUid =
+          payload.deletedBy && /^[0-9a-f-]{36}$/i.test(String(payload.deletedBy))
+            ? payload.deletedBy
+            : item.userId && /^[0-9a-f-]{36}$/i.test(String(item.userId))
+              ? item.userId
+              : null;
 
         if (targetSaleId) {
           const { error: delErr } = await supabase
             .from('sales')
             .update({
               deleted_at: payload.deletedAt || new Date().toISOString(),
+              ...(deletedByUid ? { deleted_by: deletedByUid } : {}),
             })
             .eq('id', targetSaleId);
 
@@ -415,7 +440,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           }
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -424,7 +449,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       if (item.type === 'attendance_restore') {
         if (!isSyncAdmin) {
           console.warn('[Sync] Restricted: Staff cannot restore items from Logbook Recycle Bin. Dropping queued action.');
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           result.droppedCount++;
           continue;
         }
@@ -465,7 +490,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           }
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -474,12 +499,19 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       if (item.type === 'attendance_delete') {
         const payload = item.payload;
         const targetAttendanceId = payload.attendanceId || payload.id;
+        const deletedByUid =
+          payload.deletedBy && /^[0-9a-f-]{36}$/i.test(String(payload.deletedBy))
+            ? payload.deletedBy
+            : item.userId && /^[0-9a-f-]{36}$/i.test(String(item.userId))
+              ? item.userId
+              : null;
 
         if (targetAttendanceId) {
           const { error: delErr } = await supabase
             .from('attendance')
             .update({
               deleted_at: payload.deletedAt || new Date().toISOString(),
+              ...(deletedByUid ? { deleted_by: deletedByUid } : {}),
             })
             .eq('id', targetAttendanceId);
 
@@ -499,7 +531,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           }
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -510,11 +542,32 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         let hasStockConflict = false;
         let conflictCloudStock: any = null;
 
-        const saleDedupKey = `${Number(payload.total_amount || payload.totalAmount || 0).toFixed(2)}::${(payload.items || []).map((i: any) => `${i.productId || i.product_id || i.id}_${i.quantity || 1}`).sort().join('|')}`;
+        const saleCreatedAt = payload.created_at || item.createdAt;
+        const saleDedupKey = `${saleCreatedAt}::${Number(payload.total_amount || payload.totalAmount || 0).toFixed(2)}::${(payload.items || []).map((i: any) => `${i.productId || i.product_id || i.id}_${i.quantity || 1}`).sort().join('|')}`;
         if (syncedSalesInThisRun.has(saleDedupKey)) {
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           result.syncedCount++;
           continue;
+        }
+
+        // Cloud idempotency guard: if this exact offline sale timestamp already synced to cloud, skip insert
+        if (activeSessionId && saleCreatedAt) {
+          const { data: existingCloudSale } = await supabase
+            .from('sales')
+            .select('id, total_amount')
+            .eq('cash_session_id', activeSessionId)
+            .eq('created_at', saleCreatedAt)
+            .is('deleted_at', null)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingCloudSale) {
+            console.info(`[Sync] Offline sale ${item.id} already exists in cloud (${existingCloudSale.id}). Deduplicating.`);
+            syncedSalesInThisRun.add(saleDedupKey);
+            await markItemPurged(item.id);
+            result.syncedCount++;
+            continue;
+          }
         }
 
         // Verify stock against cloud database with exact column names (has_stock_limit, stock_quantity)
@@ -558,7 +611,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
                     // Auto-resolve identical sale collision: deduplicate and keep existing cloud sale
                     if (matchedCloudSale && areSalesIdentical(matchedCloudSale, payload)) {
-                      successfullySyncedIds.push(item.id);
+                      await markItemPurged(item.id);
                       result.syncedCount++;
                       hasStockConflict = false;
                       break;
@@ -664,7 +717,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
                 // Auto-resolve identical sale collision: deduplicate and keep existing cloud sale
                 if (matchedCloudSale && areSalesIdentical(matchedCloudSale, payload)) {
-                  successfullySyncedIds.push(item.id);
+                  await markItemPurged(item.id);
                   result.syncedCount++;
                   hasStockConflict = false;
                 } else {
@@ -707,7 +760,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         const saleRecord = {
           ...payload,
           cash_session_id: activeSessionId,
-          created_at: payload.created_at || item.createdAt,
+          created_at: saleCreatedAt,
           is_quarantined: false,
         };
         delete (saleRecord as any).sync_status;
@@ -716,7 +769,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         if (insertErr) throw insertErr;
 
         syncedSalesInThisRun.add(saleDedupKey);
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -729,7 +782,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
         // Deduplicate multiple identical records in the same sync batch
         if (syncedAttendanceInThisRun.has(attDedupKey)) {
-          successfullySyncedIds.push(item.id);
+          await markItemPurged(item.id);
           result.syncedCount++;
           continue;
         }
@@ -758,7 +811,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
 
             if (identicalMatch) {
               syncedAttendanceInThisRun.add(attDedupKey);
-              successfullySyncedIds.push(item.id);
+              await markItemPurged(item.id);
               result.syncedCount++;
               continue;
             }
@@ -831,7 +884,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
         if (attInsertErr) throw attInsertErr;
 
         syncedAttendanceInThisRun.add(attDedupKey);
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -851,7 +904,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           .insert([subRecord]);
         if (subErr) throw subErr;
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -877,7 +930,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           }
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -896,7 +949,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           console.warn('Batch card purchase sync notice:', rpcErr);
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -904,15 +957,59 @@ export async function executeOfflineSync(): Promise<SyncResult> {
       // ─── D2. MANUAL CASH DRAWER TRANSACTIONS (CASH IN / CASH OUT / DIGITAL IN) ───
       if (item.type === 'cash_transaction') {
         const payload = item.payload;
+        const txSessionId = activeSessionId || payload.session_id;
+        const txCreatedAt = payload.created_at || item.createdAt;
+        const txAmount = Number(payload.amount || 0);
+        const txReason = payload.reason || 'Manual Movement';
+        const cashTxDedupKey = `${txSessionId || ''}::${payload.type}::${txAmount.toFixed(2)}::${String(txReason).trim().toLowerCase()}::${txCreatedAt}`;
+
+        if (syncedCashTxInThisRun.has(cashTxDedupKey)) {
+          await markItemPurged(item.id);
+          result.syncedCount++;
+          continue;
+        }
+
+        // Cloud idempotency guard: if this exact offline cash movement was already synced, skip insert
+        if (txSessionId && txCreatedAt) {
+          const { data: existingCloudTx } = await supabase
+            .from('cash_transactions')
+            .select('id')
+            .eq('session_id', txSessionId)
+            .eq('type', payload.type)
+            .eq('created_at', txCreatedAt)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingCloudTx) {
+            console.info(`[Sync] Offline cash transaction ${item.id} already exists in cloud (${existingCloudTx.id}). Deduplicating.`);
+            syncedCashTxInThisRun.add(cashTxDedupKey);
+            await markItemPurged(item.id);
+            result.syncedCount++;
+            continue;
+          }
+        }
+
+        const performedByUid =
+          payload.performed_by && /^[0-9a-f-]{36}$/i.test(String(payload.performed_by))
+            ? payload.performed_by
+            : item.userId && /^[0-9a-f-]{36}$/i.test(String(item.userId))
+              ? item.userId
+              : null;
+
         const txRecord = {
-          session_id: activeSessionId || payload.session_id,
+          session_id: txSessionId,
           type: payload.type,
-          amount: Number(payload.amount || 0),
-          reason: payload.reason || 'Manual Movement',
+          amount: txAmount,
+          reason: txReason,
           reference_number: payload.reference_number || null,
-          performed_by: payload.performed_by || item.userId || null,
+          performed_by: performedByUid,
           performed_by_name: payload.performed_by_name || item.userName || 'Staff',
-          created_at: payload.created_at || item.createdAt,
+          status: payload.status || 'completed',
+          approved_by: payload.approved_by || null,
+          approved_by_name: payload.approved_by_name || null,
+          approved_at: payload.approved_at || null,
+          is_voided: Boolean(payload.is_voided),
+          created_at: txCreatedAt,
         };
 
         const { data: insertedTx, error: txInsertErr } = await supabase
@@ -941,7 +1038,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
             p_actor_username: item.userName || 'Staff',
             p_action: actionLabel,
             p_target_id: insertedTx?.id || null,
-            p_details: `Synced offline ${String(payload.type).toUpperCase()}: ₱${Number(payload.amount || 0).toFixed(2)} Reason: ${payload.reason}${
+            p_details: `Synced offline ${String(payload.type).toUpperCase()}: ₱${txAmount.toFixed(2)} Reason: ${txReason}${
               payload.reference_number ? ` (Ref: ${payload.reference_number})` : ''
             } by ${item.userName}.`,
           });
@@ -949,7 +1046,8 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           console.warn('Audit log for synced cash transaction failed:', auditErr);
         }
 
-        successfullySyncedIds.push(item.id);
+        syncedCashTxInThisRun.add(cashTxDedupKey);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -964,7 +1062,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           .insert([payload]);
         if (prodErr) throw prodErr;
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -979,7 +1077,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           .insert([payload]);
         if (incErr) throw incErr;
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -1003,7 +1101,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           }
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -1017,7 +1115,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           .insert([payload]);
         if (memErr) throw memErr;
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -1034,7 +1132,7 @@ export async function executeOfflineSync(): Promise<SyncResult> {
           if (updErr) throw updErr;
         }
 
-        successfullySyncedIds.push(item.id);
+        await markItemPurged(item.id);
         result.syncedCount++;
         continue;
       }
@@ -1043,13 +1141,10 @@ export async function executeOfflineSync(): Promise<SyncResult> {
     }
   }
 
-  // Purge all successfully written items immediately from IndexedDB
-  if (successfullySyncedIds.length > 0) {
-    await purgeTransactionsByIds(successfullySyncedIds);
-  }
-
   // Dispatch global custom event for reactive UI updates
-  window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+  if (successfullySyncedIds.length > 0 || result.conflictCount > 0 || result.droppedCount > 0) {
+    window.dispatchEvent(new CustomEvent('palomar:sync-updated'));
+  }
 
   return result;
 }
@@ -1346,16 +1441,9 @@ export function initBackgroundSyncService(): () => void {
     }
   };
 
-  const handleSyncUpdated = () => {
-    if (typeof navigator !== 'undefined' && navigator.onLine && !isHandlingOnline) {
-      handleOnline();
-    }
-  };
-
   window.addEventListener('online', handleOnline);
   window.addEventListener('offline', handleOffline);
   window.addEventListener('focus', handleWindowFocus);
-  window.addEventListener('palomar:sync-updated', handleSyncUpdated);
 
   // Initial check on service bootstrap: auto-sync if pending vault items exist and online
   if (typeof navigator !== 'undefined' && navigator.onLine) {
@@ -1389,7 +1477,6 @@ export function initBackgroundSyncService(): () => void {
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('offline', handleOffline);
     window.removeEventListener('focus', handleWindowFocus);
-    window.removeEventListener('palomar:sync-updated', handleSyncUpdated);
     if (capListener && typeof capListener.remove === 'function') {
       capListener.remove();
     }

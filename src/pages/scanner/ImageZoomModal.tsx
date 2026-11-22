@@ -111,7 +111,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[500] bg-slate-950/90 dark:bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-between p-4 select-none"
+        className="fixed inset-0 z-[25000] bg-slate-950/90 dark:bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-between p-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))] select-none"
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >

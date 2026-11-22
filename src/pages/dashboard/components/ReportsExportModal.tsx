@@ -252,6 +252,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   const [vatPercentage, setVatPercentage] = useState<number>(12);
 
   // Live category datasets loaded from Supabase
+  const [birSourceFilter, setBirSourceFilter] = useState<
+    'both' | 'sales' | 'logbook'
+  >('both');
   const [liveBirData, setLiveBirData] = useState<any[]>([]);
   const [liveSalesData, setLiveSalesData] = useState<any[]>([]);
   const [liveAttendanceData, setLiveAttendanceData] = useState<any[]>([]);
@@ -501,6 +504,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
           const net = gross - vatAmt;
           items.push({
+            source: 'sales',
             receipt_no: s.receipt_no || `SLS-${String(s.id).slice(0, 6)}`,
             date: s.created_at,
             customer_name: s.product_name || 'POS Customer',
@@ -521,6 +525,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
             const net = gross - vatAmt;
             items.push({
+              source: 'logbook',
               receipt_no: a.receipt_number || `LOG-${String(a.id).slice(0, 6)}`,
               date: a.check_in_time,
               customer_name: a.customer_name || 'Walk-In Guest',
@@ -539,6 +544,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
           const vatAmt = gross > 0 ? (gross * vatRate) / (1 + vatRate) : 0;
           const net = gross - vatAmt;
           items.push({
+            source: 'logbook',
             receipt_no:
               sub.receipt_number || `SUB-${String(sub.id).slice(0, 6)}`,
             date: sub.created_at,
@@ -997,15 +1003,31 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
     setEndDate(format(e, 'yyyy-MM-dd'));
   };
 
+  const filteredBirData = useMemo(() => {
+    if (birSourceFilter === 'both') return liveBirData;
+    return liveBirData.filter((item) => {
+      const isSales =
+        item.source === 'sales' || item.transaction_type === 'Product Sale';
+      return birSourceFilter === 'sales' ? isSales : !isSales;
+    });
+  }, [liveBirData, birSourceFilter]);
+
+  const birSourceLabel =
+    birSourceFilter === 'sales'
+      ? 'Sales Only'
+      : birSourceFilter === 'logbook'
+        ? 'Logbook Only'
+        : 'Sales & Logbook (Both)';
+
   // Metrics for Current Category
   const categoryStats = useMemo(() => {
     if (reportType === 'bir') {
-      const gross = liveBirData.reduce((acc, i) => acc + i.gross_sales, 0);
+      const gross = filteredBirData.reduce((acc, i) => acc + i.gross_sales, 0);
       return {
-        count: liveBirData.length,
+        count: filteredBirData.length,
         totalValue: gross,
         label: 'Gross Receipts',
-        secondary: `${liveBirData.filter((i) => i.payment_method === 'Cash').length} Cash / ${liveBirData.filter((i) => i.payment_method === 'GCash').length} GCash`,
+        secondary: `${filteredBirData.filter((i) => i.payment_method === 'Cash').length} Cash / ${filteredBirData.filter((i) => i.payment_method === 'GCash').length} GCash`,
       };
     } else if (reportType === 'cash') {
       const totalCounted = liveCashData.reduce(
@@ -1080,7 +1102,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
     }
   }, [
     reportType,
-    liveBirData,
+    filteredBirData,
     liveCashData,
     liveSalesData,
     liveAttendanceData,
@@ -1102,8 +1124,9 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
       csvContent += `Compliance Standard: ${selectedCategoryMeta.badge}\n\n`;
 
       if (reportType === 'bir') {
+        csvContent += `Included Sources: ${birSourceLabel}\n`;
         csvContent += `"Receipt / Ref #","Date / Time","Customer Name","Transaction Type","Gross Sales (PHP)","VAT-Exempt Sales (PHP)","VAT (${vatPercentage}%) (PHP)","Net Sales (PHP)","Payment Method"\n`;
-        liveBirData.forEach((item) => {
+        filteredBirData.forEach((item) => {
           const payment = formatPaymentWithRef(
             item.payment_method,
             item.payment_ref
@@ -1241,7 +1264,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
 
       page.drawText(
         safePdfText(
-          `Compliance Standard: ${selectedCategoryMeta.badge} • Date Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`
+          `Compliance Standard: ${selectedCategoryMeta.badge}${reportType === 'bir' ? ` • Source: ${birSourceLabel}` : ''} • Date Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`
         ),
         {
           x: 40,
@@ -1346,7 +1369,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
         ];
         drawTableHeaders(headers);
 
-        liveBirData.forEach((row, idx) => {
+        filteredBirData.forEach((row, idx) => {
           if (checkPageBreak()) drawTableHeaders(headers);
           if (idx % 2 === 1) {
             page.drawRectangle({
@@ -1997,6 +2020,62 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
             </div>
           </div>
             <div className="space-y-3">
+              {reportType === 'bir' && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-white dark:bg-zinc-950/70 border border-slate-200 dark:border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-heading font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      Include in BIR Table:
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      ({birSourceLabel})
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center p-1 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 gap-1 self-start sm:self-auto">
+                    {(
+                      [
+                        { id: 'both', label: 'Both' },
+                        { id: 'sales', label: 'Sales' },
+                        { id: 'logbook', label: 'Logbook' },
+                      ] as const
+                    ).map((opt) => {
+                      const active = birSourceFilter === opt.id;
+                      const count =
+                        opt.id === 'both'
+                          ? liveBirData.length
+                          : liveBirData.filter((item) => {
+                              const isSales =
+                                item.source === 'sales' ||
+                                item.transaction_type === 'Product Sale';
+                              return opt.id === 'sales' ? isSales : !isSales;
+                            }).length;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setBirSourceFilter(opt.id)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-heading font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                            active
+                              ? 'bg-[#123c73] dark:bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full ${
+                              active
+                                ? 'bg-white/20 text-white'
+                                : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-700 dark:text-slate-300 uppercase text-[10px] tracking-wider">
@@ -2028,7 +2107,17 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                   <tbody className="divide-y divide-slate-100 dark:divide-zinc-900 text-slate-700 dark:text-slate-300 font-body">
 {/* BIR TABLE PREVIEW */}
                     {reportType === 'bir' &&
-                      liveBirData.slice(0, 5).map((row, idx) => (
+                      (filteredBirData.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={selectedCategoryMeta.columns.length}
+                            className="p-6 text-center text-xs text-slate-400 font-mono"
+                          >
+                            No matching {birSourceFilter === 'both' ? '' : `${birSourceFilter} `}BIR records in selected range.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredBirData.slice(0, 25).map((row, idx) => (
                         <tr
                           key={idx}
                           className="hover:bg-slate-50 dark:hover:bg-zinc-900/50"
@@ -2066,6 +2155,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
                             )}
                           </td>
                         </tr>
+                        ))
                       ))}
 
                     {/* CASH REGISTER SESSIONS PREVIEW (NEW) */}

@@ -182,13 +182,8 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   }, [revenueTimeline]);
 
   const hasSalesData = useMemo(() => {
-    return (
-      topProducts.length > 0 &&
-      topProducts.some(
-        (p) => (p.total_sold || 0) > 0 || (p.total_revenue || 0) > 0
-      )
-    );
-  }, [topProducts]);
+    return pieProductData.length > 0;
+  }, [pieProductData]);
 
   const hasTrafficData = useMemo(() => {
     return (
@@ -702,7 +697,10 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                             fill="#123c73"
                             radius={[0, 6, 6, 0]}
                           >
-                            {topProducts.slice(0, 5).map((_, index) => (
+                            {topProducts
+                              .filter((p) => (p.total_sold || 0) > 0)
+                              .slice(0, 5)
+                              .map((_, index) => (
                               <Cell
                                 key={`cell-${index}`}
                                 fill={

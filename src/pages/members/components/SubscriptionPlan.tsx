@@ -41,7 +41,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Html5Qrcode } from 'html5-qrcode';
+import {
+  CameraBarcodeScanner,
+  getFriendlyCameraError,
+  stopMediaStreamTracks,
+  type CameraDeviceInfo,
+} from '../../../lib/cameraScanner';
 import { supabase } from '../../../lib/supabase/client';
 import { buildPublicPortalUrl } from '../../../lib/appUrl';
 import { getServerNow } from '../../../lib/serverTime';
@@ -531,7 +536,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [manualIdInput, setManualIdInput] = useState('');
   const [isScanning, setIsScanning] = useState(true);
   const { isBatterySaver } = useBatterySaver();
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRef = useRef<CameraBarcodeScanner | null>(null);
   const stopPromiseRef = useRef<Promise<void> | null>(null);
   const receiptRef = useRef<OfficialReceiptRef | null>(null);
   const qrRegionId = 'fast-intake-qr-reader';
@@ -539,9 +544,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const lastScanTimeRef = useRef<number>(0);
   const lastScannedIdRef = useRef<string>('');
 
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
-    []
-  );
+  const [cameras, setCameras] = useState<CameraDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   useEffect(() => {
@@ -1579,30 +1582,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const cleanupTask = (async () => {
       if (activeScanner) {
         try {
-          if (activeScanner.isScanning) {
-            await activeScanner.stop().catch(() => {});
-          }
-          activeScanner.clear();
+          await activeScanner.stop();
         } catch {}
       }
-
-      const qrRegion = document.getElementById(qrRegionId);
-      const videoElements = qrRegion
-        ? qrRegion.querySelectorAll('video')
-        : document.querySelectorAll('video');
-
-      videoElements.forEach((video) => {
-        if (video.srcObject) {
-          const stream = video.srcObject as MediaStream;
-          if (stream && stream.getTracks) {
-            stream.getTracks().forEach((track) => {
-              track.stop();
-              track.enabled = false;
-            });
-          }
-          video.srcObject = null;
-        }
-      });
+      stopMediaStreamTracks(qrRegionId);
     })();
 
     stopPromiseRef.current = cleanupTask;
@@ -1675,17 +1658,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     );
   };
 
-  const getCameraErrorMessage = (err: any): string => {
-    const msg =
-      typeof err === 'string' ? err : err?.message || String(err || '');
-    const lower = msg.toLowerCase();
-    if (lower.includes('notallowederror') || lower.includes('permission'))
-      return 'Permission denied by browser';
-    if (lower.includes('notreadableerror') || lower.includes('in use'))
-      return 'Camera is busy or in use';
-    if (lower.includes('notfounderror')) return 'Camera hardware not found';
-    return msg || 'Camera initialization failed';
-  };
+  const getCameraErrorMessage = getFriendlyCameraError;
 
   useEffect(() => {
     let isCancelled = false;
@@ -1706,46 +1679,31 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         if (!element || isCancelled) return;
 
         try {
-          const html5QrCode = new Html5Qrcode(qrRegionId, { verbose: false });
-          scannerRef.current = html5QrCode;
-          const cameraConfig = selectedCameraId
-            ? { deviceId: { exact: selectedCameraId } }
-            : { facingMode: 'environment' };
+          const scanner = new CameraBarcodeScanner();
+          scannerRef.current = scanner;
 
-          await html5QrCode.start(
-            cameraConfig,
-            {
-              fps: isBatterySaver ? 10 : 25,
-              qrbox: (vw: number, vh: number) => {
-                const edge = Math.floor(Math.min(vw, vh) * 0.8);
-                return { width: edge, height: edge };
-              },
-              videoConstraints: {
-                ...cameraConfig,
-                width: { ideal: isBatterySaver ? 640 : 1280 },
-                height: { ideal: isBatterySaver ? 480 : 720 },
-              },
+          await scanner.start({
+            containerId: qrRegionId,
+            mode: 'qr',
+            deviceId: selectedCameraId || undefined,
+            facingMode: 'environment',
+            fps: isBatterySaver ? 10 : 20,
+            onStreamReady: ({ cameras: detected }) => {
+              if (!isCancelled && detected.length > 0) {
+                setCameras(detected);
+              }
             },
-            (decodedText) => {
+            onDecode: (decodedText) => {
               if (!isCancelled) {
                 handleValidateId(decodedText.trim());
               }
             },
-            () => {}
-          );
+          });
 
           if (isCancelled) {
             await forceStopCamera();
             return;
           }
-
-          Html5Qrcode.getCameras()
-            .then((devices) => {
-              if (!isCancelled && devices && devices.length > 0) {
-                setCameras(devices);
-              }
-            })
-            .catch(() => {});
         } catch (err) {
           if (!isCancelled) {
             if (selectedCameraId) {
@@ -1774,6 +1732,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     step,
     intakeMode,
     selectedCameraId,
+    isBatterySaver,
     forceStopCamera,
   ]);
 

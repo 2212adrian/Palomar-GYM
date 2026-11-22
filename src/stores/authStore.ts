@@ -229,6 +229,8 @@ const syncGlobalStaffPresence = (userId: string | null | undefined) => {
       supabase.removeChannel(globalPresenceChannel);
       globalPresenceChannel = null;
     }
+    currentPresenceUserId = null;
+    useAuthStore.setState({ onlineUserIds: new Set<string>() });
     return;
   }
 
@@ -241,18 +243,40 @@ const syncGlobalStaffPresence = (userId: string | null | undefined) => {
 
   currentPresenceUserId = userId;
 
-  globalPresenceChannel = supabase.channel('gym-staff-presence', {
+  const channel = supabase.channel('gym-staff-presence', {
     config: { presence: { key: userId } },
   });
+  globalPresenceChannel = channel;
 
-  globalPresenceChannel.subscribe(async (status: string) => {
-    if (status === 'SUBSCRIBED' && userId) {
-      await globalPresenceChannel.track({
-        userId,
-        onlineAt: new Date().toISOString(),
-      });
-    }
-  });
+  const updatePresenceState = () => {
+    if (globalPresenceChannel !== channel) return;
+    const state = channel.presenceState() || {};
+    const nextOnlineIds = new Set<string>();
+    Object.entries(state).forEach(([key, presences]) => {
+      if (key) nextOnlineIds.add(String(key));
+      if (Array.isArray(presences)) {
+        presences.forEach((p: any) => {
+          if (p?.userId) nextOnlineIds.add(String(p.userId));
+        });
+      }
+    });
+    if (userId) nextOnlineIds.add(userId);
+    useAuthStore.setState({ onlineUserIds: nextOnlineIds });
+  };
+
+  channel
+    .on('presence', { event: 'sync' }, updatePresenceState)
+    .on('presence', { event: 'join' }, updatePresenceState)
+    .on('presence', { event: 'leave' }, updatePresenceState)
+    .subscribe(async (status: string) => {
+      if (status === 'SUBSCRIBED' && userId && globalPresenceChannel === channel) {
+        await channel.track({
+          userId,
+          onlineAt: new Date().toISOString(),
+        });
+        updatePresenceState();
+      }
+    });
 };
 
 const getCachedProfile = (): UserProfile | null => {

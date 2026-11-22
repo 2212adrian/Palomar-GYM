@@ -16,6 +16,37 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.12',
+    date: '2026-11-22',
+    summary:
+      '7-day dashboard revenue sparkline, BIR Sales/Logbook/Both source selector, zoomable profile photos across User Management & Personal Account, full user profile details with personal audit log & live presence detection, unrestricted backup saving with Backup Overview, close-session Recycle Bin warning, and single-scan product barcode protection.',
+    sections: [
+      {
+        type: 'Dashboard Analytics & BIR Reports',
+        items: [
+          '7-Day Revenue Trend Sparkline: Added an interactive 7-day daily revenue sparkline chart inside the Dashboard Summary card for visualizing daily sales performance.',
+          'BIR Sales & Tax Source Filter: Added Sales, Logbook, and Both filter buttons in BIR Sales & Tax reports to scope the preview table, totals, CSV, and PDF exports dynamically.',
+        ],
+      },
+      {
+        type: 'User Management, Presence & Avatar Zoom',
+        items: [
+          'Click-to-Zoom Profile Images: Enabled full photo zoom and pan modals when clicking profile avatars in Personal Account and User Management.',
+          'User Details & Personal Audit Log: Clicking any account in User Management opens a full details modal showing profile info, zoomable avatar, and that user\'s committed audit log history.',
+          'Realtime Online Presence Fix: Wired live Supabase Presence sync/join/leave listeners into the auth store so Online and Offline badges update accurately in real time.',
+        ],
+      },
+      {
+        type: 'Backups, Cash Reconciliation & Barcode Scanner',
+        items: [
+          'Always-Available Backup Saving & Backup Overview: Kept Save Today\'s Backup enabled regardless of active cash sessions and added a Backup Overview modal comparing Included datasets (with human-readable member/product names, dates, denominations, and formal Gym Profile, Revenue Goals, and Rates & Payments cards) against Excluded items.',
+          'Confirm Close Session Recycle Bin Warning: Added an explicit count warning inside the Confirm Close Session confirmation popup whenever items remain in the Sales or Logbook Recycle Bins.',
+          'Scan-Once Product Barcode Protection: Updated camera barcode scanning so products already selected in the cart are not scanned or incremented repeatedly.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.1.11',
     date: '2026-11-21',
     summary:
