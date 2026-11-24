@@ -28,7 +28,6 @@ import {
   Banknote,
   Coins,
 } from 'lucide-react';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { downloadExportFile } from '../../../utils/fileDownloader';
 import { toast } from 'react-toastify';
 import { Modal } from '../../../components/ui/Modal';
@@ -1229,6 +1228,7 @@ export const ReportsExportModal: React.FC<ReportsExportModalProps> = ({
   const handleExportPDF = async () => {
     try {
       setIsExporting(true);
+      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.create();
       let page = pdfDoc.addPage([841.89, 595.28]); // Landscape A4
       const { width, height } = page.getSize();

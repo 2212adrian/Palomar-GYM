@@ -926,3 +926,81 @@ html.is-capacitor [contenteditable='true'] {
   touch-action: manipulation;
   transition: none !important;
 }
+
+/* ==========================================================
+   FINANCIAL ALIGNMENT & TOUCH TARGET COMFORT
+   ========================================================== */
+.font-mono,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1023px) {
+  button[aria-label],
+  [role="button"] {
+    min-height: 40px;
+  }
+}
+
+/* ==========================================================
+   DESKTOP & SCREEN PROJECTOR READABILITY + SMOOTH SCROLLING
+   Makes tiny 8px-11px desktop labels comfortable to read on
+   monitors and room projectors while keeping mobile untouched.
+   ========================================================== */
+@media (min-width: 1024px) {
+  html {
+    font-size: var(--desktop-root-size, 16px);
+  }
+}
+
+@media (min-width: 1024px) {
+  /* Standard readable desktop baseline (applied unless Compact is chosen) */
+  html:not(.display-scale-compact) .text-\[8px\],
+  html:not(.display-scale-compact) .text-\[8\.5px\],
+  html:not(.display-scale-compact) .text-\[9px\],
+  html:not(.display-scale-compact) .text-\[9\.5px\],
+  html:not(.display-scale-compact) .text-\[10px\],
+  html:not(.display-scale-compact) .text-\[10\.5px\] {
+    font-size: 0.75rem !important; /* 12px at Standard, ~14px on Projector */
+    line-height: 1.35 !important;
+  }
+
+  html:not(.display-scale-compact) .text-\[11px\] {
+    font-size: 0.8125rem !important; /* 13px at Standard, ~15px on Projector */
+    line-height: 1.4 !important;
+  }
+
+  /* Projector / Large mode boosts body copy & table readability cleanly */
+  html.display-scale-projector body {
+    font-size: 1rem;
+  }
+
+  html.display-scale-projector .text-xs {
+    font-size: 0.875rem !important; /* ~16px on projector */
+    line-height: 1.45 !important;
+  }
+
+  html.display-scale-projector .text-sm {
+    font-size: 0.96rem !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Sharpen faint gray labels so text never washes out on bright projectors */
+  html:not(.dark):not(.display-scale-compact) .text-slate-400 {
+    color: #475569 !important;
+  }
+
+  html.dark:not(.display-scale-compact) .text-slate-500,
+  html.dark:not(.display-scale-compact) .text-zinc-500 {
+    color: #94a3b8 !important;
+  }
+
+  /* Trim costly nested blur inside large scrolling wrappers while keeping pop-up modal blurs crisp */
+  main .backdrop-blur-2xl,
+  main .backdrop-blur-xl,
+  main .backdrop-blur-md {
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+  }
+}
+

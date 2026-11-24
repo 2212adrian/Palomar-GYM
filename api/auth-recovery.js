@@ -1,44 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
-
-const CANONICAL_APP_URL = 'https://dev-wolfpalomar.vercel.app';
-
-/**
- * Resolves the target app URL:
- * 1. Prioritizes VITE_APP_URL or APP_URL environment variables.
- * 2. If called from a valid non-preview origin (e.g. dev-wolfpalomar.vercel.app), uses that.
- * 3. Falls back to CANONICAL_APP_URL.
- */
-const resolveAppUrl = (req) => {
-  const configured = String(process.env.VITE_APP_URL || process.env.APP_URL || '')
-    .trim()
-    .replace(/\/+$/, '');
-  if (configured) return configured;
-
-  const origin = req?.headers?.origin || '';
-  if (origin && !origin.includes('-projects.vercel.app')) {
-    return origin.replace(/\/+$/, '');
-  }
-
-  return CANONICAL_APP_URL;
-};
+import { applySecurityCorsHeaders, resolveSafeAppUrl } from './_security.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default async function handler(req, res) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  applySecurityCorsHeaders(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method not allowed.' });
   }
 
   try {
@@ -46,70 +24,70 @@ export default async function handler(req, res) {
       typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const { action, email, otp, new_password } = body;
 
-    if (!email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
       return res
         .status(400)
-        .json({ error: '[ERR_400] REQUEST_INVALID: Email is required.' });
+        .json({ error: 'Please enter a valid email address.' });
     }
 
-    // 1. Fetch user by email securely
-    const {
-      data: { users },
-      error: listError,
-    } = await supabase.auth.admin.listUsers();
-    if (listError) throw listError;
-
-    const targetUser = users.find(
-      (u) => u.email && u.email.toLowerCase() === email.toLowerCase()
-    );
-
-    if (!targetUser) {
-      return res.status(404).json({
-        error: '[ERR_404] NOT_FOUND: This email is not registered on Wolf OS.',
-      });
-    }
-
-    // --- ACTION A: SEND OTP VIA SUPABASE SMTP ---
+    // --- ACTION A: SEND RECOVERY EMAIL / CODE (NON-ENUMERATING) ---
     if (action === 'send-otp') {
-      const appUrl = resolveAppUrl(req);
+      const appUrl = resolveSafeAppUrl(req);
 
+      // Dispatch without leaking whether the email address exists
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
+        normalizedEmail,
         {
           redirectTo: `${appUrl}/forgot-password`,
         }
       );
 
-      if (resetError) {
-        return res
-          .status(400)
-          .json({ error: `[ERR_400] REQUEST_FAILED: ${resetError.message}` });
+      if (resetError && resetError.status === 429) {
+        return res.status(429).json({
+          error: 'Too many reset requests. Please wait a minute and try again.',
+        });
       }
 
-      return res
-        .status(200)
-        .json({ success: true, message: 'OTP transmitted.' });
+      return res.status(200).json({
+        success: true,
+        message:
+          'If an account matches this email, recovery instructions have been sent.',
+      });
     }
 
-    // --- ACTION B: VERIFY OTP AND CHANGE PASSWORD ---
+    // --- ACTION B: VERIFY OTP AND UPDATE PASSWORD ---
     if (action === 'verify-otp') {
-      if (!otp || !new_password) {
+      const cleanOtp = String(otp || '').trim();
+      if (!cleanOtp || typeof new_password !== 'string') {
         return res.status(400).json({
-          error:
-            '[ERR_400] REQUEST_INVALID: Email, OTP, and new password required.',
+          error: 'Email, recovery code, and new password are required.',
+        });
+      }
+
+      if (new_password.length < 8) {
+        return res.status(400).json({
+          error: 'New password must be at least 8 characters long.',
         });
       }
 
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: otp.trim(),
+        email: normalizedEmail,
+        token: cleanOtp,
         type: 'recovery',
       });
 
-      if (verifyError) {
-        return res
-          .status(400)
-          .json({ error: `[ERR_400] REQUEST_INVALID: ${verifyError.message}` });
+      if (verifyError || !data?.user) {
+        return res.status(400).json({
+          error: 'The recovery code is invalid or has expired. Please request a new one.',
+        });
+      }
+
+      const verifiedEmail = String(data.user.email || '').trim().toLowerCase();
+      if (verifiedEmail !== normalizedEmail) {
+        return res.status(403).json({
+          error: 'Recovery verification did not match this email address.',
+        });
       }
 
       const { error: updateError } = await supabase.auth.admin.updateUserById(
@@ -119,18 +97,23 @@ export default async function handler(req, res) {
         }
       );
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        return res.status(400).json({
+          error: 'Could not update password. Please choose a stronger password and try again.',
+        });
+      }
 
-      return res
-        .status(200)
-        .json({ success: true, message: 'Access restored.' });
+      return res.status(200).json({
+        success: true,
+        message: 'Your password has been updated. You can sign in now.',
+      });
     }
 
-    return res.status(400).json({ error: 'Bad Request' });
+    return res.status(400).json({ error: 'Invalid password recovery action.' });
   } catch (error) {
     console.error('Recovery error:', error);
-    return res
-      .status(500)
-      .json({ error: error.message || 'System error processing request.' });
+    return res.status(500).json({
+      error: 'Unable to process your password recovery request right now. Please try again.',
+    });
   }
 }

@@ -13,6 +13,7 @@ import { isSuperAdmin } from '../../constants/auth';
 import { SystemInformation } from './SystemInformation/SystemInformation';
 import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { useHeadingFont } from '../../hooks/useHeadingFont';
+import { DisplayScaleSelector } from '../../components/common/DisplayScaleToggle';
 import { toast } from 'react-toastify';
 import {
   User as UserIcon,
@@ -81,42 +82,42 @@ export const TABS: TabItem[] = [
   {
     id: 'info',
     label: 'System Information',
-    description: 'App release builds, updates & telemetry',
+    description: 'App version, updates & release notes',
     icon: RefreshCw,
     adminOnly: false,
   },
   {
     id: 'gym-profile',
     label: 'Gym Profile',
-    description: 'Manage business information',
+    description: 'Manage business details & contacts',
     icon: Building,
     adminOnly: true,
   },
   {
     id: 'rates',
     label: 'Rates & Payments',
-    description: 'Configure memberships',
+    description: 'Set walk-in rates & membership fees',
     icon: CreditCard,
     adminOnly: true,
   },
   {
     id: 'users',
     label: 'User Management',
-    description: 'Manage staff accounts',
+    description: 'Manage staff accounts & access',
     icon: Users,
     adminOnly: true,
   },
   {
     id: 'audit',
     label: 'Audit Logs',
-    description: 'View security history',
+    description: 'Review staff activity history',
     icon: FileText,
     adminOnly: true,
   },
   {
     id: 'backup',
     label: 'Database Backup',
-    description: 'Backup and restore data',
+    description: 'Save and restore gym records',
     icon: Database,
     adminOnly: true,
     superAdminOnly: true,
@@ -124,7 +125,7 @@ export const TABS: TabItem[] = [
   {
     id: 'db-manager',
     label: 'Database Manager',
-    description: 'SuperAdmin terminal & storage cleanup',
+    description: 'Storage space & old record cleanup',
     icon: HardDrive,
     adminOnly: true,
     superAdminOnly: true,
@@ -132,7 +133,7 @@ export const TABS: TabItem[] = [
   {
     id: 'migration',
     label: 'Data Migration',
-    description: 'CSV import, validation & rollback',
+    description: 'Import spreadsheet lists & undo',
     icon: FileSpreadsheet,
     adminOnly: true,
     superAdminOnly: true,
@@ -564,13 +565,14 @@ export default function Settings() {
           <h1 className="text-xl font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase">
             System Settings
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage your account security, pre-register staff personnel, and
-            update gym attributes.
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+            Update your account, customize desktop &amp; projector text size,
+            and manage gym settings.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap justify-end">
+          <DisplayScaleSelector />
           <button
             type="button"
             onClick={toggleTheme}

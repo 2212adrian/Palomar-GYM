@@ -40,12 +40,12 @@ export const SIDEBAR_NAV_STRUCTURE: NavMenuItem[] = [
       {
         name: 'Register Sale',
         path: '/sales',
-        description: 'Point of Registry Sales',
+        description: 'Quick checkout & daily sales',
       },
       {
         name: 'Product List',
         path: '/sales/products',
-        description: 'Product Inventory & Barcode generation',
+        description: 'Inventory counts & barcode tags',
         notificationKey: 'stockAlerts',
         notificationColor: 'amber',
         roles: ['admin'],
@@ -61,12 +61,12 @@ export const SIDEBAR_NAV_STRUCTURE: NavMenuItem[] = [
       {
         name: 'Logbook',
         path: '/logbook',
-        description: 'Instant gate/logbook telemetry',
+        description: 'Check-ins & daily attendance',
       },
       {
         name: 'Member List',
         path: '/members/list',
-        description: 'Accounts & profiles',
+        description: 'Member profiles & active plans',
         notificationKey: 'expiringSubs',
         notificationColor: 'red',
         roles: ['admin'],
@@ -74,7 +74,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavMenuItem[] = [
       {
         name: 'Membership Plans',
         path: '/members/plans',
-        description: 'Creates custom QR Code for hardware access cards',
+        description: 'Plan pricing & QR access cards',
       },
     ],
   },
@@ -89,12 +89,12 @@ export const SIDEBAR_NAV_STRUCTURE: NavMenuItem[] = [
       {
         name: 'Revenue Summary',
         path: '/dashboard',
-        description: 'Sales & Logbook real-time metrics',
+        description: 'Live sales & check-in overview',
       },
       {
         name: 'Revenue Goals',
         path: '/dashboard/goals',
-        description: 'Set custom goal limits (Day, Week, Month)',
+        description: 'Set daily, weekly & monthly goals',
         badge: 'GOALS',
       },
     ],

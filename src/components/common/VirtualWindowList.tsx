@@ -14,7 +14,7 @@ export interface VirtualWindowListProps<T> {
   itemClassName?: string;
   renderItem: (item: T, index: number) => React.ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
-  /** When true (default), windowing only activates on mobile (< 1024px). On desktop it renders all items directly. */
+  /** When true (default), windowing activates on screens below 1024px. */
   mobileOnly?: boolean;
 }
 
@@ -44,6 +44,8 @@ export function VirtualWindowList<T>({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<HTMLElement | Window | null>(null);
   const measuredHeights = useRef<{ [index: number]: number }>({});
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const nodeIndexMapRef = useRef<WeakMap<Element, number>>(new WeakMap());
 
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -71,6 +73,26 @@ export function VirtualWindowList<T>({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const idx = nodeIndexMapRef.current.get(entry.target);
+        if (idx !== undefined) {
+          const nextH = entry.contentRect.height;
+          if (nextH > 0) {
+            measuredHeights.current[idx] = nextH;
+          }
+        }
+      }
+    });
+    observerRef.current = ro;
+    return () => {
+      ro.disconnect();
+      observerRef.current = null;
+    };
+  }, []);
+
   const updateVisibleRange = useCallback(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
@@ -94,6 +116,7 @@ export function VirtualWindowList<T>({
     let currentOffset = 0;
     let start = 0;
     let foundStart = false;
+    let end = items.length;
 
     for (let i = 0; i < items.length; i++) {
       const h = measuredHeights.current[i] || estimateItemHeight;
@@ -102,17 +125,15 @@ export function VirtualWindowList<T>({
         foundStart = true;
       }
       if (foundStart && currentOffset > scrollTop + viewportHeight) {
-        const end = Math.min(items.length, i + overscan);
-        setRange({ start, end });
-        return;
+        end = Math.min(items.length, i + overscan);
+        break;
       }
       currentOffset += h;
     }
 
-    setRange({
-      start,
-      end: items.length,
-    });
+    setRange((prev) =>
+      prev.start === start && prev.end === end ? prev : { start, end }
+    );
   }, [items.length, estimateItemHeight, overscan]);
 
   useEffect(() => {
@@ -150,7 +171,6 @@ export function VirtualWindowList<T>({
     };
   }, [items.length, isMobile, mobileOnly, updateVisibleRange]);
 
-  // Desktop view: No windowing, renders all items directly to preserve desktop animations & styling
   if (mobileOnly && !isMobile) {
     return (
       <div className={className}>
@@ -163,7 +183,6 @@ export function VirtualWindowList<T>({
     );
   }
 
-  // Mobile virtualized rendering with top and bottom spacers
   let topSpacerHeight = 0;
   for (let i = 0; i < range.start; i++) {
     topSpacerHeight += measuredHeights.current[i] || estimateItemHeight;
@@ -176,14 +195,12 @@ export function VirtualWindowList<T>({
 
   const visibleItems = items.slice(range.start, range.end);
 
-  const measureItem = (index: number) => (el: HTMLDivElement | null) => {
-    if (el) {
-      const h = el.offsetHeight;
-      if (h > 0 && measuredHeights.current[index] !== h) {
-        measuredHeights.current[index] = h;
-      }
-    }
-  };
+  const attachMeasureObserver =
+    (index: number) => (el: HTMLDivElement | null) => {
+      if (!el) return;
+      nodeIndexMapRef.current.set(el, index);
+      observerRef.current?.observe(el);
+    };
 
   return (
     <div ref={containerRef} className={className}>
@@ -196,7 +213,7 @@ export function VirtualWindowList<T>({
         return (
           <div
             key={key}
-            ref={measureItem(actualIndex)}
+            ref={attachMeasureObserver(actualIndex)}
             className={itemClassName}
           >
             {renderItem(item, actualIndex)}

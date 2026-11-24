@@ -1,7 +1,7 @@
 // src/components/ui/TimelineCard.tsx
 import React, { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
-import { motion, useMotionValue, useTransform } from 'framer-motion';
+import { motion, useMotionValue, useTransform } from 'motion/react';
 import {
   Check,
   Clock,

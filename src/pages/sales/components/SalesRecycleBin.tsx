@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
@@ -246,10 +246,22 @@ export const SalesRecycleBin: React.FC<SalesRecycleBinProps> = ({
       setCountdown(`${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`);
     };
 
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      updateCountdown();
+    };
 
-    return () => clearInterval(interval);
+    updateCountdown();
+    const interval = setInterval(tick, 1000);
+    const onVisibility = () => {
+      if (!document.hidden) updateCountdown();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [isOpen]);
 
   const getRestorationStatus = (tx: any) => {

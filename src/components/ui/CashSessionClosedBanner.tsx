@@ -59,8 +59,8 @@ export const CashSessionClosedBanner: React.FC = () => {
         <div className="text-xs sm:text-sm font-semibold truncate leading-tight">
           <span className="opacity-95">
             {isStaff
-              ? 'Wolf Palomar GYM is currently closed. Come Back later.'
-              : 'Cash drawer session is closed. Check-in entries and Recycle Bin are currently locked.'}
+              ? 'Wolf Palomar GYM is currently closed. Please check back later.'
+              : 'Cash drawer is closed. Check-ins and Recycle Bin are locked until a shift opens.'}
           </span>
         </div>
       </div>
@@ -69,10 +69,10 @@ export const CashSessionClosedBanner: React.FC = () => {
         {!isStaff && (
           <button
             type="button"
-            onClick={() => navigate('/cash')}
+            onClick={() => navigate('/cash-management')}
             className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-heading font-black uppercase px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-md tracking-wider transition-colors cursor-pointer text-white"
           >
-            <span>Open Session</span>
+            <span>Open Drawer</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}

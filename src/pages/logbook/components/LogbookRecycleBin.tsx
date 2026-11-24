@@ -309,9 +309,20 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
         `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
       );
     };
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      updateCountdown();
+    };
     updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
+    const interval = setInterval(tick, 1000);
+    const onVisibility = () => {
+      if (!document.hidden) updateCountdown();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [isOpen]);
 
   // Filter logs by search query

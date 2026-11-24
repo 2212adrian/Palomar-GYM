@@ -37,7 +37,7 @@ import {
   FlashlightOff,
   Barcode as BarcodeIcon,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-toastify';
 import { Capacitor } from '@capacitor/core';
 import {

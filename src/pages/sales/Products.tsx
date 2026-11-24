@@ -10,7 +10,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../lib/supabase/client';
 import { logAudit } from '../../lib/supabase/audit';
@@ -178,6 +178,7 @@ const ProductImage: React.FC<ProductImageProps> = ({
       onError={() => setHasError(true)}
       className={className}
       loading="lazy"
+      decoding="async"
     />
   );
 };
@@ -334,7 +335,9 @@ export const Products: React.FC<ProductsProps> = ({
       }
       const { data, error } = await supabase
         .from('products')
-        .select('*')
+        .select(
+          'id, barcode_id, product_name, image_url, selling_price, has_stock_limit, stock_quantity, low_stock_alert, status, deleted_at, deleted_by, created_at, updated_at, manufacturer_barcode, manufacturer_source'
+        )
         .is('deleted_at', null)
         .order('product_name', { ascending: true });
 

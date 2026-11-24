@@ -110,6 +110,7 @@ export const SyncStatusButton: React.FC = () => {
     }
 
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (typeof navigator === 'undefined' || navigator.onLine) {
         refreshVaultStatus();
       }
@@ -147,11 +148,11 @@ export const SyncStatusButton: React.FC = () => {
           type="button"
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 transition-all text-xs font-heading font-extrabold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none animate-pulse shrink-0"
-          title={`${totalConflictsCount} offline sync conflict(s) require review`}
+          title={`${totalConflictsCount} saved item(s) need review before syncing`}
         >
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="hidden sm:inline">
-            {isAdmin ? `Sync Conflicts (${totalConflictsCount})` : `Conflicts (${totalConflictsCount})`}
+            {isAdmin ? `Needs Review (${totalConflictsCount})` : `Conflicts (${totalConflictsCount})`}
           </span>
           <span className="inline sm:hidden font-mono font-bold">
             {totalConflictsCount}
@@ -162,10 +163,10 @@ export const SyncStatusButton: React.FC = () => {
           type="button"
           onClick={toggleDrawer}
           className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 transition-all text-xs font-heading font-bold tracking-wider uppercase shadow-xs cursor-pointer select-none shrink-0"
-          title="Syncing offline transactions. Click to view queue."
+          title="Sending saved offline actions. Click to open queue."
         >
           <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500 shrink-0" />
-          <span className="hidden sm:inline">Syncing ({activeCount})...</span>
+          <span className="hidden sm:inline">Sending ({activeCount})...</span>
           <span className="inline sm:hidden font-mono font-bold">{activeCount}</span>
         </button>
       ) : isOffline ? (
@@ -173,10 +174,10 @@ export const SyncStatusButton: React.FC = () => {
           type="button"
           onClick={toggleDrawer}
           className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 transition-all text-xs font-heading font-bold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none shrink-0"
-          title={`${activeCount} offline transaction(s) queued. Click to open queue.`}
+          title={`${activeCount} action(s) saved offline. Click to open queue.`}
         >
           <CloudOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="hidden sm:inline">Queue ({activeCount})</span>
+          <span className="hidden sm:inline">Saved Offline ({activeCount})</span>
           <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-900 text-[9px] font-bold font-mono flex items-center justify-center">
             {activeCount}
           </span>
@@ -186,10 +187,10 @@ export const SyncStatusButton: React.FC = () => {
           type="button"
           onClick={toggleDrawer}
           className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 transition-all text-xs font-heading font-bold tracking-wider uppercase active:scale-95 shadow-xs cursor-pointer select-none shrink-0"
-          title={`${activeCount} pending offline action(s). Click to view queue.`}
+          title={`${activeCount} pending action(s). Click to view queue.`}
         >
           <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="hidden sm:inline">Queue</span>
+          <span className="hidden sm:inline">Pending</span>
           <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-900 text-[9px] font-bold font-mono flex items-center justify-center">
             {activeCount}
           </span>

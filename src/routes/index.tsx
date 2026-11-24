@@ -1,4 +1,12 @@
-import React, { useState, createContext, useMemo, useRef, useEffect } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  createContext,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -8,32 +16,89 @@ import {
 } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Login } from '../pages/auth/Login';
-import { Dashboard } from '../pages/dashboard/Dashboard';
-import { RevenueGoalsPage } from '../pages/dashboard/RevenueGoalsPage';
-import { IncidentReports } from '../pages/reports/IncidentReports';
 import { ProtectedRoute } from '../components/layouts/ProtectedRoute';
 import { SystemLayout } from '../components/layouts/SystemLayout';
-import { DownloadPage } from '../pages/download/DownloadPage';
+import { AppErrorBoundary } from '../components/common/AppErrorBoundary';
 
 import { useAuthStore, hasStoredAuthSession } from '../stores/authStore';
 import { isSuperAdmin } from '../constants/auth';
 
-// Mount actual pages instead of placeholders
-import Settings from '../pages/system/Settings';
-import { ForgotPassword } from '../pages/auth/ForgotPassword';
-import { ConfirmSignUp } from '../pages/auth/ConfirmSignUp';
-import { OAuthCallback } from '../pages/auth/OAuthCallback';
-import { StaffPlansConsole } from '../pages/members/components/SubscriptionPlan';
+// Load major console screens on demand for faster initial startup
+const Dashboard = lazy(() =>
+  import('../pages/dashboard/Dashboard').then((m) => ({ default: m.Dashboard }))
+);
+const RevenueGoalsPage = lazy(() =>
+  import('../pages/dashboard/RevenueGoalsPage').then((m) => ({
+    default: m.RevenueGoalsPage,
+  }))
+);
+const IncidentReports = lazy(() =>
+  import('../pages/reports/IncidentReports').then((m) => ({
+    default: m.IncidentReports,
+  }))
+);
+const DownloadPage = lazy(() =>
+  import('../pages/download/DownloadPage').then((m) => ({
+    default: m.DownloadPage,
+  }))
+);
+const Settings = lazy(() => import('../pages/system/Settings'));
+const ForgotPassword = lazy(() =>
+  import('../pages/auth/ForgotPassword').then((m) => ({
+    default: m.ForgotPassword,
+  }))
+);
+const ConfirmSignUp = lazy(() =>
+  import('../pages/auth/ConfirmSignUp').then((m) => ({
+    default: m.ConfirmSignUp,
+  }))
+);
+const OAuthCallback = lazy(() =>
+  import('../pages/auth/OAuthCallback').then((m) => ({
+    default: m.OAuthCallback,
+  }))
+);
+const StaffPlansConsole = lazy(() =>
+  import('../pages/members/components/SubscriptionPlan').then((m) => ({
+    default: m.StaffPlansConsole,
+  }))
+);
+const OnlineRegistrationPage = lazy(() =>
+  import('../pages/members/components/OnlineRegistrationPage').then((m) => ({
+    default: m.OnlineRegistrationPage,
+  }))
+);
+const Sales = lazy(() =>
+  import('../pages/sales/Sales').then((m) => ({ default: m.Sales }))
+);
+const LogbookPage = lazy(() =>
+  import('../pages/logbook/LogbookPage').then((m) => ({
+    default: m.LogbookPage,
+  }))
+);
+const CashManagementPage = lazy(() =>
+  import('../pages/cash/CashManagementPage').then((m) => ({
+    default: m.CashManagementPage,
+  }))
+);
 
-// Import Anonymous Pre-Registration Page
-import { OnlineRegistrationPage } from '../pages/members/components/OnlineRegistrationPage';
+const RouteSkeletonFallback: React.FC = () => (
+  <div className="w-full p-4 sm:p-6 space-y-5 animate-pulse">
+    <div className="h-7 w-56 rounded-xl bg-slate-200 dark:bg-white/10" />
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="h-28 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5" />
+      <div className="h-28 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5" />
+      <div className="h-28 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5" />
+    </div>
+    <div className="h-72 rounded-2xl bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-white/5" />
+  </div>
+);
 
-// Import Sales / Inventory component
-import { Sales } from '../pages/sales/Sales';
-import { LogbookPage } from '../pages/logbook/LogbookPage';
-
-// Import Cash Management Page
-import { CashManagementPage } from '../pages/cash/CashManagementPage';
+const withPageBoundary = (node: React.ReactNode) => (
+  <AppErrorBoundary>
+    <Suspense fallback={<RouteSkeletonFallback />}>{node}</Suspense>
+  </AppErrorBoundary>
+);
 
 export const isAppOrPWA = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -58,13 +123,7 @@ export const isAppOrPWA = (): boolean => {
 };
 
 /**
- * Smart entry resolver for the root `/` path:
- * 1. Checks if the incoming URL contains Supabase auth tokens or hash parameters.
- *    If Supabase redirects to "/" instead of the specific path, this intercepts
- *    the hash and routes the user to the correct setup page.
- * 2. Waits for session verification to finish so logged-in users are not bounced to /login.
- * 3. Directs authenticated users to their landing page (/dashboard for admin, /cash-management for staff),
- *    or unauthenticated users to /login.
+ * Smart entry resolver for `/` path.
  */
 const RootEntry: React.FC = () => {
   const { user, profile, initialized, loading } = useAuthStore();
@@ -73,12 +132,10 @@ const RootEntry: React.FC = () => {
     const hash = window.location.hash;
     const search = window.location.search;
 
-    // Detect Supabase Password Recovery callback
     if (hash.includes('type=recovery')) {
       return <Navigate to={`/forgot-password${hash}`} replace />;
     }
 
-    // Detect Supabase Sign-up or Invite confirmation callback
     if (
       hash.includes('type=signup') ||
       hash.includes('type=invite') ||
@@ -87,13 +144,11 @@ const RootEntry: React.FC = () => {
       return <Navigate to={`/confirm-signup${hash}`} replace />;
     }
 
-    // Detect PKCE OAuth auth code exchange on root redirect fallback
     if (search.includes('code=')) {
       return <Navigate to={`/auth/callback${search}`} replace />;
     }
   }
 
-  // Wait for session check to complete before any redirection
   if (!initialized || loading || (hasStoredAuthSession() && !user)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
@@ -113,11 +168,10 @@ const RootEntry: React.FC = () => {
 };
 
 /**
- * Fallback resolver for wildcard `*` route.
- * Redirects unknown URLs directly to the registration page.
+ * Redirects unknown URLs back through RootEntry so signed-in staff stay in their workspace.
  */
 const FallbackEntry: React.FC = () => {
-  return <Navigate to="/register" replace />;
+  return <Navigate to="/" replace />;
 };
 
 const LoginRouteGuard: React.FC = () => {
@@ -126,7 +180,10 @@ const LoginRouteGuard: React.FC = () => {
   const isPreview =
     new URLSearchParams(location.search).get('preview') === 'true';
 
-  if (!isPreview && (!initialized || loading || (hasStoredAuthSession() && !user))) {
+  if (
+    !isPreview &&
+    (!initialized || loading || (hasStoredAuthSession() && !user))
+  ) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-white dark:bg-[#0f1012]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
@@ -134,8 +191,6 @@ const LoginRouteGuard: React.FC = () => {
     );
   }
 
-  // Only auto-redirect away from /login if user is already authenticated AND
-  // greeting has already been completed in this session (e.g. direct URL visit)
   if (user && !isPreview) {
     const isGreetingShown =
       typeof window !== 'undefined' &&
@@ -145,7 +200,8 @@ const LoginRouteGuard: React.FC = () => {
       const isSuperAdminUser = isSuperAdmin(user.email);
       const effectiveRole = isSuperAdminUser ? 'admin' : profile?.role || 'staff';
       const fromPath = (location.state as any)?.from?.pathname;
-      const defaultTarget = effectiveRole === 'staff' ? '/cash-management' : '/dashboard';
+      const defaultTarget =
+        effectiveRole === 'staff' ? '/cash-management' : '/dashboard';
       const target =
         fromPath && fromPath !== '/login' ? fromPath : defaultTarget;
       return <Navigate to={target} replace />;
@@ -155,69 +211,67 @@ const LoginRouteGuard: React.FC = () => {
   return <Login />;
 };
 
-// Shared context for dynamic header buttons
 export const HeaderActionsContext = createContext<{
   setActions: React.Dispatch<React.SetStateAction<React.ReactNode>>;
 }>({ setActions: () => {} });
 
-// Centralized Header Configuration Directory
 const ROUTE_HEADERS: Record<
   string,
   { subtitle: string; title: string; description: string }
 > = {
   '/dashboard': {
-    subtitle: 'Console / Performance',
+    subtitle: 'Overview / Revenue Summary',
     title: 'System Dashboard',
     description:
-      'Real-time overview of active gym operations, financial metrics, and performance charts.',
+      'Live overview of daily gym operations, cash totals, and sales charts.',
   },
   '/dashboard/goals': {
-    subtitle: 'Console / Revenue Benchmarks',
+    subtitle: 'Overview / Targets',
     title: 'Revenue Goals Tracker',
     description:
-      'Set custom goal limits, analyze logbook vs sales run-rates, and monitor milestones.',
+      'Set daily, weekly, and monthly revenue goals and follow progress.',
   },
   '/sales/products': {
     subtitle: 'Sales / Products',
-    title: 'My Products',
+    title: 'Product Catalog',
     description:
-      'Manage your product inventory catalog, barcodes, prices, and stock indicators.',
+      'Manage your product list, barcode tags, selling prices, and low-stock alerts.',
   },
   '/sales': {
     subtitle: 'Sales / Register',
     title: 'Sales Register',
     description:
-      'Record product transactions, review daily financial logs, and trace weekly inventory telemetry.',
+      'Ring up product sales, track daily totals, and review today’s activity.',
   },
   '/logbook': {
-    subtitle: 'Check-in Records',
+    subtitle: 'Check-In Records',
     title: 'GYM LOGBOOK',
     description:
-      'Record gym attendance, manage memberships, process walk-ins, and monitor daily check-ins.',
+      'Record member attendance, manage active plans, handle walk-ins, and review daily check-ins.',
   },
   '/members/list': {
-    subtitle: 'List of Members',
+    subtitle: 'Member Directory',
     title: 'Member List',
     description:
-      'Manage client accounts, track subscription statuses, and generate security access QR cards.',
+      'Manage member profiles, track active plans, and issue QR access cards.',
   },
   '/members/plans': {
-    subtitle: 'List of Members',
+    subtitle: 'Member Directory',
     title: 'Membership Plans',
     description:
-      'Selectable catalog plans and setup configurations for security turnstiles.',
+      'Compare membership plan pricing and configure QR access cards.',
   },
   '/reports': {
-    subtitle: 'Reports / Incident Reports',
+    subtitle: 'Reports / Incidents',
     title: 'Incident Reports',
     description:
-      'Review reports submitted by staff regarding members, facilities, equipment, inventory, security, and daily operations.',
+      'Review facility, equipment, inventory, member, and safety notes submitted by staff.',
   },
   '/cash-management': {
-    subtitle: 'Console / Cash Flow',
+    subtitle: 'Shift / Cash Drawer',
     title: 'Live Cash Management',
     description:
-      'Real-time physical cash drawer control, cash-in/out tracking, digital collections, and daily reconciliation.',
+      'Open and close cash drawer shifts, log cash in or out, and reconcile daily totals.',
   },
 };
 
@@ -256,20 +310,24 @@ const HeaderLayout: React.FC = () => {
       <div className="space-y-4 sm:space-y-6 min-h-full flex flex-col min-w-0 pt-1 md:pt-2 relative text-[var(--color-text,#0f172a)] dark:text-slate-100">
         {headerInfo && (
           <div className="hidden md:flex flex-wrap items-center justify-between gap-4 px-6 pt-6 pb-2">
-            {/* Left Column: Title & Breadcrumbs */}
             <div className="min-w-fit shrink-0">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 {headerInfo.subtitle}
               </span>
               <h1 className="text-2xl font-bold tracking-tight text-[var(--color-text,#0b1a30)] dark:text-white uppercase mt-0.5">
                 {headerInfo.title}
               </h1>
-              <p className={actions ? 'hidden 2xl:block text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl' : 'text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl'}>
+              <p
+                className={
+                  actions
+                    ? 'hidden 2xl:block text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl'
+                    : 'text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xl'
+                }
+              >
                 {headerInfo.description}
               </p>
             </div>
 
-            {/* Right Column: Tablet & Desktop Control Toolbar */}
             {actions && (
               <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
                 {actions}
@@ -287,21 +345,35 @@ const HeaderLayout: React.FC = () => {
 };
 
 const router = createBrowserRouter([
-  // Public Default Route: Checks for Supabase verification tokens first, then defaults to /login
   { path: '/', element: <RootEntry /> },
 
-  // Explicit Public Member Pre-Registration Routes (ALWAYS OPEN WORLDWIDE)
-  { path: '/register', element: <OnlineRegistrationPage /> },
-  { path: '/register-online', element: <OnlineRegistrationPage /> },
+  {
+    path: '/register',
+    element: withPageBoundary(<OnlineRegistrationPage />),
+  },
+  {
+    path: '/register-online',
+    element: withPageBoundary(<OnlineRegistrationPage />),
+  },
 
-  // Staff / Admin Authentication Routes (Guarded by LoginRouteGuard)
   { path: '/login', element: <LoginRouteGuard /> },
-  { path: '/download', element: <DownloadPage standalone={true} /> },
-  { path: '/forgot-password', element: <ForgotPassword /> },
-  { path: '/confirm-signup', element: <ConfirmSignUp /> },
-  { path: '/auth/callback', element: <OAuthCallback /> },
+  {
+    path: '/download',
+    element: withPageBoundary(<DownloadPage standalone={true} />),
+  },
+  {
+    path: '/forgot-password',
+    element: withPageBoundary(<ForgotPassword />),
+  },
+  {
+    path: '/confirm-signup',
+    element: withPageBoundary(<ConfirmSignUp />),
+  },
+  {
+    path: '/auth/callback',
+    element: withPageBoundary(<OAuthCallback />),
+  },
 
-  // Secure Layout Node (Wraps Topbar, Sidebar, and Mobile Navigation)
   {
     element: <ProtectedRoute />,
     children: [
@@ -311,65 +383,79 @@ const router = createBrowserRouter([
           {
             element: <HeaderLayout />,
             children: [
-              // ─── A. ADMIN-ONLY CONSOLE ROUTES ───
               {
                 element: <ProtectedRoute allowedRoles={['admin']} />,
                 children: [
-                  { path: '/dashboard', element: <Dashboard /> },
-                  { path: '/dashboard/goals', element: <RevenueGoalsPage /> },
+                  {
+                    path: '/dashboard',
+                    element: withPageBoundary(<Dashboard />),
+                  },
+                  {
+                    path: '/dashboard/goals',
+                    element: withPageBoundary(<RevenueGoalsPage />),
+                  },
                   {
                     path: '/members/transactions',
-                    element: (
-                      <div className="p-4 text-slate-900 dark:text-white font-heading">
-                        Records of Transaction
-                      </div>
-                    ),
+                    element: <Navigate to="/logbook" replace />,
                   },
                   {
                     path: '/reports/bir',
-                    element: (
-                      <div className="p-4 text-slate-900 dark:text-white font-heading">
-                        BIR Records
-                      </div>
-                    ),
+                    element: <Navigate to="/dashboard" replace />,
                   },
                   {
                     path: '/system/audit-logs',
-                    element: (
-                      <div className="p-4 text-slate-900 dark:text-white font-heading">
-                        Audit Logs
-                      </div>
-                    ),
+                    element: <Navigate to="/settings/audit-logs" replace />,
                   },
                 ],
               },
 
-              // ─── B. SHARED ADMIN & STAFF CONSOLE ROUTES ───
               {
                 element: <ProtectedRoute allowedRoles={['admin', 'staff']} />,
                 children: [
-                  { path: '/sales', element: <Sales /> },
-                  { path: '/sales/:subview', element: <Sales /> },
-                  { path: '/logbook', element: <LogbookPage /> },
+                  { path: '/sales', element: withPageBoundary(<Sales />) },
+                  {
+                    path: '/sales/:subview',
+                    element: withPageBoundary(<Sales />),
+                  },
+                  {
+                    path: '/logbook',
+                    element: withPageBoundary(<LogbookPage />),
+                  },
                   {
                     path: '/scanner',
                     element: <Navigate to="/dashboard" replace />,
                   },
-                  { path: '/members/list', element: <LogbookPage /> },
-                  { path: '/members/plans', element: <StaffPlansConsole /> },
-                  { path: '/reports', element: <IncidentReports /> },
-                  { path: '/cash-management', element: <CashManagementPage /> },
+                  {
+                    path: '/members/list',
+                    element: withPageBoundary(<LogbookPage />),
+                  },
+                  {
+                    path: '/members/plans',
+                    element: withPageBoundary(<StaffPlansConsole />),
+                  },
+                  {
+                    path: '/reports',
+                    element: withPageBoundary(<IncidentReports />),
+                  },
+                  {
+                    path: '/cash-management',
+                    element: withPageBoundary(<CashManagementPage />),
+                  },
                   {
                     path: '/cash',
                     element: <Navigate to="/cash-management" replace />,
                   },
-                  { path: '/settings/:activeTab', element: <Settings /> },
-                  { path: '/settings', element: <Settings /> },
+                  {
+                    path: '/settings/:activeTab',
+                    element: withPageBoundary(<Settings />),
+                  },
+                  {
+                    path: '/settings',
+                    element: withPageBoundary(<Settings />),
+                  },
                   {
                     path: '/system/account',
-                    element: (
-                      <Navigate to="/settings/personal-account" replace />
-                    ),
+                    element: <Navigate to="/settings/personal-account" replace />,
                   },
                 ],
               },
@@ -380,7 +466,6 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Fallback Route: Redirect unknown paths
   { path: '*', element: <FallbackEntry /> },
 ]);
 

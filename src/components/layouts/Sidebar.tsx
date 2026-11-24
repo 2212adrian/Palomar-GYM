@@ -127,6 +127,8 @@ const SidebarAvatar: React.FC<{
       <img
         src={srcUrl}
         alt="Profile"
+        loading="lazy"
+        decoding="async"
         className="w-full h-full rounded-full object-cover relative z-10"
       />
     );

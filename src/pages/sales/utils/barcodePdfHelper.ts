@@ -1,6 +1,5 @@
 // src/pages/sales/utils/barcodePdfHelper.ts
 import JsBarcode from 'jsbarcode';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 export type LabelTemplateType =
   | '32_labels'
@@ -204,6 +203,7 @@ export const generatePdfFile = async (
   items: PrintableItem[],
   settings: BarcodeSettingsState
 ): Promise<Uint8Array> => {
+  const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
   const doc = await PDFDocument.create();
   const template = LABEL_TEMPLATES[settings.templateId];
 

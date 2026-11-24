@@ -289,7 +289,7 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
             {isOffline && (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold">
                 <WifiOff className="w-3.5 h-3.5 text-amber-500" />
-                <span>Offline Telemetry</span>
+                <span>Offline Mode</span>
               </span>
             )}
 
@@ -311,7 +311,7 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
                   ? 'bg-slate-100 dark:bg-zinc-800/50 text-slate-400 border-slate-200 dark:border-zinc-700/50 opacity-50 cursor-not-allowed'
                   : 'bg-white dark:bg-[#1e232d] border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/60 active:scale-95 disabled:opacity-60 cursor-pointer'
               }`}
-              title={isOffline ? 'Offline - Refresh disabled' : 'Re-validate session & refresh telemetry'}
+              title={isOffline ? 'Offline - Refresh disabled' : 'Refresh dashboard and check connection'}
               aria-label="Refresh dashboard data and session"
             >
               <RotateCcw

@@ -1,7 +1,7 @@
 // src/pages/members/components/MemberPhotoCaptureModal.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   X,
   Camera,

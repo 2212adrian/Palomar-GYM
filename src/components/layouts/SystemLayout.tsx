@@ -206,6 +206,48 @@ export const SystemLayout: React.FC = () => {
     };
   }, []);
 
+  // Front-desk keyboard shortcuts: / or Ctrl+K focuses active search bar; Esc closes menu drawer or blurs active field
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        Boolean(target) &&
+        (target!.tagName === 'INPUT' ||
+          target!.tagName === 'TEXTAREA' ||
+          target!.tagName === 'SELECT' ||
+          target!.isContentEditable);
+
+      if (e.key === 'Escape') {
+        if (mobileDrawerOpen) {
+          setMobileDrawerOpen(false);
+          return;
+        }
+        if (isEditable && target) {
+          target.blur();
+        }
+        return;
+      }
+
+      const isQuickSearchCombo =
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') ||
+        (!isEditable && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === '/');
+
+      if (isQuickSearchCombo) {
+        const searchEl = document.querySelector<HTMLInputElement>(
+          'main input[type="search"], main input[placeholder*="Search" i], main input[placeholder*="Filter" i], main input[aria-label*="Search" i]'
+        );
+        if (searchEl && searchEl.offsetParent !== null) {
+          e.preventDefault();
+          searchEl.focus();
+          searchEl.select?.();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileDrawerOpen]);
+
   const startLoading = useCallback((id: string) => {
     setActiveTasks((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, []);

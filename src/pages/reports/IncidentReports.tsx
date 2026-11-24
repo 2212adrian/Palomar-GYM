@@ -15,7 +15,7 @@ import { logAudit } from '../../lib/supabase/audit';
 import { useResponsiveItemsPerPage } from '../../lib/useResponsiveItemsPerPage';
 import { toast } from 'react-toastify';
 import { isSuperAdmin } from '../../constants/auth';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { HeaderActionsContext } from '../../routes';
 import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
 import { useNotificationStore } from '../../stores/useNotificationStore';

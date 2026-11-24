@@ -31,7 +31,7 @@ import {
   List,
   LayoutGrid,
 } from 'lucide-react';
-import { motion, AnimatePresence, animate } from 'framer-motion';
+import { motion, AnimatePresence, animate } from 'motion/react';
 import { toast } from 'react-toastify';
 import 'react-loading-skeleton/dist/skeleton.css';
 import { createPortal } from 'react-dom';

@@ -1,7 +1,7 @@
 // src/components/ui/UndoToast.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   RotateCcw,
   Trash2,

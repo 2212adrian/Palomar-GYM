@@ -32,8 +32,7 @@ import {
   animate,
   useMotionValue,
   useTransform,
-} from 'framer-motion';
-import { getServerNow } from '../../lib/serverTime';
+} from 'motion/react';
 import { useAuthStore } from '../../stores/authStore';
 import { isSuperAdmin } from '../../constants/auth';
 import {
@@ -43,8 +42,8 @@ import {
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { NotificationPopover } from './NotificationPopover';
 import { CashTransactionModal } from '../../pages/cash/components/CashTransactionModal';
-import { useBatterySaver } from '../../hooks/useBatterySaver';
 import { SyncStatusButton } from '../common/SyncStatusButton';
+import { ManilaClock } from '../common/ManilaClock';
 import { ActionQueueDrawer } from './ActionQueueDrawer';
 import type { CashTransactionType } from '../../types/cash';
 
@@ -287,8 +286,6 @@ export const Topbar: React.FC<TopbarProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isBatterySaver } = useBatterySaver();
-  const [currentTimeFull, setCurrentTimeFull] = useState('');
   const [subTab, setSubTab] = useState<string | null>(null);
 
   // Cash Session State
@@ -532,31 +529,6 @@ export const Topbar: React.FC<TopbarProps> = ({
     return () =>
       window.removeEventListener('settings-subtab-change', handleSubTabChange);
   }, []);
-
-  useEffect(() => {
-    const updateTime = () => {
-      const databaseNow = getServerNow();
-      const timeStr = databaseNow.toLocaleTimeString('en-US', {
-        timeZone: 'Asia/Manila',
-        hour: 'numeric',
-        minute: '2-digit',
-        ...(isBatterySaver ? {} : { second: '2-digit' as const }),
-        hour12: true,
-      });
-
-      const dateStr = databaseNow.toLocaleDateString('en-US', {
-        timeZone: 'Asia/Manila',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-
-      setCurrentTimeFull(`${dateStr} • ${timeStr}`);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, isBatterySaver ? 15000 : 1000);
-    return () => clearInterval(interval);
-  }, [isBatterySaver]);
 
   const isLogbookPath = location.pathname.startsWith('/logbook');
   const isSalesPath = location.pathname.startsWith('/sales');
@@ -866,16 +838,16 @@ export const Topbar: React.FC<TopbarProps> = ({
                       <div className="border-b border-slate-100 dark:border-slate-800 pb-2 mb-3">
                         <span className="text-[10px] font-heading font-black tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
                           {isMembersPath
-                            ? 'Member Directory Telemetry'
+                            ? 'Member Directory Summary'
                             : isProductsView
-                              ? 'Product Catalog Telemetry'
+                              ? 'Product Catalog Summary'
                               : isSalesPath
                                 ? isSessionOpen
-                                  ? `Active Session #${activeSession?.session_number || ''} Sales Telemetry`
-                                  : 'Sales Telemetry (Session Closed)'
+                                  ? `Shift #${activeSession?.session_number || ''} Sales Summary`
+                                  : 'Sales Summary (Drawer Closed)'
                                 : isSessionOpen
-                                  ? `Active Session #${activeSession?.session_number || ''} Logbook Telemetry`
-                                  : 'Logbook Telemetry (Session Closed)'}
+                                  ? `Shift #${activeSession?.session_number || ''} Check-In Summary`
+                                  : 'Check-In Summary (Drawer Closed)'}
                         </span>
                       </div>
 
@@ -1059,8 +1031,8 @@ export const Topbar: React.FC<TopbarProps> = ({
                         !isCashChecking &&
                         (isSalesPath || isLogbookPath) && (
                           <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider text-center pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
-                            Drawer session is closed. Telemetry resets for the
-                            next session.
+                            Cash drawer is closed. Totals reset for the next
+                            shift.
                           </p>
                         )}
                     </motion.div>
@@ -1072,7 +1044,7 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
       </div>
 
-      {/* 2. RIGHT SECTION: CASH PILL, GUIDE TRIGGER, NOTIFICATIONS & HAMBURGER */}
+      {/* 2. RIGHT SECTION: SYNC, CASH PILL, NOTIFICATIONS & BURGER MENU */}
       <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 ml-auto shrink-0">
 
         {/* OFFLINE SYNC & CONFLICT STATUS BUTTON */}
@@ -1281,10 +1253,8 @@ export const Topbar: React.FC<TopbarProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* TIME TELEMETRY (Desktop only) */}
-        <div className="hidden lg:block text-[12px] xl:text-[13px] font-mono text-slate-500 dark:text-slate-400 select-none whitespace-nowrap">
-          {currentTimeFull}
-        </div>
+        {/* ISOLATED LIVE CLOCK (Desktop only) */}
+        <ManilaClock />
 
         {/* NOTIFICATION BELL BUTTON */}
         {isAdmin && (

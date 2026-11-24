@@ -282,7 +282,7 @@ export const SystemInformation: React.FC = () => {
             false
           ),
       ]);
-      toast.success('Application core and release telemetry refreshed.', {
+      toast.success('App information and latest updates refreshed.', {
         toastId: 'reload-core-success',
       });
     } catch {

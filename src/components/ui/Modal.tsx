@@ -1,7 +1,7 @@
 // src/components/ui/Modal.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 
 // 1. Create a depth context to track nesting levels
 const ModalDepthContext = createContext(0);

@@ -1171,21 +1171,21 @@ export const DatabaseManager: React.FC = () => {
             <RefreshCw
               className={`w-3.5 h-3.5 ${loadingStorage || tabLoading ? 'animate-spin' : ''}`}
             />
-            <span>Refresh Telemetry</span>
+            <span>Refresh Usage</span>
           </button>
         </div>
 
-        {/* Storage Quota Telemetry Strip */}
+        {/* Storage Quota Usage Strip */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
           <div className="md:col-span-2 p-3.5 rounded-xl bg-(--bg-page) border border-(--border-color) space-y-2">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="font-heading font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Postgres Database Usage (500 MB Tier)
+                Main Database Storage (500 MB Tier)
               </span>
               <span className="font-mono font-black text-(--color-text) tabular-nums">
                 {dbSizeBytes !== null
                   ? `${formatBytes(dbSizeBytes)} / 500.00 MB (${dbQuotaPct}%)`
-                  : 'Telemetry pending...'}
+                  : 'Checking usage...'}
               </span>
             </div>
             <div className="w-full h-2.5 rounded-full bg-slate-200 dark:bg-zinc-800 overflow-hidden">
@@ -1204,7 +1204,7 @@ export const DatabaseManager: React.FC = () => {
 
           <div className="p-3.5 rounded-xl bg-(--bg-page) border border-(--border-color) flex flex-col justify-between gap-1">
             <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Bucket Object Storage
+              Photo & Backup File Storage
             </span>
             <span className="text-base font-mono font-black text-blue-600 dark:text-blue-400 tabular-nums">
               {bucketSizeBytes !== null

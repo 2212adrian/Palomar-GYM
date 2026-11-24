@@ -16,6 +16,42 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.13',
+    date: '2026-11-23',
+    summary:
+      'Smooth lag-free app performance upgrades while keeping all animations intact, desktop-only scalable text-size slider with 5% snap notches for monitors and projectors, clearer everyday wording across menus and controls, faster staff keyboard shortcuts, and full security hardening across server endpoints and database permissions.',
+    sections: [
+      {
+        type: 'Desktop & Screen Projector Readability',
+        items: [
+          'Desktop-Only Text Size Slider (5% Snapping): Added a draggable circular slider in Desktop Settings scaling smoothly from Small (85%) to Large (130%) in 5% snap steps with clickable notch dots and a one-click reset to 100%, hidden on phones and tablets.',
+          'Sharper Labels & Numeric Alignment: Raised undersized desktop micro-labels, strengthened muted gray contrast so projected screens stay crisp, and aligned prices, counts, and clocks with tabular numerals.',
+        ],
+      },
+      {
+        type: 'Zero-Breakage Speed & Smoothness Optimizations',
+        items: [
+          'Unified Animation Engine & Faster Loading: Consolidated duplicate animation runtimes into a single engine while preserving all page transitions, modals, and drawer gestures; added lazy route splitting with skeleton placeholders and on-demand PDF library loading for exports and card/barcode printing.',
+          'Clock, List & Background Efficiency: Isolated the 1-second Manila clock from the top bar, removed synchronous layout reads in virtualized lists, eased nested desktop blur layers, paused hidden-tab countdowns and polls, added async image decoding, and trimmed product and user queries to essential fields.',
+        ],
+      },
+      {
+        type: 'Staff Usability & Everyday Language',
+        items: [
+          'Clearer Terminology & Error Recovery: Replaced technical developer labels with plain everyday staff wording across menus, storage usage, and status badges, and added a friendly screen recovery card if a view fails to load.',
+          'Navigation Fixes & Keyboard Shortcuts: Repaired empty placeholder links, connected closed cash-drawer banners directly to Cash Management, and added "/" or Ctrl+K to jump straight to search plus Esc to clear focus or close the mobile drawer.',
+        ],
+      },
+      {
+        type: 'Security Hardening & Bug Fixes',
+        items: [
+          'Server Endpoint & Header Protection: Enforced signed-in active admin verification on user registration, removed email-existence leaks and weak password rules in password recovery, applied constant-time sync token checks, restricted cross-origin requests to trusted domains, and added HTTP security headers.',
+          'Database Permissions & Filter Safety: Added a migration restricting attendance and sales inserts to active staff/admin accounts, scoped sync-conflict updates to superadmin, and sanitized display names in user audit log filters.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.12',
     date: '2026-11-22',
     summary:

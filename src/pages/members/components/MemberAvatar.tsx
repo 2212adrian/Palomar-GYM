@@ -165,6 +165,7 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
           className={`w-full h-full object-cover border border-(--border-color) ${roundedClassName} transition-transform duration-200 group-hover:scale-105`}
           referrerPolicy="no-referrer"
           loading="lazy"
+          decoding="async"
         />
       ) : (
         <div

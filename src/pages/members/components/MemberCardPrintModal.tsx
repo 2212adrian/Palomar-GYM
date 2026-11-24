@@ -31,7 +31,6 @@ import {
   generateCardTokenUuid,
 } from '../memberService';
 import { toast } from 'react-toastify';
-import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -438,6 +437,7 @@ export const MemberCardPrintModal: React.FC<MemberCardPrintModalProps> = ({
     };
 
     const cardTemplateImgObj = await loadBase64Image(cardTemplateImg);
+    const { PDFDocument } = await import('pdf-lib');
     const pdfDoc = await PDFDocument.create();
 
     const scale = 300 / 25.4; // 11.811 px per mm

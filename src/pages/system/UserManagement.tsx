@@ -158,7 +158,7 @@ export const UserManagement: React.FC = () => {
     try {
       setIsLoadingUserLogs(true);
       const cleanName = String(targetUser.username || '')
-        .replace(/"/g, '')
+        .replace(/["',()\\*]/g, '')
         .trim();
       const query = supabase
         .from('audit_logs')
@@ -195,7 +195,7 @@ export const UserManagement: React.FC = () => {
       setIsLoadingUsers(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, username, email, role, status, avatar_url, created_at')
         .order('username', { ascending: true });
 
       if (error) throw error;

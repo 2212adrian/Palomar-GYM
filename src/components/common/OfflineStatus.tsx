@@ -1,7 +1,7 @@
 // src/components/common/OfflineStatus.tsx
 import React, { useState, useEffect } from 'react';
 import { WifiOff, Wifi } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Network } from '@capacitor/network';
 
 interface OfflineStatusProps {

@@ -35,7 +35,7 @@ import {
   animate,
   useMotionValue,
   useTransform,
-} from 'framer-motion';
+} from 'motion/react';
 import { toast } from 'react-toastify';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';

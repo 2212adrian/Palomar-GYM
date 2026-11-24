@@ -1,7 +1,7 @@
 // src/pages/sales/components/ProductFormModal.tsx
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
   Tag,

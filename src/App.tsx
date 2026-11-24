@@ -23,11 +23,14 @@ import { promptInitialPermissionsOnLogin } from './lib/permissions';
 import { swapNoemailWithGoogleIdentity } from './lib/oauthCallback';
 import { fetchLatestRelease, reloadPwaApp } from './lib/appUpdateService';
 import { initBackgroundSyncService } from './lib/backgroundSyncService';
+import { MotionConfig } from 'motion/react';
+import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 import { WhatsNewModal } from './components/ui/WhatsNewModal';
 import { OfflineStatus } from './components/common/OfflineStatus';
 import { VersionUpdateManager } from './components/common/VersionUpdateManager';
 import { useBatterySaver } from './hooks/useBatterySaver';
 import { useHeadingFont } from './hooks/useHeadingFont';
+import { useDisplayScale } from './hooks/useDisplayScale';
 import { useNotificationStore } from './stores/useNotificationStore';
 import pkg from '../package.json';
 
@@ -48,6 +51,7 @@ export const App: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const { isBatterySaver, isAutoTriggered, batteryLevel } = useBatterySaver();
   useHeadingFont();
+  useDisplayScale();
   const autoBatteryNotifiedRef = useRef(false);
 
   // Notify once when Power Saving Mode is automatically turned on at 20% or under battery
@@ -542,46 +546,48 @@ export const App: React.FC = () => {
   }, [checkSession]);
 
   return (
-    <>
-      <AppRoutes />
-      {/* Toast Notification Layer - limit={6} prevents stacked duplicate notifications */}
-      <ToastContainer
-        limit={6}
-        position="top-right"
-        autoClose={4000}
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
+    <MotionConfig reducedMotion="user">
+      <AppErrorBoundary>
+        <AppRoutes />
+        {/* Toast Notification Layer - limit={6} prevents stacked duplicate notifications */}
+        <ToastContainer
+          limit={6}
+          position="top-right"
+          autoClose={4000}
+          hideProgressBar={false}
+          newestOnTop={true}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="dark"
+        />
 
-      <WhatsNewModal />
-      <OfflineStatus />
-      <VersionUpdateManager />
+        <WhatsNewModal />
+        <OfflineStatus />
+        <VersionUpdateManager />
 
-      <Modal
-        isOpen={isExitModalOpen}
-        onClose={() => setIsExitModalOpen(false)}
-        title="Exit App"
-        className="max-w-xs text-center p-6"
-      >
-        <p className="text-sm font-body text-slate-600 dark:text-slate-400 mt-2">
-          Are you sure you want to close the application?
-        </p>
-        <div className="flex gap-3 mt-4">
-          <Button variant="secondary" onClick={() => setIsExitModalOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={() => CapApp.exitApp()}>
-            Exit
-          </Button>
-        </div>
-      </Modal>
-    </>
+        <Modal
+          isOpen={isExitModalOpen}
+          onClose={() => setIsExitModalOpen(false)}
+          title="Exit App"
+          className="max-w-xs text-center p-6"
+        >
+          <p className="text-sm font-body text-slate-600 dark:text-slate-400 mt-2">
+            Are you sure you want to close the application?
+          </p>
+          <div className="flex gap-3 mt-4">
+            <Button variant="secondary" onClick={() => setIsExitModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => CapApp.exitApp()}>
+              Exit
+            </Button>
+          </div>
+        </Modal>
+      </AppErrorBoundary>
+    </MotionConfig>
   );
 };
 

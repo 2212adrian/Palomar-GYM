@@ -1,7 +1,7 @@
 // src/components/ui/ClosedSessionGroup.tsx
 import React, { useState, useMemo } from 'react';
 import { format, parseISO, isSameDay } from 'date-fns';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
   ChevronDown,

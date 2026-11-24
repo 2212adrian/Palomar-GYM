@@ -11,7 +11,7 @@ import {
   Users,
   ChevronDown,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-toastify';
 import { useCashSessionStore } from '../../stores/useCashSessionStore';
 import { useAuthStore } from '../../stores/authStore';

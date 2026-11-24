@@ -1,6 +1,6 @@
 // src/components/layouts/SidebarProfileFlipper.tsx
 import React, { useState, useRef, useEffect, memo } from 'react';
-import { motion, animate } from 'framer-motion';
+import { motion, animate } from 'motion/react';
 import {
   Target,
   RotateCw,

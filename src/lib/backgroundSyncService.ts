@@ -1335,6 +1335,7 @@ export function initBackgroundSyncService(): () => void {
   const startPolling = () => {
     stopPolling();
     onlinePollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         handleOnline();
       }

@@ -90,6 +90,8 @@ export const AvatarImage: React.FC<{
     <img
       src={url}
       alt="Profile avatar"
+      loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       title={onImageClick ? title || 'Click to zoom profile photo' : undefined}
       onClick={
