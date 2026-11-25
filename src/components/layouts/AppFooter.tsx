@@ -878,6 +878,18 @@ export const AppFooter: React.FC<AppFooterProps> = ({
 
                   <button
                     type="button"
+                    onClick={() => setAgreementDoc('roles')}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-500/15 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="truncate">Roles, Rights &amp; Gym Rules</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setShowDeveloperModal(true)}
                     className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100/90 dark:bg-white/5 hover:bg-amber-500/10 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 transition-all cursor-pointer text-left"
                   >

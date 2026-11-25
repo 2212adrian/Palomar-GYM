@@ -28,7 +28,6 @@ import {
   Minus,
   Trash2,
   ChevronUp,
-  ChevronDown,
   Maximize2,
   Package,
   Camera,
@@ -161,7 +160,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     product: HybridProductResult;
     quantity: number;
   } | null>(null);
-  const [isCartExpanded, setIsCartExpanded] = useState(false);
+  const [isCartModalOpen, setIsCartModalOpen] = useState(false);
+  const [cartSheetHeight, setCartSheetHeight] = useState<number>(72);
+  const [isDraggingCartSheet, setIsDraggingCartSheet] = useState<boolean>(false);
+  const isDraggingCartRef = useRef<boolean>(false);
+  const cartPointerStartYRef = useRef<number>(0);
+  const cartStartHeightRef = useRef<number>(72);
+  const cartHasMovedRef = useRef<boolean>(false);
   const [salePaymentMethod, setSalePaymentMethod] = useState<'Cash' | 'GCash'>(
     'Cash'
   );
@@ -203,12 +208,87 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
     if (!isOpen) {
       setProductCart([]);
       setLastScannedProduct(null);
+      setIsCartModalOpen(false);
+      setCartSheetHeight(72);
       setScanResult(null);
       setScanFeedback('idle');
       setIsSwitchingCamera(false);
       isExitingRef.current = false;
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isCartModalOpen) {
+      setCartSheetHeight(72);
+      setIsDraggingCartSheet(false);
+      isDraggingCartRef.current = false;
+    }
+  }, [isCartModalOpen]);
+
+  const handleCartPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea')
+    ) {
+      return;
+    }
+
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    isDraggingCartRef.current = true;
+    cartHasMovedRef.current = false;
+    setIsDraggingCartSheet(true);
+    cartPointerStartYRef.current = e.clientY;
+    cartStartHeightRef.current = cartSheetHeight;
+  };
+
+  const handleCartPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingCartRef.current) return;
+    const currentY = e.clientY;
+    const deltaPx = cartPointerStartYRef.current - currentY;
+
+    if (Math.abs(deltaPx) > 4) {
+      cartHasMovedRef.current = true;
+    }
+
+    const screenH = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const deltaPercent = (deltaPx / screenH) * 100;
+    const nextPercent = Math.max(
+      20,
+      Math.min(96, cartStartHeightRef.current + deltaPercent)
+    );
+    setCartSheetHeight(nextPercent);
+  };
+
+  const handleCartPointerUp = (e: React.PointerEvent) => {
+    if (!isDraggingCartRef.current) return;
+    isDraggingCartRef.current = false;
+    setIsDraggingCartSheet(false);
+
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    if (!cartHasMovedRef.current) {
+      setCartSheetHeight((prev) => (prev <= 75 ? 96 : 72));
+      return;
+    }
+
+    setCartSheetHeight((current) => {
+      if (current < 48) {
+        setIsCartModalOpen(false);
+        return 72;
+      }
+      if (current > 88) return 96;
+      return Math.round(current);
+    });
+  };
 
   // Fetch rates
   useEffect(() => {
@@ -720,7 +800,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         );
       }
       if (updated.length === 0) {
-        setIsCartExpanded(false);
+        setIsCartModalOpen(false);
         setLastScannedProduct(null);
       }
       return;
@@ -746,7 +826,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
   const handleClearCart = () => {
     setProductCart([]);
     setLastScannedProduct(null);
-    setIsCartExpanded(false);
+    setIsCartModalOpen(false);
     toast.info('Product cart cleared. Scanner mode restored.');
   };
 
@@ -841,6 +921,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       forceStopCamera();
       setProductCart([]);
       setLastScannedProduct(null);
+      setIsCartModalOpen(false);
       handleClose();
       navigate('/sales');
     } catch (err: any) {
@@ -1570,18 +1651,15 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                 <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg my-auto py-1 gap-2.5 min-h-0">
                   <div
                     style={{
+                      contain: 'layout paint style',
                       boxShadow:
                         scanFeedback === 'success'
-                          ? '0 0 50px rgba(16, 185, 129, 0.5)'
+                          ? '0 0 40px rgba(16, 185, 129, 0.45)'
                           : scanMode === 'barcode'
-                            ? '0 0 40px rgba(245, 158, 11, 0.25)'
-                            : '0 0 40px rgba(6, 182, 212, 0.25)',
+                            ? '0 0 28px rgba(245, 158, 11, 0.2)'
+                            : '0 0 28px rgba(6, 182, 212, 0.2)',
                     }}
-                    className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-all duration-300 w-full ${
-                      isCartExpanded
-                        ? 'h-36 sm:h-44 max-w-44'
-                        : 'flex-1 min-h-[350px] max-h-[64vh] sm:max-h-[70vh]'
-                    } ${
+                    className={`relative rounded-3xl overflow-hidden bg-slate-950 border-2 transition-colors duration-200 w-full flex-1 min-h-[350px] max-h-[64vh] sm:max-h-[70vh] ${
                       scanFeedback === 'success'
                         ? 'border-emerald-400 ring-4 ring-emerald-500/30'
                         : scanMode === 'barcode'
@@ -1589,13 +1667,15 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           : 'border-cyan-500/60'
                     }`}
                   >
-                    <div id={qrRegionId} className="w-full h-full" />
+                    <div
+                      id={qrRegionId}
+                      className="w-full h-full"
+                      style={{ transform: 'translateZ(0)' }}
+                    />
 
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                      <motion.div
-                        layout
-                        initial={false}
-                        animate={{
+                      <div
+                        style={{
                           width:
                             scanMode === 'qr'
                               ? 'min(280px, 75vw)'
@@ -1606,15 +1686,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                               : 'min(150px, 24vh)',
                           borderRadius: scanMode === 'qr' ? '28px' : '18px',
                         }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 350,
-                          damping: 28,
-                        }}
-                        className="relative flex items-center justify-center border border-white/20 shadow-2xl"
+                        className="relative flex items-center justify-center border border-white/20 transition-[width,height,border-radius] duration-200 ease-out"
                       >
                         <div
-                          className={`absolute -top-1.5 -left-1.5 w-7 h-7 border-t-[4px] border-l-[4px] rounded-tl-xl transition-colors duration-300 ${
+                          className={`absolute -top-1.5 -left-1.5 w-7 h-7 border-t-[4px] border-l-[4px] rounded-tl-xl transition-colors duration-200 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1623,7 +1698,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -top-1.5 -right-1.5 w-7 h-7 border-t-[4px] border-r-[4px] rounded-tr-xl transition-colors duration-300 ${
+                          className={`absolute -top-1.5 -right-1.5 w-7 h-7 border-t-[4px] border-r-[4px] rounded-tr-xl transition-colors duration-200 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1632,7 +1707,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -bottom-1.5 -left-1.5 w-7 h-7 border-b-[4px] border-l-[4px] rounded-bl-xl transition-colors duration-300 ${
+                          className={`absolute -bottom-1.5 -left-1.5 w-7 h-7 border-b-[4px] border-l-[4px] rounded-bl-xl transition-colors duration-200 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1641,7 +1716,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           }`}
                         />
                         <div
-                          className={`absolute -bottom-1.5 -right-1.5 w-7 h-7 border-b-[4px] border-r-[4px] rounded-br-xl transition-colors duration-300 ${
+                          className={`absolute -bottom-1.5 -right-1.5 w-7 h-7 border-b-[4px] border-r-[4px] rounded-br-xl transition-colors duration-200 ${
                             scanFeedback === 'success'
                               ? 'border-emerald-400'
                               : scanMode === 'barcode'
@@ -1659,7 +1734,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           <div className="w-full h-px bg-amber-400/40 absolute" />
                         )}
 
-                        {scanFeedback !== 'success' && (
+                        {scanFeedback !== 'success' && !isCartModalOpen && !scanResult && !isBatterySaver && (
                           <motion.div
                             animate={{ y: ['-110%', '110%'] }}
                             transition={{
@@ -1670,17 +1745,16 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             }}
                             className={`absolute left-2 right-2 h-0.5 rounded-full will-change-transform ${
                               scanMode === 'barcode'
-                                ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_20px_#f59e0b]'
-                                : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_20px_#22d3ee]'
+                                ? 'bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_12px_#f59e0b]'
+                                : 'bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee]'
                             }`}
                           />
                         )}
-                      </motion.div>
+                      </div>
                     </div>
 
-                    {!isCartExpanded && (
-                      <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0 shadow-lg">
+                    <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10 gap-2">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 border border-white/10 text-[10px] font-bold uppercase text-slate-200 tracking-wider shrink-0 shadow-lg">
                           <span
                             className={`w-2 h-2 rounded-full ${
                               isProcessing
@@ -1751,7 +1825,6 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           </button>
                         </div>
                       </div>
-                    )}
 
                     <AnimatePresence>
                       {scanFeedback === 'success' && (
@@ -1759,10 +1832,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           initial={{ opacity: 0, scale: 0.7 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 1.2 }}
-                          transition={{ duration: 0.25 }}
+                          transition={{ duration: 0.2 }}
                           className="absolute inset-0 bg-emerald-500/35 flex items-center justify-center pointer-events-none z-20"
                         >
-                          <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_40px_#10b981] animate-bounce">
+                          <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_30px_#10b981] animate-bounce">
                             <Check className="w-9 h-9 stroke-3" />
                           </div>
                         </motion.div>
@@ -1779,11 +1852,11 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           '-' +
                           lastScannedProduct.quantity
                         }
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        initial={{ opacity: 0, y: 10, scale: 0.96 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                        className="w-full max-w-lg bg-zinc-900/95 border-2 border-emerald-500/50 rounded-2xl p-2.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 shrink-0 z-20"
+                        exit={{ opacity: 0, y: -10, scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                        className="w-full max-w-lg bg-zinc-900 border-2 border-emerald-500/50 rounded-2xl p-2.5 shadow-xl flex items-center justify-between gap-3 shrink-0 z-20"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div
@@ -1839,26 +1912,18 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                           <span className="text-[9px] uppercase font-bold text-zinc-400">
                             In Cart
                           </span>
-                          <motion.span
-                            key={lastScannedProduct.quantity}
-                            initial={{ scale: 1.25 }}
-                            animate={{ scale: 1 }}
-                            className="text-xs sm:text-sm font-mono font-black text-white bg-emerald-600 px-3 py-1 rounded-xl shadow-md border border-emerald-400/40"
-                          >
+                          <span className="text-xs sm:text-sm font-mono font-black text-white bg-emerald-600 px-3 py-1 rounded-xl shadow-md border border-emerald-400/40">
                             {lastScannedProduct.quantity}x
-                          </motion.span>
+                          </span>
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
 
-                {/* BOTTOM SEARCH & CART DRAWER */}
+                {/* BOTTOM SEARCH & CART MODAL TRIGGER BAR */}
                 <div className="w-full max-w-lg space-y-2 shrink-0 z-20">
-                  <motion.form
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
+                  <form
                     onSubmit={handleManualSubmit}
                     className="relative group w-full"
                   >
@@ -1880,12 +1945,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                             ? 'ENTER PRODUCT BARCODE / EXTERNAL ID...'
                             : 'ENTER REG-ID, MEMBER ID, OR PHONE...'
                       }
-                      className="w-full pl-10 pr-24 py-2.5 bg-zinc-900/90 backdrop-blur-xl border border-zinc-700/80 rounded-2xl text-[11px] sm:text-xs font-bold uppercase transition-all outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 text-white placeholder-zinc-400 shadow-xl"
+                      className="w-full pl-10 pr-24 py-2.5 bg-zinc-900 border border-zinc-700/80 rounded-2xl text-[11px] sm:text-xs font-bold uppercase transition-colors outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 text-white placeholder-zinc-400 shadow-xl"
                     />
                     <button
                       type="submit"
                       disabled={!manualCode.trim() || isProcessing}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-heading text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 z-10 shadow-sm"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-heading text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer active:scale-95 z-10 shadow-sm"
                     >
                       {isProcessing ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1893,287 +1958,348 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                         'SEARCH'
                       )}
                     </button>
-                  </motion.form>
+                  </form>
 
                   {productCart.length > 0 && (
-                    <motion.div
-                      initial={{ y: 20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={{ y: 20, opacity: 0 }}
-                      className="w-full bg-zinc-900/95 backdrop-blur-2xl border-2 border-emerald-500/50 rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-all duration-300"
+                    <div
+                      onClick={() => setIsCartModalOpen(true)}
+                      className="w-full p-3 bg-zinc-900 border-2 border-emerald-500/50 rounded-3xl shadow-xl flex items-center justify-between cursor-pointer select-none hover:bg-zinc-850 active:scale-[0.99] transition-transform gap-2"
                     >
-                      <div
-                        onClick={() => setIsCartExpanded(!isCartExpanded)}
-                        className="p-3 bg-zinc-900/95 flex items-center justify-between cursor-pointer border-b border-zinc-800/80 select-none hover:bg-zinc-850 transition-colors shrink-0 gap-2"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                            <ShoppingBag className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0 text-left">
-                            <h4 className="text-xs font-bold uppercase text-white tracking-wider truncate">
-                              Cart (
-                              {productCart.reduce((s, i) => s + i.quantity, 0)}{' '}
-                              Items)
-                            </h4>
-                            <span className="text-[10px] font-mono font-extrabold text-emerald-400 block">
-                              ₱{cartSubtotal.toFixed(2)}
-                            </span>
-                          </div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                          <ShoppingBag className="w-4 h-4" />
                         </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleClearCart();
-                            }}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors cursor-pointer"
-                            title="Clear Cart"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            className="p-1.5 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-colors cursor-pointer"
-                          >
-                            {isCartExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronUp className="w-4 h-4" />
-                            )}
-                          </button>
+                        <div className="min-w-0 text-left">
+                          <h4 className="text-xs font-bold uppercase text-white tracking-wider truncate">
+                            Cart ({productCart.reduce((s, i) => s + i.quantity, 0)}{' '}
+                            Items)
+                          </h4>
+                          <span className="text-[10px] font-mono font-extrabold text-emerald-400 block">
+                            ₱{cartSubtotal.toFixed(2)} • Tap to View & Checkout
+                          </span>
                         </div>
                       </div>
 
-                      <AnimatePresence>
-                        {isCartExpanded && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.25 }}
-                            className="p-3 space-y-3 border-t border-zinc-800/80 text-left overflow-y-auto max-h-[42vh]"
-                          >
-                            <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
-                              {productCart.map((item, idx) => (
-                                <div
-                                  key={item.product.id}
-                                  className={`p-2 rounded-2xl border flex items-center justify-between gap-2 text-xs transition-all ${
-                                    lastScannedProduct?.product.id ===
-                                    item.product.id
-                                      ? 'bg-emerald-950/40 border-emerald-500/50 shadow-inner'
-                                      : 'bg-zinc-950/80 border-zinc-800'
-                                  }`}
-                                >
-                                  <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-700/80 overflow-hidden flex items-center justify-center shrink-0">
-                                    {item.product.imageUrl ? (
-                                      <img
-                                        src={item.product.imageUrl}
-                                        alt={item.product.productName}
-                                        className="w-full h-full object-cover"
-                                      />
-                                    ) : (
-                                      <Package className="w-4 h-4 text-zinc-400" />
-                                    )}
-                                  </div>
-
-                                  <div className="min-w-0 flex-1">
-                                    <h5 className="font-bold text-white uppercase truncate text-[11px]">
-                                      {item.product.productName}
-                                    </h5>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                      <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                                        ₱{item.product.sellingPrice.toFixed(2)}
-                                      </span>
-                                      <span className="text-[9px] text-zinc-400 font-mono">
-                                        {item.product.barcodeId}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateCartQty(idx, -1)}
-                                      className="w-5 h-5 rounded-lg bg-zinc-800 text-white flex items-center justify-center font-bold hover:bg-zinc-700 transition-colors cursor-pointer"
-                                    >
-                                      <Minus className="w-3 h-3" />
-                                    </button>
-                                    <span className="font-mono font-bold w-4 text-center text-xs text-white">
-                                      {item.quantity}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateCartQty(idx, 1)}
-                                      className="w-5 h-5 rounded-lg bg-zinc-800 text-white flex items-center justify-center font-bold hover:bg-zinc-700 transition-colors cursor-pointer"
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="space-y-1.5 pt-1 border-t border-zinc-800">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase block">
-                                Payment Settlement Method
-                              </span>
-
-                              <div className="grid grid-cols-2 gap-1 p-0.5 bg-zinc-950 rounded-xl">
-                                <button
-                                  type="button"
-                                  onClick={() => setSalePaymentMethod('Cash')}
-                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                                    salePaymentMethod === 'Cash'
-                                      ? 'bg-cyan-600 text-white shadow-xs'
-                                      : 'text-zinc-400 hover:text-white'
-                                  }`}
-                                >
-                                  <CircleDollarSign className="w-3 h-3" /> Cash
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setSalePaymentMethod('GCash')}
-                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                                    salePaymentMethod === 'GCash'
-                                      ? 'bg-cyan-600 text-white shadow-xs'
-                                      : 'text-zinc-400 hover:text-white'
-                                  }`}
-                                >
-                                  <CreditCard className="w-3 h-3" /> GCash
-                                </button>
-                              </div>
-
-                              {salePaymentMethod === 'Cash' ? (
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-bold uppercase text-zinc-400 block">
-                                    Amount Received (PHP)
-                                  </label>
-                                  <div className="relative">
-                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-bold font-mono text-xs">
-                                      ₱
-                                    </span>
-                                    <input
-                                      type="number"
-                                      autoComplete="off"
-                                      spellCheck={false}
-                                      autoCorrect="off"
-                                      value={saleAmountReceived}
-                                      onChange={(e) =>
-                                        setSaleAmountReceived(e.target.value)
-                                      }
-                                      placeholder="0.00"
-                                      className="w-full pl-7 pr-2 py-1 bg-zinc-950 border border-zinc-800 rounded-lg font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
-                                    />
-                                  </div>
-                                  {saleAmountReceived && (
-                                    <div className="text-[10px] font-bold text-emerald-400 flex justify-between pt-0.5">
-                                      <span>Change Due:</span>
-                                      <span className="font-mono">
-                                        ₱
-                                        {Math.max(
-                                          0,
-                                          Number(saleAmountReceived) -
-                                            cartTotalPayable
-                                        ).toFixed(2)}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-bold uppercase text-zinc-400 block">
-                                    GCash Reference Number (13 Digits)
-                                  </label>
-                                  <input
-                                    type="text"
-                                    autoComplete="off"
-                                    spellCheck={false}
-                                    autoCorrect="off"
-                                    maxLength={13}
-                                    value={saleReferenceNumber}
-                                    onChange={(e) =>
-                                      setSaleReferenceNumber(
-                                        e.target.value.replace(/\D/g, '').slice(0, 13)
-                                      )
-                                    }
-                                    placeholder="ENTER 13-DIGIT REF NO..."
-                                    className="w-full px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-lg font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
-                                  />
-                                  {/^\d{13}$/.test(saleReferenceNumber.trim()) ? (
-                                    <span className="text-[10px] text-emerald-400 font-bold block">
-                                      ✓ 13-digit GCash validated
-                                    </span>
-                                  ) : saleReferenceNumber.trim().length > 0 ? (
-                                    <span className="text-[10px] text-amber-400 block">
-                                      {13 - saleReferenceNumber.trim().length} more digits needed
-                                    </span>
-                                  ) : null}
-                                </div>
-                              )}
-
-                              <div className="p-2 bg-zinc-950/90 rounded-xl border border-zinc-800 space-y-0.5 text-[10px] font-mono">
-                                <div className="flex justify-between text-zinc-400">
-                                  <span>Subtotal:</span>
-                                  <span className="font-bold text-white">
-                                    ₱{cartSubtotal.toFixed(2)}
-                                  </span>
-                                </div>
-                                {salePaymentMethod === 'GCash' && (
-                              <div className="flex justify-between text-zinc-400">
-                                <span>GCash Fee:</span>
-                                <span className="text-amber-400 font-bold">
-                                  +₱{cartGcashFee.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex justify-between font-bold text-white pt-1 border-t border-zinc-800 text-xs">
-                              <span>TOTAL PAYABLE:</span>
-                              <span className="text-emerald-400 font-extrabold">
-                                ₱{cartTotalPayable.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <Button
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
                           type="button"
-                          variant="primary"
-                          onClick={handlePlaceOrder}
-                          disabled={
-                            isSubmittingSale ||
-                            productCart.length === 0 ||
-                            isLocked
-                          }
-                          title={
-                            isLocked
-                              ? getLockReason('place product orders')
-                              : undefined
-                          }
-                          className={`w-full py-3 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white ${
-                            isLocked
-                              ? 'opacity-40 cursor-not-allowed pointer-events-none'
-                              : 'cursor-pointer disabled:opacity-40'
-                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleClearCart();
+                          }}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors cursor-pointer"
+                          title="Clear Cart"
                         >
-                          <ShoppingBag className="w-4 h-4 shrink-0" />
-                          <span className="whitespace-nowrap">
-                            {isSubmittingSale
-                              ? 'Placing Order...'
-                              : `Place Order (₱${cartTotalPayable.toFixed(2)})`}
-                          </span>
-                        </Button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              )}
-            </div>
-          </>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        <span className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                          <span>Cart</span>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* DRAGGABLE / TAPPABLE PRODUCT CART BOTTOM-SHEET MODAL (DOES NOT RESIZE CAMERA) */}
+      <AnimatePresence>
+        {isOpen && isCartModalOpen && productCart.length > 0 && (
+          <motion.div
+            key="scanner-cart-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setIsCartModalOpen(false)}
+            className="fixed inset-0 z-[15020] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 font-sans text-xs select-none"
+          >
+            <motion.div
+              key="scanner-cart-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              style={{ height: `${cartSheetHeight}dvh` }}
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full sm:max-w-lg sm:!h-auto sm:max-h-[85vh] bg-zinc-900 border-t sm:border border-emerald-500/40 shadow-2xl flex flex-col overflow-hidden relative text-left ${
+                isDraggingCartSheet
+                  ? '!transition-none'
+                  : 'transition-[height,border-radius] duration-200 ease-out'
+              } ${
+                cartSheetHeight >= 95
+                  ? 'rounded-none sm:rounded-3xl'
+                  : 'rounded-t-3xl sm:rounded-3xl'
+              }`}
+            >
+              {/* PULLABLE / TAPPABLE DRAG HANDLE (MOBILE & TABLET) */}
+              <div
+                onPointerDown={handleCartPointerDown}
+                onPointerMove={handleCartPointerMove}
+                onPointerUp={handleCartPointerUp}
+                onPointerCancel={handleCartPointerUp}
+                className="sm:hidden w-full flex flex-col items-center justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing select-none shrink-0 bg-zinc-900 touch-none"
+                style={{ touchAction: 'none' }}
+                title="Tap to expand/collapse or drag up/down"
+              >
+                <div className="w-12 h-1.5 rounded-full bg-zinc-600 hover:bg-zinc-500 transition-colors" />
+              </div>
+
+              {/* MODAL HEADER */}
+              <div
+                onPointerDown={handleCartPointerDown}
+                onPointerMove={handleCartPointerMove}
+                onPointerUp={handleCartPointerUp}
+                onPointerCancel={handleCartPointerUp}
+                className="px-4 pb-3 sm:p-4 border-b border-zinc-800 flex items-center justify-between gap-2 shrink-0 bg-zinc-900 touch-none sm:touch-auto cursor-grab sm:cursor-default active:cursor-grabbing sm:active:cursor-default"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                    <ShoppingBag className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs sm:text-sm font-bold uppercase text-white tracking-wider truncate">
+                      Product Cart ({productCart.reduce((s, i) => s + i.quantity, 0)} Items)
+                    </h4>
+                    <span className="text-[10px] font-mono font-extrabold text-emerald-400 block">
+                      Subtotal: ₱{cartSubtotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleClearCart}
+                    className="p-2 rounded-xl text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors cursor-pointer"
+                    title="Clear Cart"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCartModalOpen(false)}
+                    className="p-2 rounded-xl bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors cursor-pointer"
+                    title="Close Cart"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* SCROLLABLE CART ITEMS & PAYMENT DETAILS */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                <div className="space-y-2">
+                  {productCart.map((item, idx) => (
+                    <div
+                      key={item.product.id}
+                      className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2.5 text-xs transition-colors ${
+                        lastScannedProduct?.product.id === item.product.id
+                          ? 'bg-emerald-950/40 border-emerald-500/50 shadow-inner'
+                          : 'bg-zinc-950/80 border-zinc-800'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700/80 overflow-hidden flex items-center justify-center shrink-0">
+                        {item.product.imageUrl ? (
+                          <img
+                            src={item.product.imageUrl}
+                            alt={item.product.productName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Package className="w-4 h-4 text-zinc-400" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h5 className="font-bold text-white uppercase truncate text-xs">
+                          {item.product.productName}
+                        </h5>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                            ₱{item.product.sellingPrice.toFixed(2)}
+                          </span>
+                          <span className="text-[10px] text-zinc-400 font-mono truncate">
+                            {item.product.barcodeId}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCartQty(idx, -1)}
+                          className="w-7 h-7 rounded-lg bg-zinc-800 text-white flex items-center justify-center font-bold hover:bg-zinc-700 transition-colors cursor-pointer"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="font-mono font-bold w-5 text-center text-xs text-white">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCartQty(idx, 1)}
+                          className="w-7 h-7 rounded-lg bg-zinc-800 text-white flex items-center justify-center font-bold hover:bg-zinc-700 transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-zinc-800">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase block">
+                    Payment Settlement Method
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-950 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setSalePaymentMethod('Cash')}
+                      className={`py-2 text-[11px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        salePaymentMethod === 'Cash'
+                          ? 'bg-cyan-600 text-white shadow-xs'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <CircleDollarSign className="w-3.5 h-3.5" /> Cash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSalePaymentMethod('GCash')}
+                      className={`py-2 text-[11px] font-bold uppercase rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        salePaymentMethod === 'GCash'
+                          ? 'bg-cyan-600 text-white shadow-xs'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <CreditCard className="w-3.5 h-3.5" /> GCash
+                    </button>
+                  </div>
+
+                  {salePaymentMethod === 'Cash' ? (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 block">
+                        Amount Received (PHP)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-bold font-mono text-xs">
+                          ₱
+                        </span>
+                        <input
+                          type="number"
+                          autoComplete="off"
+                          spellCheck={false}
+                          autoCorrect="off"
+                          value={saleAmountReceived}
+                          onChange={(e) => setSaleAmountReceived(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-7 pr-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
+                        />
+                      </div>
+                      {saleAmountReceived && (
+                        <div className="text-[11px] font-bold text-emerald-400 flex justify-between pt-0.5">
+                          <span>Change Due:</span>
+                          <span className="font-mono">
+                            ₱
+                            {Math.max(
+                              0,
+                              Number(saleAmountReceived) - cartTotalPayable
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 block">
+                        GCash Reference Number (13 Digits)
+                      </label>
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
+                        maxLength={13}
+                        value={saleReferenceNumber}
+                        onChange={(e) =>
+                          setSaleReferenceNumber(
+                            e.target.value.replace(/\D/g, '').slice(0, 13)
+                          )
+                        }
+                        placeholder="ENTER 13-DIGIT REF NO..."
+                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl font-mono text-xs font-bold outline-none focus:border-cyan-500 text-white"
+                      />
+                      {/^\d{13}$/.test(saleReferenceNumber.trim()) ? (
+                        <span className="text-[10px] text-emerald-400 font-bold block">
+                          ✓ 13-digit GCash validated
+                        </span>
+                      ) : saleReferenceNumber.trim().length > 0 ? (
+                        <span className="text-[10px] text-amber-400 block">
+                          {13 - saleReferenceNumber.trim().length} more digits needed
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <div className="p-2.5 bg-zinc-950/90 rounded-xl border border-zinc-800 space-y-1 text-[11px] font-mono">
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Subtotal:</span>
+                      <span className="font-bold text-white">
+                        ₱{cartSubtotal.toFixed(2)}
+                      </span>
+                    </div>
+                    {salePaymentMethod === 'GCash' && (
+                      <div className="flex justify-between text-zinc-400">
+                        <span>GCash Fee:</span>
+                        <span className="text-amber-400 font-bold">
+                          +₱{cartGcashFee.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-white pt-1.5 border-t border-zinc-800 text-xs">
+                      <span>TOTAL PAYABLE:</span>
+                      <span className="text-emerald-400 font-extrabold">
+                        ₱{cartTotalPayable.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PINNED CHECKOUT FOOTER */}
+              <div className="p-4 pt-3 border-t border-zinc-800 bg-zinc-900 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-4">
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handlePlaceOrder}
+                  disabled={
+                    isSubmittingSale || productCart.length === 0 || isLocked
+                  }
+                  title={
+                    isLocked ? getLockReason('place product orders') : undefined
+                  }
+                  className={`w-full py-3 text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white ${
+                    isLocked
+                      ? 'opacity-40 cursor-not-allowed pointer-events-none'
+                      : 'cursor-pointer disabled:opacity-40'
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4 shrink-0" />
+                  <span className="whitespace-nowrap">
+                    {isSubmittingSale
+                      ? 'Placing Order...'
+                      : `Place Order (₱${cartTotalPayable.toFixed(2)})`}
+                  </span>
+                </Button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

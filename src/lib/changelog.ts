@@ -16,6 +16,41 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
   {
+    version: '1.0.14',
+    date: '2026-11-25',
+    summary:
+      'Fixed Staff soft-delete and counter member enrollment permissions, locked Staff incident reports from edits or deletion once marked Read with Admin-only 30-day retention notices, replaced the 5-second Undo toast with an audit-logged void reason modal, added a mini-sidebar flyout submenu, simplified Membership Plans into a full-width two-button screen where Register Here (No Phone) opens the Monthly/Yearly plan screen with a Back button, added QR download and screenshot instructions on Online Registration, expanded Legal & Roles documentation modal width with full role obligations and gym rules in the footer, hid BIR tax export leaving 5 operational report formats, moved Camera Scanner cart to a draggable modal, pinned Recycle Bin footer buttons, removed duplicate Settings bars, and stopped OS notification spam while viewing the app.',
+    sections: [
+      {
+        type: 'Role Permissions, Audit Void Reasons & Retention Policy',
+        items: [
+          'Staff Soft-Delete & Counter Enrollment Fix: Added server-verified soft-delete procedures for Logbook Attendance and Sales and allowed active Staff to enroll no-phone walk-in members directly at the counter.',
+          'Void Confirmation with Audit-Logged Reason: Replaced the 5-second Undo toast in Sales and Logbook (Sources of Income) with a Void & Delete confirmation modal requiring a specific reason before moving items to the Recycle Bin, automatically logging every void reason in Audit Logs.',
+          'Incident Reports Lock After Admin Review: Staff can no longer edit or delete their own incident reports once marked as Read (reviewed by Admin) or Archived.',
+          'Admin-Only 30-Day Retention Notice: Displayed the 30-day automatic deletion policy banner and countdown exclusively for Admins while hiding retention countdowns from Staff.',
+        ],
+      },
+      {
+        type: 'Membership Plans, Online Registration QR & Navigation',
+        items: [
+          'Clean Two-Button Membership Plans Screen: Replaced the stacked Membership Plans view with a full-width two-button layout—Scan QR / Enter Code on the left and Register Here (No Phone) on the right, which opens the Monthly and Yearly plan screen with a Back button.',
+          'Online Registration QR Download & Front-Desk Prompt: Upgraded the post-registration QR ticket with reliable offline QR generation, a one-tap Download QR button, and clear instructions to screenshot or download the QR and show it to the front desk.',
+          'Collapsed Mini-Sidebar Flyout Menu: Clicking any icon with sub-options in the collapsed desktop rail now opens a clean flyout panel on the right showing all child pages.',
+          'Mobile/Tablet Sidebar & Text Size Control: Fixed mobile/tablet drawer sizing and enabled the 5% snap Text Size control on tablets (768px+) as well as desktops and projectors.',
+        ],
+      },
+      {
+        type: 'Legal Documentation, Reports Hub & Anti-Spam Alerts',
+        items: [
+          'Wide Legal Modal & Roles, Rights & Gym Rules Guide: Stretched the Legal & Documentation modal width for easier reading and added a "Roles, Rights & Gym Rules" tab detailing obligations, rights, and exact access for Walk-In Customers, Member Customers, Staff, Admin, and SuperAdmin (accessible from the Footer and System Info).',
+          'Official Reports & Operations Export Hub (5 Formats): Removed BIR tax compliance print/export documents and renamed the Export Hub to reflect the 5 available operational formats.',
+          'Foreground Notification Mute & Anti-Spam Coalescing: Automatically suppressed OS/browser popups while actively viewing the app and closed active popups on focus so alerts never spam repeatedly.',
+          'Camera Scanner Cart Modal & Sticky Recycle Bin Footers: Moved Camera Scanner cart to a portaled draggable modal that keeps the camera full size, pinned Recycle Bin footer action buttons, and removed duplicate Save/Cancel bars in User Management.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.13',
     date: '2026-11-23',
     summary:

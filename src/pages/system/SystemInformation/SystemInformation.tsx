@@ -17,6 +17,7 @@ import {
   Monitor,
   AlertCircle,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Modal } from '../../../components/ui/Modal';
@@ -708,13 +709,27 @@ export const SystemInformation: React.FC = () => {
 
               <button
                 type="button"
+                onClick={() => setActiveModal('roles')}
+                className="col-span-2 p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between hover:border-blue-500 transition-all cursor-pointer text-left min-h-[42px]"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="text-[11px] font-bold text-(--color-text) truncate">
+                    Roles, Rights &amp; Gym Rules
+                  </span>
+                </div>
+                <ChevronRight className="w-3 h-3 text-blue-500 shrink-0" />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveModal('developer')}
-                className="p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
+                className="col-span-2 p-2.5 bg-(--bg-page) border border-(--border-color) rounded-xl flex items-center justify-between hover:border-(--color-primary) transition-all cursor-pointer text-left min-h-[42px]"
               >
                 <div className="flex items-center gap-2 truncate">
                   <Code2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span className="text-[11px] font-bold text-(--color-text) truncate">
-                    Developer
+                    About Developer
                   </span>
                 </div>
                 <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
@@ -739,13 +754,15 @@ export const SystemInformation: React.FC = () => {
         isOpen={
           activeModal === 'agreement' ||
           activeModal === 'terms' ||
-          activeModal === 'privacy'
+          activeModal === 'privacy' ||
+          activeModal === 'roles'
         }
         onClose={() => setActiveModal(null)}
         initialDocument={
           activeModal === 'agreement' ||
           activeModal === 'terms' ||
-          activeModal === 'privacy'
+          activeModal === 'privacy' ||
+          activeModal === 'roles'
             ? activeModal
             : 'agreement'
         }

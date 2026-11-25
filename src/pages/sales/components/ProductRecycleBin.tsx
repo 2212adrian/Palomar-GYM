@@ -18,7 +18,6 @@ import {
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'motion/react';
-import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { logAudit } from '../../../lib/supabase/audit';
 import { useAuthStore } from '../../../stores/authStore';
@@ -436,22 +435,26 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
   if (!isOpen || !isAdmin) return null;
 
   return createPortal(
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Product Recycle Bin"
-      className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative"
-    >
-      <button
-        type="button"
-        disabled={loading}
-        onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
-      >
-        <X className="w-4.5 h-4.5" />
-      </button>
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-left">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-md shadow-2xl z-10 flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden">
+        {/* Pinned Header */}
+        <div className="p-5 pb-3 border-b border-(--border-color) flex justify-between items-center shrink-0">
+          <h3 className="font-heading tracking-widest uppercase text-base text-slate-900 dark:text-white truncate">
+            Product Recycle Bin
+          </h3>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer shrink-0"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
 
-      <div className="space-y-4 pt-2">
+        {/* Scrollable Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-4 min-h-0">
         {/* Safe 30-day grace period notification banner */}
         <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-amber-800 dark:text-amber-300 font-semibold">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
@@ -844,21 +847,23 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
               </button>
             </div>
           </div>
-        )}
+          )}
+        </div>
 
+        {/* Pinned Bottom Action Footer */}
         <AnimatePresence>
           {isSelectionActive && (
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
-              className="pt-2 border-t border-(--border-color) flex gap-2 w-full animate-fade-in"
+              className="p-4 sm:px-5 pt-3 border-t border-(--border-color) bg-slate-50 dark:bg-[#17191c] flex gap-2 w-full shrink-0"
             >
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => setSelectedIds([])}
-                className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-50 transition-colors font-black disabled:opacity-50"
+                className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors font-black disabled:opacity-50"
               >
                 Deselect All
               </button>
@@ -879,7 +884,7 @@ export const ProductRecoveryModal: React.FC<ProductRecoveryModalProps> = ({
           )}
         </AnimatePresence>
       </div>
-    </Modal>,
+    </div>,
     document.body
   );
 };

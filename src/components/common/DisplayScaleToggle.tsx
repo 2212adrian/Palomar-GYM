@@ -13,7 +13,7 @@ import {
 } from '../../hooks/useDisplayScale';
 
 /**
- * Desktop-only draggable circular-ball slider with clickable 5% snap notches.
+ * Tablet & Desktop draggable circular-ball slider with clickable 5% snap notches.
  * Defers root page scaling until pointer release or notch click to stay 100% lag-free.
  */
 export const DisplayScaleSelector: React.FC<{ className?: string }> = ({
@@ -100,9 +100,9 @@ export const DisplayScaleSelector: React.FC<{ className?: string }> = ({
 
   return (
     <div
-      className={`hidden xl:flex items-center gap-3 px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xs select-none ${className}`}
+      className={`hidden md:flex items-center gap-3 px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xs select-none ${className}`}
     >
-      <div className="flex flex-col min-w-[225px] gap-1.5">
+      <div className="flex flex-col flex-1 min-w-[225px] gap-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
             Text Size
@@ -139,7 +139,7 @@ export const DisplayScaleSelector: React.FC<{ className?: string }> = ({
             ref={trackRef}
             role="slider"
             tabIndex={0}
-            aria-label="Desktop Text Size (5% steps)"
+            aria-label="Tablet and Desktop Text Size (5% steps)"
             aria-valuemin={MIN_DISPLAY_SCALE}
             aria-valuemax={MAX_DISPLAY_SCALE}
             aria-valuenow={activeScale}

@@ -28,8 +28,6 @@ import {
   EyeOff,
   Copy,
   Check,
-  Save,
-  RotateCcw,
   Sparkles,
   History,
   Calendar,
@@ -1324,8 +1322,6 @@ export const UserManagement: React.FC = () => {
     },
   ];
 
-  const draftCount = Object.keys(drafts).length;
-
   return (
     <div className="space-y-6 font-body text-(--color-text)">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1729,53 +1725,6 @@ export const UserManagement: React.FC = () => {
           })
         )}
       </div>
-
-      {/* Inline Floating Save / Discard Bar for Local Draft Changes */}
-      {draftCount > 0 && (
-        <div className="sticky bottom-4 z-40 flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white border border-blue-500/40 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping" />
-            <span className="text-xs font-semibold">
-              <strong className="text-blue-300 font-bold">{draftCount}</strong> pending{' '}
-              {draftCount === 1 ? 'change' : 'changes'} to save
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setDrafts({});
-                toast.info('Changes discarded.');
-              }}
-              disabled={isSaving}
-              className="px-3 py-1.5 rounded-xl border border-white/20 hover:bg-white/10 text-white/80 hover:text-white text-[10px] font-heading uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Discard</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSaveAllDrafts(drafts)}
-              disabled={isSaving}
-              className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-heading uppercase tracking-wider font-bold transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3 h-3" />
-                  <span>Save Changes</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Edit User Profile (Photo & Username) Modal */}
       <Modal

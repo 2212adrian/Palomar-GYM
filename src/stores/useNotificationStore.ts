@@ -6,18 +6,99 @@ import { isCapacitorApp } from '../lib/platform';
 import { useAuthStore } from './authStore';
 import { isSuperAdmin } from '../constants/auth';
 
+import { App as CapApp } from '@capacitor/app';
+
 const SEEN_NOTIF_IDS_KEY = 'palomar_seen_notification_ids';
 const DISPATCHED_NOTIF_IDS_KEY = 'palomar_dispatched_notification_ids';
+const LAST_OS_NOTIF_AT_KEY = 'palomar_last_os_notification_at';
 const DISMISSED_STOCK_KEY = 'palomar_dismissed_stock_alerts';
 const DISMISSED_MEMBER_KEY = 'palomar_dismissed_member_alerts';
 const DISMISSED_RECYCLE_KEY = 'palomar_dismissed_recycle_alerts';
+const OS_NOTIFICATION_COOLDOWN_MS = 60_000;
+const MAX_STORED_IDS = 400;
+
+interface PendingOsAlert {
+  key: string;
+  title: string;
+  body: string;
+  tag: string;
+}
+
+// Module-level singleton guards to prevent duplicate subscriptions, parallel fetches, and notification bursts
+let activeSubCount = 0;
+let activeSubKey = '';
+let activeRealtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+let activeRealtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let inFlightFetchPromise: Promise<void> | null = null;
+let queuedRefetchArgs: {
+  email?: string | null;
+  role?: string | null;
+  isRealtimeEvent: boolean;
+} | null = null;
+let lastOsNotificationAtMem = 0;
+let isCapacitorForeground = true;
+let visibilityListenersBound = false;
+const activeBrowserNotifications = new Set<Notification>();
+
+const closeActiveBrowserNotifications = () => {
+  activeBrowserNotifications.forEach((notif) => {
+    try {
+      notif.close();
+    } catch {}
+  });
+  activeBrowserNotifications.clear();
+};
+
+const isActivelyViewingSystem = (): boolean => {
+  if (isCapacitorApp()) {
+    return isCapacitorForeground;
+  }
+  if (typeof document === 'undefined') return true;
+  return document.visibilityState === 'visible';
+};
+
+const ensureVisibilityListeners = () => {
+  if (visibilityListenersBound || typeof document === 'undefined') return;
+  visibilityListenersBound = true;
+
+  const handleReturnToSystem = () => {
+    if (isActivelyViewingSystem()) {
+      closeActiveBrowserNotifications();
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleReturnToSystem);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleReturnToSystem);
+  }
+
+  if (isCapacitorApp()) {
+    CapApp.addListener('appStateChange', ({ isActive }) => {
+      isCapacitorForeground = Boolean(isActive);
+      if (isActive) {
+        closeActiveBrowserNotifications();
+      }
+    }).catch(() => {});
+  }
+};
+
+// Deterministic 31-bit integer ID for Capacitor local notifications so alerts replace rather than stack
+const hashToNotificationId = (tag: string): number => {
+  let hash = 2166136261;
+  for (let i = 0; i < tag.length; i++) {
+    hash ^= tag.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.max(1000, Math.abs(hash % 2147483000));
+};
 
 // Helper functions for localStorage persisted IDs
 const getStoredIds = (key: string): string[] => {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -26,21 +107,49 @@ const getStoredIds = (key: string): string[] => {
 const saveStoredIds = (key: string, ids: string[]) => {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(key, JSON.stringify(ids));
+    const trimmed = ids.length > MAX_STORED_IDS ? ids.slice(-MAX_STORED_IDS) : ids;
+    localStorage.setItem(key, JSON.stringify(trimmed));
   } catch (err) {
     console.warn('Failed to persist notification state:', err);
   }
 };
 
-// Push native browser notification or Capacitor local notification if granted
+const getLastOsNotifAt = (): number => {
+  if (typeof window === 'undefined') return lastOsNotificationAtMem;
+  try {
+    const stored = Number(localStorage.getItem(LAST_OS_NOTIF_AT_KEY) || '0');
+    return Math.max(lastOsNotificationAtMem, Number.isFinite(stored) ? stored : 0);
+  } catch {
+    return lastOsNotificationAtMem;
+  }
+};
+
+const markOsNotifSentNow = () => {
+  const now = Date.now();
+  lastOsNotificationAtMem = now;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LAST_OS_NOTIF_AT_KEY, String(now));
+    } catch {}
+  }
+};
+
+// Push native browser notification or Capacitor local notification ONLY when user is NOT actively viewing the system
 const triggerBrowserNotification = async (
   title: string,
   options?: NotificationOptions
 ) => {
+  if (isActivelyViewingSystem()) {
+    closeActiveBrowserNotifications();
+    return;
+  }
+
+  const tag = options?.tag || 'wolf-gym-alert';
+
   if (isCapacitorApp()) {
     try {
       const { display } = await LocalNotifications.checkPermissions();
-      if (display === 'granted') {
+      if (display === 'granted' && !isActivelyViewingSystem()) {
         try {
           await LocalNotifications.createChannel({
             id: 'wolf_notifications',
@@ -58,7 +167,7 @@ const triggerBrowserNotification = async (
             {
               title,
               body: options?.body || '',
-              id: Math.floor(Math.random() * 2147483647),
+              id: hashToNotificationId(tag),
               channelId: 'wolf_notifications',
               schedule: { at: new Date(Date.now() + 100) },
             },
@@ -74,14 +183,29 @@ const triggerBrowserNotification = async (
   if (
     typeof window !== 'undefined' &&
     'Notification' in window &&
-    Notification.permission === 'granted'
+    Notification.permission === 'granted' &&
+    !isActivelyViewingSystem()
   ) {
     try {
-      new Notification(title, {
+      closeActiveBrowserNotifications();
+      const notif = new Notification(title, {
         icon: '/favicon.svg',
         badge: '/favicon.svg',
+        tag,
+        renotify: false,
         ...options,
-      });
+      } as NotificationOptions);
+      activeBrowserNotifications.add(notif);
+      notif.onclose = () => {
+        activeBrowserNotifications.delete(notif);
+      };
+      notif.onclick = () => {
+        try {
+          window.focus();
+          notif.close();
+        } catch {}
+        activeBrowserNotifications.delete(notif);
+      };
     } catch (e) {
       console.warn('Could not spawn browser notification:', e);
     }
@@ -236,6 +360,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     });
     saveStoredIds(SEEN_NOTIF_IDS_KEY, Array.from(seenSet));
     saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedSet));
+    closeActiveBrowserNotifications();
 
     set({ unreadBadgeCount: 0 });
   },
@@ -278,14 +403,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               ? 'denied'
               : 'default';
         set({ browserPermission: permission });
-        if (permission === 'granted') {
-          await triggerBrowserNotification(
-            'Wolf Palomar Gym Notifications Enabled',
-            {
-              body: 'You will receive real-time notifications for cash drawer approvals, incidents, stock alerts, and expiring subscriptions.',
-            }
-          );
-        }
         return permission;
       } catch (err) {
         console.warn('Error requesting capacitor notification permission:', err);
@@ -299,11 +416,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     try {
       const permission = await Notification.requestPermission();
       set({ browserPermission: permission });
-      if (permission === 'granted') {
-        triggerBrowserNotification('Wolf Palomar Gym Notifications Enabled', {
-          body: 'You will receive real-time notifications for cash drawer approvals, incidents, stock alerts, and expiring subscriptions.',
-        });
-      }
       return permission;
     } catch (err) {
       console.warn('Error requesting notification permission:', err);
@@ -318,66 +430,78 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   ) => {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
-    const authState = useAuthStore.getState();
-    const effectiveEmail = _userEmail ?? authState.user?.email;
-    const effectiveRole = String(
-      _userRole ??
-        authState.profile?.role ??
-        authState.user?.app_metadata?.role ??
-        ''
-    )
-      .toLowerCase()
-      .trim();
-    const isAdminUser =
-      isSuperAdmin(effectiveEmail) ||
-      effectiveRole === 'admin' ||
-      effectiveRole === 'superadmin';
-
-    const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
-    const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
-    const dismissedRecycleIds = new Set(getStoredIds(DISMISSED_RECYCLE_KEY));
-    const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
-    const dispatchedIdsSet = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
-    let hasNewDispatches = false;
-
-    // 1. INCIDENT REPORTS
-    let incidentCount = 0;
-    let unreadList: UnreadIncident[] = [];
-
-    try {
-      const { data, error } = await supabase
-        .from('incident_reports')
-        .select(
-          'id, title, priority, created_at, staff_name, status, is_archived'
-        )
-        .eq('status', 'Unread')
-        .eq('is_archived', false)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        incidentCount = data.length;
-        unreadList = data.map((d) => ({
-          id: d.id,
-          title: d.title,
-          priority: d.priority,
-          created_at: d.created_at,
-          staff_name: d.staff_name || 'Staff',
-        }));
-
-        unreadList.forEach((inc) => {
-          const key = `incident_${inc.id}`;
-          if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-            triggerBrowserNotification(`🚨 Incident: ${inc.title}`, {
-              body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
-            });
-            dispatchedIdsSet.add(key);
-            hasNewDispatches = true;
-          }
-        });
-      }
-    } catch (err) {
-      console.warn('Failed to load incident reports for notification:', err);
+    if (inFlightFetchPromise) {
+      queuedRefetchArgs = {
+        email: _userEmail,
+        role: _userRole,
+        isRealtimeEvent: _isRealtimeEvent,
+      };
+      return inFlightFetchPromise;
     }
+
+    const runFetch = async () => {
+      const authState = useAuthStore.getState();
+      const effectiveEmail = _userEmail ?? authState.user?.email;
+      const effectiveRole = String(
+        _userRole ??
+          authState.profile?.role ??
+          authState.user?.app_metadata?.role ??
+          ''
+      )
+        .toLowerCase()
+        .trim();
+      const isAdminUser =
+        isSuperAdmin(effectiveEmail) ||
+        effectiveRole === 'admin' ||
+        effectiveRole === 'superadmin';
+
+      const dismissedStockIds = new Set(getStoredIds(DISMISSED_STOCK_KEY));
+      const dismissedMemberIds = new Set(getStoredIds(DISMISSED_MEMBER_KEY));
+      const dismissedRecycleIds = new Set(getStoredIds(DISMISSED_RECYCLE_KEY));
+      const seenIdsSet = new Set(getStoredIds(SEEN_NOTIF_IDS_KEY));
+      const dispatchedIdsSet = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
+      const pendingOsAlerts: PendingOsAlert[] = [];
+
+      // 1. INCIDENT REPORTS
+      let incidentCount = 0;
+      let unreadList: UnreadIncident[] = [];
+
+      try {
+        const { data, error } = await supabase
+          .from('incident_reports')
+          .select(
+            'id, title, priority, created_at, staff_name, status, is_archived'
+          )
+          .eq('status', 'Unread')
+          .eq('is_archived', false)
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          incidentCount = data.length;
+          unreadList = data.map((d) => ({
+            id: d.id,
+            title: d.title,
+            priority: d.priority,
+            created_at: d.created_at,
+            staff_name: d.staff_name || 'Staff',
+          }));
+
+          unreadList.forEach((inc) => {
+            const key = `incident_${inc.id}`;
+            if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
+              pendingOsAlerts.push({
+                key,
+                title: `Incident: ${inc.title}`,
+                body: `Priority: ${inc.priority} • Reported by ${inc.staff_name}`,
+                tag: 'wolf-gym-alert',
+              });
+              dispatchedIdsSet.add(key);
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load incident reports for notification:', err);
+      }
 
     // 2. PRODUCT STOCK ALERTS
     let noStock = 0;
@@ -417,18 +541,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
             const key = `stock_${p.id}`;
             if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-              triggerBrowserNotification(
-                isOut
-                  ? `⛔ Out of Stock: ${p.product_name}`
-                  : `⚠️ Low Stock: ${p.product_name}`,
-                {
-                  body: isOut
-                    ? 'This item has run out of stock and requires restocking.'
-                    : `Only ${p.stock_quantity} left in stock (Alert threshold: ${p.low_stock_alert}).`,
-                }
-              );
+              pendingOsAlerts.push({
+                key,
+                title: isOut
+                  ? `Out of Stock: ${p.product_name}`
+                  : `Low Stock: ${p.product_name}`,
+                body: isOut
+                  ? 'This item has run out of stock and requires restocking.'
+                  : `Only ${p.stock_quantity} left in stock (Alert threshold: ${p.low_stock_alert}).`,
+                tag: 'wolf-gym-alert',
+              });
               dispatchedIdsSet.add(key);
-              hasNewDispatches = true;
             }
           }
         });
@@ -498,11 +621,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
               const key = `member_${s.id}`;
               if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-                triggerBrowserNotification(`⏳ Subscription Expiring: ${fullName}`, {
+                pendingOsAlerts.push({
+                  key,
+                  title: `Subscription Expiring: ${fullName}`,
                   body: `${planName} expires in ${diffDays} day(s). Action required.`,
+                  tag: 'wolf-gym-alert',
                 });
                 dispatchedIdsSet.add(key);
-                hasNewDispatches = true;
               }
             }
           }
@@ -568,11 +693,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
                     : tx.type === 'digital_in'
                       ? 'Digital In'
                       : 'Cash In';
-                triggerBrowserNotification(`💵 ${label} Request: ₱${tx.amount.toFixed(2)}`, {
+                pendingOsAlerts.push({
+                  key,
+                  title: `${label} Request: ₱${tx.amount.toFixed(2)}`,
                   body: `Requested by ${tx.performed_by_name}: ${tx.reason}`,
+                  tag: 'wolf-gym-alert',
                 });
                 dispatchedIdsSet.add(key);
-                hasNewDispatches = true;
               }
             });
           }
@@ -663,11 +790,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               };
               const key = `recycle_sale_${item.id}`;
               if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-                triggerBrowserNotification('🗑️ Sale Moved to Recycle Bin', {
+                pendingOsAlerts.push({
+                  key,
+                  title: 'Sale Moved to Recycle Bin',
                   body: `${item.title} (₱${item.amount.toFixed(2)}) is awaiting review in Sales Recycle Bin.`,
+                  tag: 'wolf-gym-alert',
                 });
                 dispatchedIdsSet.add(key);
-                hasNewDispatches = true;
               }
               return item;
             });
@@ -692,11 +821,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               };
               const key = `recycle_logbook_${item.id}`;
               if (!seenIdsSet.has(key) && !dispatchedIdsSet.has(key)) {
-                triggerBrowserNotification('🗑️ Logbook Entry in Recycle Bin', {
+                pendingOsAlerts.push({
+                  key,
+                  title: 'Logbook Entry in Recycle Bin',
                   body: `${item.title} (${item.subtitle}) is in Logbook Recycle Bin.`,
+                  tag: 'wolf-gym-alert',
                 });
                 dispatchedIdsSet.add(key);
-                hasNewDispatches = true;
               }
               return item;
             });
@@ -706,8 +837,40 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       }
     }
 
-    if (hasNewDispatches) {
-      saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(dispatchedIdsSet));
+    // Persist dispatched IDs immediately so neither reload nor returning from background re-fires them.
+    // OS/browser notifications ONLY fire on live realtime events while the user is NOT actively viewing this system.
+    if (pendingOsAlerts.length > 0) {
+      const latestStoredDispatched = new Set(getStoredIds(DISPATCHED_NOTIF_IDS_KEY));
+      const freshAlerts = pendingOsAlerts.filter(
+        (alert) => !latestStoredDispatched.has(alert.key)
+      );
+
+      pendingOsAlerts.forEach((alert) => latestStoredDispatched.add(alert.key));
+      saveStoredIds(DISPATCHED_NOTIF_IDS_KEY, Array.from(latestStoredDispatched));
+
+      if (isActivelyViewingSystem()) {
+        closeActiveBrowserNotifications();
+      } else if (
+        _isRealtimeEvent &&
+        freshAlerts.length > 0 &&
+        Date.now() - getLastOsNotifAt() >= OS_NOTIFICATION_COOLDOWN_MS
+      ) {
+        markOsNotifSentNow();
+        if (freshAlerts.length === 1) {
+          await triggerBrowserNotification(freshAlerts[0].title, {
+            body: freshAlerts[0].body,
+            tag: freshAlerts[0].tag,
+          });
+        } else {
+          await triggerBrowserNotification(
+            `${freshAlerts.length} New Gym Alerts`,
+            {
+              body: `${freshAlerts[0].title} (+${freshAlerts.length - 1} more). Open the notifications panel to review.`,
+              tag: 'wolf-gym-alert',
+            }
+          );
+        }
+      }
     }
 
     // Compute unseen count using individual item keys
@@ -741,6 +904,22 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       recycleBinLogbook: recycleLogbookList,
       unreadBadgeCount: unreadBadge,
     });
+    };
+
+    inFlightFetchPromise = runFetch().finally(() => {
+      inFlightFetchPromise = null;
+      const queued = queuedRefetchArgs;
+      queuedRefetchArgs = null;
+      if (queued) {
+        void get().fetchNotifications(
+          queued.email,
+          queued.role,
+          queued.isRealtimeEvent
+        );
+      }
+    });
+
+    return inFlightFetchPromise;
   },
 
   approveCashApproval: async (id: string, actorId?: string, actorName?: string) => {
@@ -997,73 +1176,103 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   subscribeRealtime: (userEmail, userRole) => {
-    get().checkBrowserPermission();
-    get().fetchNotifications(userEmail, userRole, false);
+    const nextSubKey = `${userEmail || ''}|${userRole || ''}`;
+    activeSubCount += 1;
 
-    let realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const triggerDebouncedFetch = () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
-      realtimeDebounceTimer = setTimeout(() => {
-        realtimeDebounceTimer = null;
-        get().fetchNotifications(userEmail, userRole, true);
-      }, 1500);
-    };
+    if (activeRealtimeChannel && activeSubKey !== nextSubKey) {
+      if (activeRealtimeDebounceTimer) {
+        clearTimeout(activeRealtimeDebounceTimer);
+        activeRealtimeDebounceTimer = null;
+      }
+      supabase.removeChannel(activeRealtimeChannel);
+      activeRealtimeChannel = null;
+    }
 
-    const channelId = `notifications-${Math.random().toString(36).substring(2, 9)}`;
-    const channel = supabase.channel(channelId);
+    ensureVisibilityListeners();
 
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'incident_reports' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'products' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'subscriptions' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'members' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cash_transactions' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cash_sessions' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sales' },
-        triggerDebouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance' },
-        triggerDebouncedFetch
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          // Connected to real-time events
-        }
-      });
+    if (!activeRealtimeChannel) {
+      activeSubKey = nextSubKey;
+      get().checkBrowserPermission();
+      get().fetchNotifications(userEmail, userRole, false);
 
+      const triggerDebouncedFetch = () => {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+        if (activeRealtimeDebounceTimer) clearTimeout(activeRealtimeDebounceTimer);
+        activeRealtimeDebounceTimer = setTimeout(() => {
+          activeRealtimeDebounceTimer = null;
+          get().fetchNotifications(userEmail, userRole, true);
+        }, 1500);
+      };
+
+      const channelId = `notifications-singleton-${Math.random().toString(36).substring(2, 9)}`;
+      const channel = supabase.channel(channelId);
+
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'incident_reports' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'subscriptions' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'members' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cash_transactions' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'cash_sessions' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'sales' },
+          triggerDebouncedFetch
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'attendance' },
+          triggerDebouncedFetch
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Connected to real-time events
+          }
+        });
+
+      activeRealtimeChannel = channel;
+    }
+
+    let cleanedUp = false;
     return () => {
-      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
-      supabase.removeChannel(channel);
+      if (cleanedUp) return;
+      cleanedUp = true;
+      activeSubCount = Math.max(0, activeSubCount - 1);
+      if (activeSubCount === 0) {
+        if (activeRealtimeDebounceTimer) {
+          clearTimeout(activeRealtimeDebounceTimer);
+          activeRealtimeDebounceTimer = null;
+        }
+        if (activeRealtimeChannel) {
+          supabase.removeChannel(activeRealtimeChannel);
+          activeRealtimeChannel = null;
+        }
+        activeSubKey = '';
+      }
     };
   },
 }));

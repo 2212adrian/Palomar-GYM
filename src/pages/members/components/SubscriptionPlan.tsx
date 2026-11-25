@@ -18,6 +18,7 @@ import {
   Lock,
   FileSignature,
   ChevronLeft,
+  ArrowRight,
   Eraser,
   Tag,
   ShieldAlert,
@@ -349,10 +350,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   prefillMember,
 }) => {
   const { user, profile } = useAuthStore();
-  const isStaff =
-    !isSuperAdmin(user?.email) &&
-    (profile?.role || '').toLowerCase() !== 'admin' &&
-    (profile?.role || '').toLowerCase() !== 'superadmin';
 
   const { isSessionOpen, loadActiveSession, subscribeRealtime } =
     useCashSessionStore();
@@ -370,8 +367,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   >(initialPlan || 'Monthly Membership');
 
   const [enrollmentType, setEnrollmentType] = useState<'existing' | 'new'>(
-    'existing'
+    'new'
   );
+  const [hasNoPhone, setHasNoPhone] = useState<boolean>(false);
 
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
@@ -845,6 +843,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setSuffix('');
     setEmail('');
     setPhone('');
+    setHasNoPhone(false);
     setGender('Male');
     setBirthday('');
     setAddress('');
@@ -860,10 +859,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setWaiverAgreed(false);
     setSubscriptionAgreement(false);
     setErrors({});
-    if (isStaff) {
-      setIntakeMethod('Import');
-      setIsScanning(true);
-    }
   };
 
   const handleChooseCreateNewMember = () => {
@@ -880,7 +875,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   useEffect(() => {
     if (
       !isOpen ||
-      isStaff ||
       prefillData ||
       prefillMember ||
       importedQueueReg ||
@@ -906,6 +900,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           setSuffix(draft.suffix || '');
           setEmail(draft.email || '');
           setPhone(draft.phone || '');
+          setHasNoPhone((draft.phone || '').trim().toLowerCase() === 'no phone');
           setGender(draft.gender || 'Male');
           setBirthday(draft.birthday || '');
           setAddress(draft.address || '');
@@ -946,6 +941,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setSuffix('');
     setEmail('');
     setPhone('');
+    setHasNoPhone(false);
     setGender('Male');
     setBirthday('');
     setAddress('');
@@ -966,7 +962,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setGcashReference('');
     setAddIdCard(false);
     setImportedQueueReg(null);
-    setEnrollmentType('existing');
+    setEnrollmentType('new');
     setDraftState('idle');
     setErrors({});
   }, []);
@@ -1495,7 +1491,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     parseAndSetFullNameFields(reg.full_name);
     setEmail(reg.email || '');
-    setPhone(reg.phone);
+    setPhone(reg.phone || '');
+    setHasNoPhone((reg.phone || '').trim().toLowerCase() === 'no phone');
     setGender(reg.gender || 'Male');
     setBirthday(reg.birthday || '');
     setAddress(reg.address || '');
@@ -1527,18 +1524,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setShowStatusDetails(false);
       setErrors({});
       setMemberSearchQuery('');
-    lastScannedIdRef.current = '';
+      lastScannedIdRef.current = '';
       lastScanTimeRef.current = 0;
-      setIntakeMethod(
-        isStaff &&
-          !prefillData &&
-          !prefillMember &&
-          !importedQueueReg &&
-          !selectedExistingMember
-          ? 'Import'
-          : initialIntakeMode ||
-            (prefillData || prefillMember ? 'Manual' : 'Manual')
-      );
+
+      const resolvedMode =
+        initialIntakeMode || (prefillData || prefillMember ? 'Manual' : 'Manual');
+      setIntakeMethod(resolvedMode);
+      if (resolvedMode === 'Import') {
+        setIsScanning(true);
+      }
 
       if (initialPlan) {
         setSelectedPlan(initialPlan);
@@ -1549,6 +1543,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         setSelectedPlan('Monthly Membership');
       } else if (prefillData) {
         populateRegistrationData(prefillData);
+      } else {
+        setEnrollmentType('new');
       }
     }
   }, [
@@ -1803,10 +1799,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       newErrors.firstName = 'First name cannot exceed 50 characters.';
     }
 
-    if (!cleanPhoneDigits || phone.trim().toLowerCase() === 'no phone') {
-      newErrors.phone = 'Phone number is required.';
-    } else if (cleanPhoneDigits.length < 10 || cleanPhoneDigits.length > 15) {
-      newErrors.phone = 'Phone number must be 10 to 15 digits.';
+    const isNoPhoneMarked =
+      hasNoPhone || phone.trim().toLowerCase() === 'no phone';
+    if (!isNoPhoneMarked) {
+      if (!cleanPhoneDigits) {
+        newErrors.phone =
+          'Phone number is required (or check "Customer has no phone number").';
+      } else if (cleanPhoneDigits.length < 10 || cleanPhoneDigits.length > 15) {
+        newErrors.phone = 'Phone number must be 10 to 15 digits.';
+      }
     }
 
     if (!birthday.trim()) newErrors.birthday = 'Birthday is required.';
@@ -1882,9 +1883,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const missingList: string[] = [];
       if (!lastName.trim()) missingList.push('Last Name');
       if (!firstName.trim()) missingList.push('First Name');
+      const isNoPhoneMarked =
+        hasNoPhone || phone.trim().toLowerCase() === 'no phone';
       const phoneDigits = phone.replace(/\D/g, '');
-      if (!phoneDigits || phoneDigits.length < 10 || phoneDigits.length > 15) {
-        missingList.push('Valid Phone Number (10-15 digits)');
+      if (
+        !isNoPhoneMarked &&
+        (!phoneDigits || phoneDigits.length < 10 || phoneDigits.length > 15)
+      ) {
+        missingList.push('Phone Number (10-15 digits) or check No Phone');
       }
       if (!birthday.trim()) missingList.push('Birthday');
       if (isMinor) {
@@ -2204,8 +2210,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   );
 
   const shouldShowDetailsForm =
-    hasLoadedPerson ||
-    (!isStaff && enrollmentType === 'new');
+    hasLoadedPerson || enrollmentType === 'new';
 
   if (!isOpen) return null;
 
@@ -2310,11 +2315,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   Step {step} of 3:{' '}
                   {step === 1
                     ? intakeMode === 'Import'
-                      ? 'Scan Pre-Registration'
-                      : 'Enroll Member & Details'
+                      ? 'Scan QR or Enter Code'
+                      : 'Customer Details'
                     : step === 2
-                      ? 'Choose Plan & Checkout'
-                      : 'Enrollment Complete'}
+                      ? 'Plan & Payment'
+                      : 'Registration Complete'}
                 </h3>
                 {step === 1 &&
                   intakeMode === 'Manual' &&
@@ -2335,7 +2340,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   )}
               </div>
               <p className="text-[11px] text-(--color-text)/60">
-                Frontdesk Member Registration & Subscription Console
+                Frontdesk Member Registration &amp; Payment
               </p>
             </div>
           </div>
@@ -2485,16 +2490,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {/* STEP 1: MANUAL INTAKE */}
           {step === 1 && intakeMode === 'Manual' && (
             <div className="space-y-4 animate-fade-in">
-              {/* ACTION TILES: EXISTING VS NEW (ADMIN ONLY, HIDDEN IF PERSON IS LOADED) */}
-              {!isStaff && !hasLoadedPerson && (
+              {/* ACTION TILES: NEW MEMBER VS EXISTING MEMBER */}
+              {!hasLoadedPerson && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-(--color-text)/60 uppercase tracking-widest block">
-                      Select Intake Mode
+                      Is this a new or existing customer?
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* NEW MEMBER */}
+                    <div
+                      onClick={handleChooseCreateNewMember}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
+                        enrollmentType === 'new'
+                          ? 'bg-emerald-500/10 border-emerald-500 ring-4 ring-emerald-500/10'
+                          : 'bg-(--bg-input)/50 border-(--border-color) hover:border-emerald-500/40'
+                      }`}
+                    >
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                          enrollmentType === 'new'
+                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/30'
+                            : 'bg-(--bg-card) text-(--color-text)/60 border border-(--border-color)'
+                        }`}
+                      >
+                        <UserPlus className="w-5 h-5 stroke-[2.2]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs uppercase font-black text-(--color-text)">
+                            New Member (First Time)
+                          </span>
+                          {enrollmentType === 'new' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                        </div>
+                        <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
+                          Customer has no record yet — type their details below
+                        </span>
+                      </div>
+                    </div>
+
                     {/* EXISTING MEMBER */}
                     <div
                       onClick={handleChooseExistingMember}
@@ -2516,47 +2554,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs uppercase font-black text-(--color-text)">
-                            Select Existing Member
+                            Existing Member (Renew)
                           </span>
                           {enrollmentType === 'existing' && (
                             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                           )}
                         </div>
                         <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
-                          Search profile to renew contract or add plan
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* CREATE NEW MEMBER */}
-                    <div
-                      onClick={handleChooseCreateNewMember}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden shadow-xs active:scale-98 ${
-                        enrollmentType === 'new'
-                          ? 'bg-emerald-500/10 border-emerald-500 ring-4 ring-emerald-500/10'
-                          : 'bg-(--bg-input)/50 border-(--border-color) hover:border-emerald-500/40'
-                      }`}
-                    >
-                      <div
-                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
-                          enrollmentType === 'new'
-                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/30'
-                            : 'bg-(--bg-card) text-(--color-text)/60 border border-(--border-color)'
-                        }`}
-                      >
-                        <UserPlus className="w-5 h-5 stroke-[2.2]" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs uppercase font-black text-(--color-text)">
-                            Create New Member
-                          </span>
-                          {enrollmentType === 'new' && (
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                          )}
-                        </div>
-                        <span className="text-[11px] text-(--color-text)/60 leading-snug block mt-0.5">
-                          Register a fresh profile & agreement waiver
+                          Find their old record to renew their plan
                         </span>
                       </div>
                     </div>
@@ -2564,9 +2569,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </div>
               )}
 
-              {/* SEARCH BOX FOR EXISTING MEMBER (ADMIN ONLY, HIDDEN IF PERSON IS LOADED) */}
-              {!isStaff &&
-                !hasLoadedPerson &&
+              {/* SEARCH BOX FOR EXISTING MEMBER (HIDDEN IF PERSON IS LOADED) */}
+              {!hasLoadedPerson &&
                 enrollmentType === 'existing' &&
                 !selectedExistingMember &&
                 !prefillData && (
@@ -2795,7 +2799,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
                       </div>
 
-                      {applicantStatusSummary.actionMember && !isStaff && (
+                      {applicantStatusSummary.actionMember && (
                         <button
                           type="button"
                           onClick={() =>
@@ -2805,7 +2809,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           }
                           className="px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider cursor-pointer border-none shadow-xs shrink-0 transition-colors bg-amber-500 hover:bg-amber-400 text-slate-950"
                         >
-                          Attach Member
+                          Use Existing Profile
                         </button>
                       )}
                     </div>
@@ -2977,19 +2981,33 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         <label className="text-xs font-bold text-(--color-text)/80 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
                             <Smartphone className="w-3.5 h-3.5 text-(--color-primary)" />
-                            <span>Contact Phone</span>
-                            <span className="text-rose-500">*</span>
+                            <span>Phone Number</span>
+                            {!hasNoPhone &&
+                              phone.trim().toLowerCase() !== 'no phone' && (
+                                <span className="text-rose-500">*</span>
+                              )}
                           </span>
-                          {isMissing(phone) && (
-                            <span className="text-[8px] text-rose-500 font-bold animate-pulse uppercase">
-                              ⚠️ Required
-                            </span>
-                          )}
+                          {!hasNoPhone &&
+                            phone.trim().toLowerCase() !== 'no phone' &&
+                            !phone.trim() && (
+                              <span className="text-[8px] text-rose-500 font-bold animate-pulse uppercase">
+                                Required
+                              </span>
+                            )}
                         </label>
                         <input
                           type="tel"
-                          value={phone}
-                          disabled={isPhoneLocked}
+                          value={
+                            hasNoPhone ||
+                            phone.trim().toLowerCase() === 'no phone'
+                              ? 'No Phone'
+                              : phone
+                          }
+                          disabled={
+                            isPhoneLocked ||
+                            hasNoPhone ||
+                            phone.trim().toLowerCase() === 'no phone'
+                          }
                           maxLength={15}
                           onChange={(e) => {
                             setPhone(e.target.value.replace(/\D/g, ''));
@@ -3000,21 +3018,53 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           spellCheck={false}
                           autoCorrect="off"
                           className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono font-bold transition-all outline-none ${
-                            isMissing(phone) || errors.phone
-                              ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
-                              : isPhoneLocked
-                                ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/40 cursor-not-allowed'
+                            isPhoneLocked ||
+                            hasNoPhone ||
+                            phone.trim().toLowerCase() === 'no phone'
+                              ? 'border-(--border-color) bg-(--bg-input) text-(--color-text)/50 cursor-not-allowed'
+                              : !phone.trim() || errors.phone
+                                ? 'border-rose-500 bg-rose-500/10 text-rose-500 focus:border-white focus:bg-(--bg-card) focus:text-(--color-text) focus:ring-2 focus:ring-white/20'
                                 : 'border-(--border-color) bg-(--bg-card) text-(--color-text) focus:border-white focus:ring-2 focus:ring-white/20'
                           }`}
                           placeholder="09171234567"
                         />
+                        {!isPhoneLocked && (
+                          <label className="inline-flex items-center gap-2 pt-1 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={
+                                hasNoPhone ||
+                                phone.trim().toLowerCase() === 'no phone'
+                              }
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setHasNoPhone(checked);
+                                if (checked) {
+                                  setPhone('No Phone');
+                                  if (errors.phone) {
+                                    setErrors((prev) => ({
+                                      ...prev,
+                                      phone: '',
+                                    }));
+                                  }
+                                } else {
+                                  setPhone('');
+                                }
+                              }}
+                              className="w-3.5 h-3.5 rounded border-(--border-color) text-(--color-primary) accent-[var(--color-primary)] cursor-pointer"
+                            />
+                            <span className="text-[11px] font-semibold text-(--color-text)/75">
+                              Customer has no phone number
+                            </span>
+                          </label>
+                        )}
                         {errors.phone && (
                           <span className="text-[9px] text-rose-500 font-bold block">
                             {errors.phone}
                           </span>
                         )}
 
-                       {phoneMatchMember && !selectedExistingMember && !isStaff && (
+                        {phoneMatchMember && !selectedExistingMember && (
                           <div className="flex items-center justify-between text-[9px] text-amber-500 mt-1 font-medium">
                             <span className="truncate">
                               Used by {phoneMatchMember.full_name}
@@ -3026,7 +3076,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               }
                               className="underline font-bold ml-1 cursor-pointer"
                             >
-                              Attach
+                              Use Existing
                             </button>
                           </div>
                         )}
@@ -4044,15 +4094,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   <span>Next: Choose Plan</span>
                   <ChevronLeft className="w-4 h-4 rotate-180" />
                 </button>
-               ) : !isStaff ? (
+              ) : (
                 <button
                   type="button"
-                  onClick={() => setIntakeMethod('Manual')}
-                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-input) text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-xs"
+                  onClick={() => {
+                    forceStopCamera();
+                    setIsScanning(false);
+                    setEnrollmentType('new');
+                    setIntakeMethod('Manual');
+                  }}
+                  className="px-4 py-2.5 border border-(--border-color) bg-(--bg-input) hover:bg-(--bg-card) text-(--color-text) rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer shadow-xs transition-colors"
                 >
-                  Manual Intake
+                  No Phone? Register Here
                 </button>
-              ) : null}
+              )}
             </>
           ) : (
             <div className="w-full flex items-center justify-between gap-3">
@@ -4151,6 +4206,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   }, [registrationUrl]);
   const [showRegQrModal, setShowRegQrModal] = useState(false);
   const [hasCopiedRegLink, setHasCopiedRegLink] = useState(false);
+  const [plansView, setPlansView] = useState<'choices' | 'counter-plans'>('choices');
 
   const handleCopyRegLink = async () => {
     try {
@@ -4265,7 +4321,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
   }, [loadActiveSession, subscribeRealtime]);
 
   return (
-    <div className="relative space-y-6">
+    <div className="relative space-y-3 sm:space-y-5 pb-20 md:pb-4">
       {/* DESKTOP LEFT SIDE VERTICAL ARROW */}
       {!isStaff && (
         <SideNavTab
@@ -4278,11 +4334,11 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
       )}
 
       {/* STAFF & ADMIN INDICATION GUIDE */}
-      <IndicationGuideBanner topicId="plans" className="max-w-4xl mx-auto" />
+      <IndicationGuideBanner topicId="plans" className="w-full" />
 
       {/* OFFLINE SUBSCRIPTIONS LOCKED ALERT BANNER */}
       {isOffline && (
-        <div className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 max-w-2xl mx-auto flex items-center gap-3 shadow-lg">
+        <div className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 w-full flex items-center gap-3 shadow-lg">
           <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0">
             <Lock className="w-5 h-5" />
           </div>
@@ -4304,7 +4360,7 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
             initial={{ opacity: 0, y: -10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.98 }}
-            className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-300 max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg backdrop-blur-md"
+            className="p-4 rounded-3xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-300 w-full flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg backdrop-blur-md"
           >
             <div className="flex items-center gap-3 text-left">
               <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 shrink-0">
@@ -4341,487 +4397,540 @@ export const StaffPlansConsole: React.FC<StaffPlansConsoleProps> = ({
         )}
       </AnimatePresence>
 
-      {/* CHOICE 1: SCAN LOBBY QR / ONLINE REGISTRATION QR */}
-      <div
-        className={`p-4 sm:p-5 rounded-3xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg max-w-3xl mx-auto select-none ${
-          isOffline || !isSessionOpen
-            ? 'border-amber-500/30 bg-(--bg-card)'
-            : 'bg-linear-to-r from-blue-50 to-slate-100 dark:from-blue-900/30 dark:to-slate-900/40 border-blue-200 dark:border-blue-500/30 hover:border-blue-400'
-        }`}
-      >
-        <div className="flex items-start sm:items-center gap-3.5 text-left min-w-0">
-          <div
-            className={`p-2.5 sm:p-3 rounded-2xl border shrink-0 ${
-              isOffline || !isSessionOpen
-                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                : 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30'
-            }`}
+      {/* SCREEN SWITCHER: REGISTRATION CHOICES <-> MONTHLY & YEARLY PLANS */}
+      <AnimatePresence mode="wait">
+        {plansView === 'choices' ? (
+          <motion.div
+            key="choices"
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="w-full grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-5 lg:gap-7 select-none"
           >
-            <Smartphone className="w-6 h-6 sm:w-7 sm:h-7" />
-          </div>
-          <div className="space-y-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest leading-none block">
-                Scan QR Code
-              </span>
-              {isOffline ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                  <Lock className="w-2.5 h-2.5" /> Locked Offline
-                </span>
-              ) : !isSessionOpen ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                  <Lock className="w-2.5 h-2.5" /> Session Closed
-                </span>
-              ) : null}
-            </div>
-            <h4 className="font-heading text-sm sm:text-base text-slate-900 dark:text-white uppercase leading-tight font-bold">
-              Use Camera or Pre-Registered Code
-            </h4>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-snug">
-              Scan a pre-registered code to enroll, or show the online registration QR code for walk-in customers.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
-          <button
-            type="button"
-            disabled={!isSessionOpen || isOffline}
-            onClick={() => {
-              if (isOffline) {
-                toast.error(
-                  'Subscriptions locked: Internet connection required to scan or register contracts.',
-                  { toastId: 'offline-scan-block' }
-                );
-                return;
-              }
-              if (!isSessionOpen) {
-                toast.warning(
-                  'Cannot scan pre-registration QR: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                );
-                return;
-              }
-              setModalConfig({
-                isOpen: true,
-                mode: 'Import',
-                plan: 'Monthly Membership',
-              });
-            }}
-            className={`flex-1 md:flex-none py-2.5 px-3.5 sm:px-4 font-bold rounded-xl text-[9.5px] font-heading tracking-wider uppercase border-none shrink-0 shadow-md transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
-              isOffline || !isSessionOpen
-                ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                : 'bg-blue-600 hover:bg-blue-500 active:scale-95 text-white cursor-pointer'
-            }`}
-          >
-            {isOffline ? (
-              <>
-                <Lock className="w-3.5 h-3.5" />
-                <span>Locked Offline</span>
-              </>
-            ) : !isSessionOpen ? (
-              <>
-                <Lock className="w-3.5 h-3.5" />
-                <span>Session Closed</span>
-              </>
-            ) : (
-              <span>Scan Lobby QR</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowRegQrModal(true)}
-            title="Show Customer Online Registration QR Code"
-            className="flex-1 md:flex-none py-2.5 px-3.5 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading text-[9.5px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-all whitespace-nowrap"
-          >
-            <QrCode className="w-3.5 h-3.5 shrink-0" />
-            <span>Online Reg QR</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCopyRegLink}
-            title="Copy Online Registration Link"
-            aria-label="Copy Online Registration Link"
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 active:scale-95 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer transition-all shadow-xs shrink-0"
-          >
-            {hasCopiedRegLink ? (
-              <Check className="w-4 h-4 text-emerald-500" />
-            ) : (
-              <Copy className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* CHOICE 2: MANUAL PLAN CATALOG */}
-      {isLoadingSettings ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-2xl mx-auto pt-2">
-          {[1, 2].map((idx) => (
+            {/* LEFT BIG ICON BUTTON: ONLINE QR / CODE */}
             <div
-              key={idx}
-              className="p-6 rounded-3xl bg-(--bg-card) border border-(--border-color) animate-pulse flex flex-col justify-between h-64 shadow-md text-left"
-            >
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <div className="h-3 w-32 bg-slate-300 dark:bg-zinc-800 rounded-md" />
-                  <div className="h-5 w-5 bg-slate-300 dark:bg-zinc-800 rounded-full" />
-                </div>
-                <div className="h-6 w-48 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
-                <div className="space-y-1.5 pt-1">
-                  <div className="h-3 w-full bg-slate-300 dark:bg-zinc-800 rounded" />
-                  <div className="h-3 w-4/5 bg-slate-300 dark:bg-zinc-800 rounded" />
-                  <div className="h-3 w-2/3 bg-slate-300 dark:bg-zinc-800 rounded" />
-                </div>
-              </div>
-              <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
-                <div className="h-8 w-24 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
-                <div className="h-9 w-28 bg-slate-300 dark:bg-zinc-800 rounded-xl" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none max-w-3xl mx-auto pt-2 text-left">
-          {/* MONTHLY PLAN CARD */}
-          <motion.div
-            whileHover={
-              !isOffline && isMonthlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
-            }
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            onClick={() => {
-              if (isOffline) {
-                toast.error(
-                  'Subscriptions locked: Internet connection required to enroll or renew plans.',
-                  { toastId: 'offline-enroll-block' }
-                );
-                return;
-              }
-              if (!isSessionOpen) {
-                toast.warning(
-                  'Cannot enroll member: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                );
-                return;
-              }
-              setModalConfig({
-                isOpen: true,
-                mode: 'Manual',
-                plan: 'Monthly Membership',
-              });
-            }}
-            className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              isOffline
-                ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                : !isSessionOpen
-                  ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                  : isMonthlyValid
-                    ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
-                    : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
-            }`}
-          >
-            {/* Ambient Glow */}
-            <div className="absolute -top-16 -right-16 w-36 h-36 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/25 transition-all" />
-
-            <div className="space-y-4 relative z-10">
-              <div className="flex justify-between items-start">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-                      <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                      100% Free Check-Ins
-                    </span>
-                    {isOffline ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                        <Lock className="w-2.5 h-2.5" /> Locked Offline
-                      </span>
-                    ) : !isSessionOpen ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                        <Lock className="w-2.5 h-2.5" /> Session Closed
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold">
-                    Monthly Membership
-                  </h4>
-                </div>
-
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm shrink-0">
-                  <Award className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* Rate Comparison Box */}
-              <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">
-                    Regular Walk-In Rate:
-                  </span>
-                  <span className="font-mono line-through text-slate-400 dark:text-slate-500">
-                    {regularWalkInRate !== null
-                      ? `₱${regularWalkInRate.toLocaleString()} / visit`
-                      : '--'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
-                  <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <Check className="w-3 h-3 stroke-3" /> Daily Check-In Fee:
-                  </span>
-                  <span className="font-mono text-emerald-600 dark:text-emerald-400 text-sm font-black">
-                    ₱0 / FREE
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
-                Ideal for frequent gym goers. Enjoy unlimited entrance and ₱0
-                daily door fee for 30 consecutive days.
-              </p>
-            </div>
-
-            {/* Price Footer & CTA Button */}
-            <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-4 mt-4 relative z-10">
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                  Recurring Fee
-                </span>
-                <span
-                  className={`text-2xl font-mono font-black tracking-tight ${
-                    isMonthlyValid
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-slate-400 dark:text-zinc-500'
-                  }`}
-                >
-                  {isMonthlyValid
-                    ? `₱${settings.monthly_plan_price.toLocaleString()}`
-                    : '₱ --'}
-                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
-                    / 30 Days
-                  </span>
-                </span>
-              </div>
-
-              <button
-                type="button"
-                disabled={isOffline || !isMonthlyValid || !isSessionOpen}
-                onClick={() => {
-                  if (isOffline) {
-                    toast.error(
-                      'Subscriptions locked: Internet connection required to enroll or renew plans.',
-                      { toastId: 'offline-enroll-block' }
-                    );
-                    return;
-                  }
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                    );
-                    return;
-                  }
-                  if (isMonthlyValid) {
-                    setModalConfig({
-                      isOpen: true,
-                      mode: 'Manual',
-                      plan: 'Monthly Membership',
-                    });
-                  }
-                }}
-                className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
-                  isOffline || !isSessionOpen || !isMonthlyValid
-                    ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                    : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white cursor-pointer shadow-emerald-600/20'
-                }`}
-              >
-                {isOffline ? (
-                  <span className="flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Locked Offline
-                  </span>
-                ) : !isSessionOpen ? (
-                  'Session Closed'
-                ) : isMonthlyValid ? (
-                  'Select Monthly'
-                ) : (
-                  'Unavailable'
-                )}
-              </button>
-            </div>
-          </motion.div>
-
-          {/* YEARLY PLAN CARD */}
-          <motion.div
-            whileHover={
-              !isOffline && isYearlyValid && isSessionOpen ? { y: -4, scale: 1.01 } : {}
-            }
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            onClick={() => {
-              if (isOffline) {
-                toast.error(
-                  'Subscriptions locked: Internet connection required to enroll or renew plans.',
-                  { toastId: 'offline-enroll-block' }
-                );
-                return;
-              }
-              if (!isSessionOpen) {
-                toast.warning(
-                  'Cannot enroll subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
-                );
-                return;
-              }
-              if (isYearlyValid) {
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (isOffline) {
+                  toast.error(
+                    'Subscriptions locked: Internet connection required to scan or register contracts.',
+                    { toastId: 'offline-scan-block' }
+                  );
+                  return;
+                }
+                if (!isSessionOpen) {
+                  toast.warning(
+                    'Cannot scan QR code: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                  );
+                  return;
+                }
                 setModalConfig({
                   isOpen: true,
-                  mode: 'Manual',
-                  plan: 'Yearly Membership',
+                  mode: 'Import',
+                  plan: 'Monthly Membership',
                 });
-              }
-            }}
-            className={`group relative rounded-3xl p-6 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
-              isOffline
-                ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                : !isSessionOpen
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.currentTarget.click();
+                }
+              }}
+              className={`group rounded-2xl sm:rounded-3xl p-4 sm:p-7 lg:p-11 min-h-[150px] sm:min-h-[240px] md:min-h-[340px] border-2 transition-all flex flex-col items-center justify-between text-center gap-3 sm:gap-6 shadow-lg ${
+                isOffline || !isSessionOpen
                   ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
-                  : isYearlyValid
-                    ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
-                    : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
-            }`}
-          >
-            {/* Ambient Glow */}
-            <div className="absolute -top-16 -right-16 w-36 h-36 bg-blue-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/25 transition-all" />
-
-            <div className="space-y-4 relative z-10">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
-                      <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                      365-Day VIP Tier
-                    </span>
-                    {isOffline ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                        <Lock className="w-2.5 h-2.5" /> Locked Offline
-                      </span>
-                    ) : !isSessionOpen ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
-                        <Lock className="w-2.5 h-2.5" /> Session Closed
-                      </span>
-                    ) : null}
-                  </div>
-                  <h4 className="font-heading text-xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold mt-2">
-                    Yearly Membership
-                  </h4>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm shrink-0">
-                  <Award className="w-5 h-5" />
-                </div>
-              </div>
-
-              {/* Rate Comparison Box */}
-              <div className="rounded-2xl p-3 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-2">
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">
-                    Regular Walk-In Rate:
-                  </span>
-                  <span className="font-mono line-through text-slate-400 dark:text-slate-500">
-                    ₱{regularWalkInRate?.toLocaleString()} / visit
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
-                  <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                    <Check className="w-3 h-3 stroke-3" /> Member Daily Rate:
-                  </span>
-                  <span className="font-mono text-blue-600 dark:text-blue-400 text-sm font-black">
-                    ₱{yearlyCheckInFee?.toLocaleString()} / visit
-                    {yearlyDiscountPercentage !== null &&
-                      yearlyDiscountPercentage > 0 && (
-                        <span className="ml-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
-                          {yearlyDiscountPercentage}% OFF
-                        </span>
-                      )}
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
-                Pay an annual registration fee once, then slash all daily
-                walk-in check-in costs
-                {yearlyDiscountPercentage !== null &&
-                yearlyDiscountPercentage > 0
-                  ? ` by ${yearlyDiscountPercentage}%`
-                  : ''}{' '}
-                for an entire year.
-              </p>
-            </div>
-
-            {/* Price Footer & CTA Button */}
-            <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-4 mt-4 relative z-10">
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                  Annual Pass Fee
-                </span>
-                <span
-                  className={`text-2xl font-mono font-black tracking-tight ${
-                    isYearlyValid
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-slate-400 dark:text-zinc-500'
+                  : 'bg-linear-to-b from-blue-500/10 via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500 hover:shadow-blue-500/15 cursor-pointer active:scale-[0.99]'
+              }`}
+            >
+              <div className="flex-1 flex flex-col items-center justify-center gap-2.5 sm:gap-5">
+                <div
+                  className={`w-14 h-14 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-2xl sm:rounded-3xl border flex items-center justify-center transition-transform group-hover:scale-105 ${
+                    isOffline || !isSessionOpen
+                      ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                      : 'bg-blue-600/15 text-blue-600 dark:text-blue-400 border-blue-500/30 shadow-md shadow-blue-500/10'
                   }`}
                 >
-                  {isYearlyValid
-                    ? `₱${settings.yearly_plan_price.toLocaleString()}`
-                    : '₱ --'}
-                  <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
-                    / 1 Year
-                  </span>
-                </span>
+                  <QrCode className="w-7 h-7 sm:w-10 sm:h-10 lg:w-12 lg:h-12" />
+                </div>
+
+                <div className="space-y-1 sm:space-y-2">
+                  <h4 className="font-heading text-base sm:text-xl lg:text-2xl text-slate-900 dark:text-white uppercase font-extrabold tracking-wide">
+                    Scan QR or Enter Code
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium leading-snug sm:leading-relaxed max-w-sm mx-auto">
+                    Customer already registered online on their phone.
+                  </p>
+                </div>
               </div>
 
+              <div
+                className="flex items-center justify-center gap-2.5 pt-3 sm:pt-4 border-t border-(--border-color) w-full"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowRegQrModal(true)}
+                  className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-heading text-[10px] sm:text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-all whitespace-nowrap shrink-0"
+                >
+                  <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                  <span>Show Reg QR</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyRegLink}
+                  title="Copy Online Registration Link"
+                  aria-label="Copy Online Registration Link"
+                  className="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border border-(--border-color) bg-(--bg-input) hover:bg-(--bg-page) active:scale-95 text-(--color-text)/80 flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-all whitespace-nowrap shrink-0"
+                >
+                  {hasCopiedRegLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* RIGHT BIG ICON BUTTON: NO PHONE — OPENS PLAN SELECTION SCREEN */}
+            <button
+              type="button"
+              onClick={() => setPlansView('counter-plans')}
+              className="group rounded-2xl sm:rounded-3xl p-4 sm:p-7 lg:p-11 min-h-[150px] sm:min-h-[240px] md:min-h-[340px] border-2 transition-all flex flex-col items-center justify-between text-center gap-3 sm:gap-6 shadow-lg cursor-pointer active:scale-[0.99] bg-linear-to-b from-emerald-500/10 via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500 hover:shadow-emerald-500/15"
+            >
+              <div className="flex-1 flex flex-col items-center justify-center gap-2.5 sm:gap-5">
+                <div className="w-14 h-14 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-2xl sm:rounded-3xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shadow-md shadow-emerald-500/10 flex items-center justify-center transition-transform group-hover:scale-105">
+                  <UserPlus className="w-7 h-7 sm:w-10 sm:h-10 lg:w-12 lg:h-12" />
+                </div>
+
+                <div className="space-y-1 sm:space-y-2">
+                  <h4 className="font-heading text-base sm:text-xl lg:text-2xl text-slate-900 dark:text-white uppercase font-extrabold tracking-wide">
+                    Register Here (No Phone)
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium leading-snug sm:leading-relaxed max-w-sm mx-auto">
+                    Customer has no phone — pick Monthly or Yearly plan next.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 pt-3 sm:pt-4 border-t border-(--border-color) w-full text-[11px] sm:text-xs font-heading font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                <span>Choose Plan</span>
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              </div>
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="counter-plans"
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="w-full space-y-3.5 sm:space-y-5"
+          >
+            {/* TOP BACK BAR */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pb-3 border-b border-(--border-color)">
               <button
                 type="button"
-                disabled={isOffline || !isYearlyValid || !isSessionOpen}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isOffline) {
-                    toast.error(
-                      'Subscriptions locked: Internet connection required to enroll or renew plans.',
-                      { toastId: 'offline-enroll-block' }
-                    );
-                    return;
-                  }
-                  if (!isSessionOpen) {
-                    toast.warning(
-                      'Cash drawer is closed. Paid subscriptions cannot be transacted.'
-                    );
-                    return;
-                  }
-                  if (isYearlyValid) {
-                    setModalConfig({
-                      isOpen: true,
-                      mode: 'Manual',
-                      plan: 'Yearly Membership',
-                    });
-                  }
-                }}
-                className={`py-2.5 px-4 font-bold rounded-xl text-[9px] font-heading tracking-wider uppercase border-none transition-all shadow-md ${
-                  isOffline || !isSessionOpen || !isYearlyValid
-                    ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
-                    : 'bg-(--color-primary) hover:bg-(--color-primary-hover) active:scale-95 text-white cursor-pointer'
-                }`}
+                onClick={() => setPlansView('choices')}
+                className="self-start inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-(--bg-card) hover:bg-(--bg-input) border border-(--border-color) text-slate-800 dark:text-white font-heading text-xs font-bold uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-xs whitespace-nowrap shrink-0"
               >
-                {isOffline ? (
-                  <span className="flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Locked Offline
-                  </span>
-                ) : !isSessionOpen ? (
-                  'Session Closed'
-                ) : isYearlyValid ? (
-                  'Select Yearly'
-                ) : (
-                  'Unavailable'
-                )}
+                <ChevronLeft className="w-4 h-4 shrink-0" />
+                <span>Back</span>
               </button>
+
+              <div className="text-left sm:text-right min-w-0">
+                <h4 className="font-heading text-sm sm:text-base font-extrabold uppercase tracking-wider text-slate-900 dark:text-white leading-snug">
+                  Choose Monthly or Yearly Plan
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                  Register customer directly at the front desk
+                </p>
+              </div>
             </div>
+
+            {isLoadingSettings ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-5 lg:gap-7 select-none">
+                {[1, 2].map((idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 sm:p-7 rounded-2xl sm:rounded-3xl bg-(--bg-card) border border-(--border-color) animate-pulse flex flex-col justify-between h-56 sm:h-72 shadow-md text-left"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <div className="h-3 w-32 bg-slate-300 dark:bg-zinc-800 rounded-md" />
+                        <div className="h-5 w-5 bg-slate-300 dark:bg-zinc-800 rounded-full" />
+                      </div>
+                      <div className="h-6 w-48 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
+                      <div className="space-y-1.5 pt-1">
+                        <div className="h-3 w-full bg-slate-300 dark:bg-zinc-800 rounded" />
+                        <div className="h-3 w-4/5 bg-slate-300 dark:bg-zinc-800 rounded" />
+                        <div className="h-3 w-2/3 bg-slate-300 dark:bg-zinc-800 rounded" />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-end border-t border-(--border-color) pt-4">
+                      <div className="h-8 w-24 bg-slate-300 dark:bg-zinc-800 rounded-lg" />
+                      <div className="h-9 w-28 bg-slate-300 dark:bg-zinc-800 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-5 lg:gap-7 select-none text-left">
+                {/* MONTHLY PLAN CARD */}
+                <motion.div
+                  whileHover={
+                    !isOffline && isMonthlyValid && isSessionOpen
+                      ? { y: -4, scale: 1.01 }
+                      : {}
+                  }
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  onClick={() => {
+                    if (isOffline) {
+                      toast.error(
+                        'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                        { toastId: 'offline-enroll-block' }
+                      );
+                      return;
+                    }
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Cannot register member: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                      );
+                      return;
+                    }
+                    if (isMonthlyValid) {
+                      setModalConfig({
+                        isOpen: true,
+                        mode: 'Manual',
+                        plan: 'Monthly Membership',
+                      });
+                    }
+                  }}
+                  className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
+                    isOffline
+                      ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                      : !isSessionOpen
+                        ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                        : isMonthlyValid
+                          ? 'bg-gradient-to-b from-emerald-500/[0.07] via-(--bg-card) to-(--bg-card) border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10 cursor-pointer'
+                          : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+                  }`}
+                >
+                  {/* Ambient Glow */}
+                  <div className="absolute -top-16 -right-16 w-36 h-36 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-emerald-500/25 transition-all" />
+
+                  <div className="space-y-2.5 sm:space-y-4 relative z-10">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                            Free Daily Entry
+                          </span>
+                          {isOffline ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                              <Lock className="w-2.5 h-2.5" /> Locked Offline
+                            </span>
+                          ) : !isSessionOpen ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                              <Lock className="w-2.5 h-2.5" /> Session Closed
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <h4 className="font-heading text-base sm:text-xl lg:text-2xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold leading-tight">
+                          Monthly Plan (30 Days)
+                        </h4>
+                      </div>
+
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm shrink-0">
+                        <Award className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                    </div>
+
+                    {/* Rate Comparison Box */}
+                    <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-1.5 sm:space-y-2">
+                      <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+                        <span className="text-slate-500 dark:text-slate-400 font-medium">
+                          Normal Walk-In Fee:
+                        </span>
+                        <span className="font-mono line-through text-slate-400 dark:text-slate-500">
+                          {regularWalkInRate !== null
+                            ? `₱${regularWalkInRate.toLocaleString()} / visit`
+                            : '--'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] sm:text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
+                        <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-3" /> With Monthly Plan:
+                        </span>
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm font-black">
+                          ₱0 / FREE
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium leading-snug sm:leading-relaxed">
+                      Best for customers who work out often. Pay once and enter free every day for 30 days.
+                    </p>
+                  </div>
+
+                  {/* Price Footer & CTA Button */}
+                  <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-3 mt-3 sm:pt-4 sm:mt-5 relative z-10 gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                        Plan Price
+                      </span>
+                      <span
+                        className={`text-xl sm:text-2xl lg:text-3xl font-mono font-black tracking-tight ${
+                          isMonthlyValid
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-400 dark:text-zinc-500'
+                        }`}
+                      >
+                        {isMonthlyValid
+                          ? `₱${settings.monthly_plan_price.toLocaleString()}`
+                          : '₱ --'}
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
+                          / 30 Days
+                        </span>
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isOffline || !isMonthlyValid || !isSessionOpen}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isOffline) {
+                          toast.error(
+                            'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                            { toastId: 'offline-enroll-block' }
+                          );
+                          return;
+                        }
+                        if (!isSessionOpen) {
+                          toast.warning(
+                            'Cannot register subscription: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                          );
+                          return;
+                        }
+                        if (isMonthlyValid) {
+                          setModalConfig({
+                            isOpen: true,
+                            mode: 'Manual',
+                            plan: 'Monthly Membership',
+                          });
+                        }
+                      }}
+                      className={`py-2 px-3.5 sm:py-2.5 sm:px-5 font-bold rounded-xl text-[10px] font-heading tracking-wider uppercase border-none transition-all shadow-md whitespace-nowrap shrink-0 ${
+                        isOffline || !isSessionOpen || !isMonthlyValid
+                          ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                          : 'bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white cursor-pointer shadow-emerald-600/20'
+                      }`}
+                    >
+                      {isOffline ? (
+                        <span className="flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Locked Offline
+                        </span>
+                      ) : !isSessionOpen ? (
+                        'Session Closed'
+                      ) : isMonthlyValid ? (
+                        'Register Monthly'
+                      ) : (
+                        'Unavailable'
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+
+                {/* YEARLY PLAN CARD */}
+                <motion.div
+                  whileHover={
+                    !isOffline && isYearlyValid && isSessionOpen
+                      ? { y: -4, scale: 1.01 }
+                      : {}
+                  }
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  onClick={() => {
+                    if (isOffline) {
+                      toast.error(
+                        'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                        { toastId: 'offline-enroll-block' }
+                      );
+                      return;
+                    }
+                    if (!isSessionOpen) {
+                      toast.warning(
+                        'Cannot register member: Cash drawer session is closed. Open a cash session in Cash Management first.'
+                      );
+                      return;
+                    }
+                    if (isYearlyValid) {
+                      setModalConfig({
+                        isOpen: true,
+                        mode: 'Manual',
+                        plan: 'Yearly Membership',
+                      });
+                    }
+                  }}
+                  className={`group relative rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 border transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-lg ${
+                    isOffline
+                      ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                      : !isSessionOpen
+                        ? 'border-amber-500/30 bg-(--bg-card) opacity-70 cursor-not-allowed'
+                        : isYearlyValid
+                          ? 'bg-gradient-to-b from-blue-500/[0.07] via-(--bg-card) to-(--bg-card) border-blue-500/30 hover:border-blue-500/70 hover:shadow-blue-500/10 cursor-pointer'
+                          : 'border-rose-500/30 bg-rose-500/5 cursor-not-allowed opacity-75 select-none'
+                  }`}
+                >
+                  {/* Ambient Glow */}
+                  <div className="absolute -top-16 -right-16 w-36 h-36 bg-blue-500/15 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/25 transition-all" />
+
+                  <div className="space-y-2.5 sm:space-y-4 relative z-10">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30">
+                            <CheckCircle className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                            1-Year Discount Pass
+                          </span>
+                          {isOffline ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                              <Lock className="w-2.5 h-2.5" /> Locked Offline
+                            </span>
+                          ) : !isSessionOpen ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                              <Lock className="w-2.5 h-2.5" /> Session Closed
+                            </span>
+                          ) : null}
+                        </div>
+                        <h4 className="font-heading text-base sm:text-xl lg:text-2xl text-slate-900 dark:text-white uppercase tracking-wider font-extrabold leading-tight">
+                          Yearly Plan (1 Year)
+                        </h4>
+                      </div>
+                      <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm shrink-0">
+                        <Award className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
+                    </div>
+
+                    {/* Rate Comparison Box */}
+                    <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 bg-slate-900/5 dark:bg-black/30 border border-slate-200/80 dark:border-white/5 space-y-1.5 sm:space-y-2">
+                      <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+                        <span className="text-slate-500 dark:text-slate-400 font-medium">
+                          Normal Walk-In Fee:
+                        </span>
+                        <span className="font-mono line-through text-slate-400 dark:text-slate-500">
+                          ₱{regularWalkInRate?.toLocaleString()} / visit
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] sm:text-xs font-bold pt-1.5 border-t border-slate-200 dark:border-white/10">
+                        <span className="text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-3" /> With Yearly Plan:
+                        </span>
+                        <span className="font-mono text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-black">
+                          ₱{yearlyCheckInFee?.toLocaleString()} / visit
+                          {yearlyDiscountPercentage !== null &&
+                            yearlyDiscountPercentage > 0 && (
+                              <span className="ml-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">
+                                {yearlyDiscountPercentage}% OFF
+                              </span>
+                            )}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium leading-snug sm:leading-relaxed">
+                      Pay one yearly fee to get a lower entrance price
+                      {yearlyDiscountPercentage !== null &&
+                      yearlyDiscountPercentage > 0
+                        ? ` (${yearlyDiscountPercentage}% off)`
+                        : ''}{' '}
+                      every time they visit for 1 whole year.
+                    </p>
+                  </div>
+
+                  {/* Price Footer & CTA Button */}
+                  <div className="flex justify-between items-end border-t border-slate-200/80 dark:border-white/10 pt-3 mt-3 sm:pt-4 sm:mt-5 relative z-10 gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                        Yearly Fee
+                      </span>
+                      <span
+                        className={`text-xl sm:text-2xl lg:text-3xl font-mono font-black tracking-tight ${
+                          isYearlyValid
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-400 dark:text-zinc-500'
+                        }`}
+                      >
+                        {isYearlyValid
+                          ? `₱${settings.yearly_plan_price.toLocaleString()}`
+                          : '₱ --'}
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 font-body ml-1">
+                          / 1 Year
+                        </span>
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isOffline || !isYearlyValid || !isSessionOpen}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isOffline) {
+                          toast.error(
+                            'Subscriptions locked: Internet connection required to enroll or renew plans.',
+                            { toastId: 'offline-enroll-block' }
+                          );
+                          return;
+                        }
+                        if (!isSessionOpen) {
+                          toast.warning(
+                            'Cash drawer is closed. Paid subscriptions cannot be transacted.'
+                          );
+                          return;
+                        }
+                        if (isYearlyValid) {
+                          setModalConfig({
+                            isOpen: true,
+                            mode: 'Manual',
+                            plan: 'Yearly Membership',
+                          });
+                        }
+                      }}
+                      className={`py-2 px-3.5 sm:py-2.5 sm:px-5 font-bold rounded-xl text-[10px] font-heading tracking-wider uppercase border-none transition-all shadow-md whitespace-nowrap shrink-0 ${
+                        isOffline || !isSessionOpen || !isYearlyValid
+                          ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed opacity-60'
+                          : 'bg-(--color-primary) hover:bg-(--color-primary-hover) active:scale-95 text-white cursor-pointer'
+                      }`}
+                    >
+                      {isOffline ? (
+                        <span className="flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Locked Offline
+                        </span>
+                      ) : !isSessionOpen ? (
+                        'Session Closed'
+                      ) : isYearlyValid ? (
+                        'Register Yearly'
+                      ) : (
+                        'Unavailable'
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
           </motion.div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       <IntakeWizardModal
         isOpen={modalConfig.isOpen}

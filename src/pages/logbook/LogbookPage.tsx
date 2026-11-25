@@ -49,7 +49,7 @@ import { getServerNow } from '../../lib/serverTime';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
-import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
+import { VoidConfirmationModal } from '../../components/ui/VoidConfirmationModal';
 import { TimelineBar } from '../../components/ui/TimelineBar';
 import { TabLoader } from '../../components/ui/TabLoader';
 import { HeaderActionsContext } from '../../routes';
@@ -535,9 +535,6 @@ export const LogbookPage: React.FC = () => {
     return userRole?.toLowerCase() === 'admin' ? 'admin' : 'staff';
   }, [user, profile]);
 
-  const isAdminRef = useRef<boolean>(role === 'admin');
-  isAdminRef.current = role === 'admin';
-
   // Session-based deletability check with 24-hour void window for subscriptions
   const isLogDeletable = useCallback(
     (log: LogRecord) => {
@@ -662,12 +659,10 @@ export const LogbookPage: React.FC = () => {
     [selectedDate]
   );
 
-  // Animation & Consolidated Multi-Stacked Pending Delete states
+  // Animation & Void Confirmation states
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
-  const [deletingIds, setDeletingIds] = useState<string[]>([]);
-  const [stagedDeletions, setStagedDeletions] = useState<LogRecord[]>([]);
-  const stagedDeletionsRef = useRef<LogRecord[]>([]);
-  stagedDeletionsRef.current = stagedDeletions;
+  const [voidTargetLog, setVoidTargetLog] = useState<LogRecord | null>(null);
+  const [isVoidSubmitting, setIsVoidSubmitting] = useState(false);
 
   // Pre-fill state passed from Scanner overlay
   const [initialSearchVal, setInitialSearchVal] = useState<string>('');
@@ -1260,30 +1255,7 @@ export const LogbookPage: React.FC = () => {
 
         const combinedLogs = [...pendingRecords, ...(mappedLogs || [])];
         if (combinedLogs.length > 0 || mappedLogs !== null) {
-          const consolidatedLogs = deduplicateBatchCards(combinedLogs);
-          const stagedItems = stagedDeletionsRef.current;
-          const stagedIds = new Set([
-            ...stagedItems.map((l) => String(l.id)),
-            ...deletingIds,
-          ]);
-          const activeLogs = consolidatedLogs.filter((item) => {
-            if (stagedIds.has(String(item.id))) return false;
-            const itemTime = item.timestamp ? new Date(item.timestamp).getTime() : 0;
-            const isStagedClone = stagedItems.some((s) => {
-              const sTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
-              const sameMember =
-                (s.memberId && item.memberId === s.memberId) ||
-                (s.customerName &&
-                  item.customerName?.toLowerCase().trim() ===
-                    s.customerName.toLowerCase().trim());
-              return (
-                sameMember &&
-                item.categoryOrPlan === s.categoryOrPlan &&
-                Math.abs(itemTime - sTime) < 120000
-              );
-            });
-            return !isStagedClone;
-          });
+          const activeLogs = deduplicateBatchCards(combinedLogs);
           setLogs(activeLogs);
           if (mappedLogs) {
             const serialized = JSON.stringify(activeLogs);
@@ -1808,112 +1780,131 @@ export const LogbookPage: React.FC = () => {
     window.dispatchEvent(new CustomEvent('cards-refresh'));
   };
 
-  const reactivateCardsForLogRecord = async (log: LogRecord) => {
-    const isCard =
-      log.customerType === 'Card' ||
-      String(log.categoryOrPlan || '')
-        .toLowerCase()
-        .includes('card');
-    if (!isCard) return;
-
-    if (role !== 'admin') {
-      window.dispatchEvent(new CustomEvent('member-refresh'));
-      window.dispatchEvent(new CustomEvent('cards-refresh'));
-      return;
-    }
-
-    const targetMemberIds: string[] = [];
-    if (log.memberId) targetMemberIds.push(log.memberId);
-    if (Array.isArray(log.memberIds) && log.memberIds.length > 0) {
-      log.memberIds.forEach((id) => targetMemberIds.push(id));
-    }
-
-    if (log.receiptNumber) {
-      await supabase
-        .from('cards')
-        .update({
-          status: 'Active',
-          payment_status: 'PAID',
-          claim_status: 'UNCLAIMED',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('receipt_number', log.receiptNumber);
-
-      const [rcptRes, cardRes] = await Promise.allSettled([
-        supabase
-          .from('receipts')
-          .select('member_ids, member_id')
-          .eq('id', log.receiptNumber)
-          .maybeSingle(),
-        supabase
-          .from('cards')
-          .select('member_id')
-          .eq('receipt_number', log.receiptNumber),
-      ]);
-
-      if (rcptRes.status === 'fulfilled' && rcptRes.value.data) {
-        const r = rcptRes.value.data;
-        if (r.member_id) targetMemberIds.push(r.member_id);
-        if (Array.isArray(r.member_ids)) {
-          r.member_ids.forEach((id: string) => targetMemberIds.push(id));
-        }
-      }
-      if (cardRes.status === 'fulfilled' && cardRes.value.data) {
-        cardRes.value.data.forEach((c: any) => {
-          if (c.member_id) targetMemberIds.push(c.member_id);
-        });
-      }
-    }
-
-    const uniqueMemberIds = Array.from(new Set(targetMemberIds)).filter(
-      Boolean
-    );
-    if (uniqueMemberIds.length > 0) {
-      const { data: memberRows } = await supabase
-        .from('members')
-        .select('id, member_id')
-        .or(
-          `member_id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')}),id.in.(${uniqueMemberIds.map((id) => `"${id}"`).join(',')})`
-        );
-
-      const allPossibleIds = Array.from(
-        new Set([
-          ...uniqueMemberIds,
-          ...(memberRows || []).map((m: any) => m.id),
-          ...(memberRows || []).map((m: any) => m.member_id),
-        ])
-      ).filter(Boolean);
-
-      await supabase
-        .from('cards')
-        .update({
-          status: 'Active',
-          payment_status: 'PAID',
-          claim_status: 'UNCLAIMED',
-          updated_at: new Date().toISOString(),
-        })
-        .in('member_id', allPossibleIds);
-
-      await supabase
-        .from('member_cards')
-        .update({
-          status: 'Active',
-          payment_status: 'PAID',
-          deleted_at: null,
-        })
-        .in('member_id', allPossibleIds);
-    }
-
-    window.dispatchEvent(new CustomEvent('member-refresh'));
-    window.dispatchEvent(new CustomEvent('cards-refresh'));
-  };
-
-  const handleConfirmDelete = useCallback(
-    async (id: string) => {
-      const stagedLog = stagedDeletionsRef.current.find(
-        (l) => String(l.id) === String(id)
+  const softDeleteAttendanceIds = useCallback(
+    async (ids: string[]) => {
+      const cleanIds = Array.from(new Set(ids.map((id) => String(id)))).filter(
+        Boolean
       );
-      if (!stagedLog) return;
+      if (cleanIds.length === 0) return;
+
+      const { error: rpcError } = await supabase.rpc('soft_delete_attendance', {
+        p_ids: cleanIds,
+        p_deleted_by: user?.id || null,
+      });
+
+      if (rpcError) {
+        const isMissingRpc =
+          rpcError.code === '42883' ||
+          rpcError.code === 'PGRST202' ||
+          String(rpcError.message || '')
+            .toLowerCase()
+            .includes('soft_delete_attendance');
+        if (!isMissingRpc) throw rpcError;
+
+        const { error: fallbackErr } = await supabase
+          .from('attendance')
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: user?.id || null,
+          })
+          .in('id', cleanIds);
+        if (fallbackErr) throw fallbackErr;
+      }
+    },
+    [user?.id]
+  );
+
+  const removeLogFromLocalState = useCallback(
+    (targetLog: LogRecord) => {
+      const strId = String(targetLog.id);
+      setLogs((prev) => {
+        const isCard = isCardRecord(targetLog);
+        const rNo =
+          targetLog.receiptNumber ||
+          (strId.startsWith('rcpt-') ? strId.replace(/^rcpt-/, '') : null);
+        const mId = targetLog.memberId;
+        const logTime = targetLog.timestamp
+          ? new Date(targetLog.timestamp).getTime()
+          : 0;
+        const cleanName = (targetLog.customerName || '').trim().toLowerCase();
+        const cleanMemberId = (targetLog.memberId || '').trim().toLowerCase();
+
+        const updated: LogRecord[] = prev.filter((item) => {
+          if (String(item.id) === strId) return false;
+          if (isCard) {
+            if (
+              rNo &&
+              (item.receiptNumber === rNo ||
+                item.id === rNo ||
+                item.id === `rcpt-${rNo}`)
+            ) {
+              return false;
+            }
+            if (mId && item.memberId === mId && isCardRecord(item)) {
+              return false;
+            }
+          }
+          const itemTime = item.timestamp
+            ? new Date(item.timestamp).getTime()
+            : 0;
+          const isSameMember =
+            (cleanMemberId &&
+              (item.memberId || '').trim().toLowerCase() === cleanMemberId) ||
+            (cleanName &&
+              (item.customerName || '').trim().toLowerCase() === cleanName);
+          if (
+            isSameMember &&
+            item.categoryOrPlan === targetLog.categoryOrPlan &&
+            Math.abs(itemTime - logTime) < 120000
+          ) {
+            return false;
+          }
+          return true;
+        });
+        sessionStorage.setItem(
+          `logbook_sanitized_${dateStr}`,
+          JSON.stringify(updated)
+        );
+        return updated;
+      });
+    },
+    [dateStr]
+  );
+
+  const handleConfirmVoidLog = useCallback(
+    async (voidReason: string) => {
+      const targetLog = voidTargetLog;
+      const cleanReason = voidReason.trim();
+      if (!targetLog || !cleanReason) return;
+
+      const strId = String(targetLog.id);
+      setIsVoidSubmitting(true);
+
+      const isOfflinePending =
+        strId.startsWith('offline_tx_') ||
+        targetLog.sync_status === 'pending' ||
+        targetLog.sync_status === 'conflict';
+
+      if (isOfflinePending) {
+        try {
+          await dropPendingTransaction(strId);
+          setLogs((prev) => {
+            const updated = prev.filter((item) => String(item.id) !== strId);
+            sessionStorage.setItem(
+              `logbook_sanitized_${dateStr}`,
+              JSON.stringify(updated)
+            );
+            return updated;
+          });
+          setVoidTargetLog(null);
+          toast.info(`Offline transaction voided and removed (${cleanReason}).`);
+        } catch (e: any) {
+          toast.error(`Failed to void offline transaction: ${e.message}`);
+        } finally {
+          setIsVoidSubmitting(false);
+        }
+        return;
+      }
 
       const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
@@ -1932,42 +1923,47 @@ export const LogbookPage: React.FC = () => {
             userId: user?.id || 'offline_cashier',
             userName: profile?.username || user?.email || 'Staff',
             payload: {
-              attendanceId: stagedLog.id,
-              memberId: stagedLog.memberId,
-              customerName: stagedLog.customerName,
-              customerType: stagedLog.customerType,
-              planName: stagedLog.categoryOrPlan,
-              amountPaid: stagedLog.amountPaid,
-              receiptNumber: stagedLog.receiptNumber,
-              memberIds: stagedLog.memberIds,
-              cardFee: stagedLog.cardFee,
-              paymentMethod: stagedLog.paymentMethod,
-              timestamp: stagedLog.timestamp,
+              attendanceId: targetLog.id,
+              memberId: targetLog.memberId,
+              customerName: targetLog.customerName,
+              customerType: targetLog.customerType,
+              planName: targetLog.categoryOrPlan,
+              amountPaid: targetLog.amountPaid,
+              receiptNumber: targetLog.receiptNumber,
+              memberIds: targetLog.memberIds,
+              cardFee: targetLog.cardFee,
+              paymentMethod: targetLog.paymentMethod,
+              timestamp: targetLog.timestamp,
               deletedAt: deletedIso,
               deletedBy: user?.id || null,
-              isCard: isCardRecord(stagedLog),
+              isCard: isCardRecord(targetLog),
+              voidReason: cleanReason,
             },
           });
 
           try {
-            const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
-            const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+            const cachedRecycleRaw = localStorage.getItem(
+              'logbook_recycle_bin_cache'
+            );
+            const cachedRecycle = cachedRecycleRaw
+              ? JSON.parse(cachedRecycleRaw)
+              : [];
             const updatedRecycle = [
               {
-                id: stagedLog.id,
-                check_in_time: stagedLog.timestamp,
-                member_id: stagedLog.memberId,
-                customer_name: stagedLog.customerName,
-                customer_type: stagedLog.customerType,
-                plan_name: stagedLog.categoryOrPlan,
-                entry_fee: stagedLog.amountPaid,
+                id: targetLog.id,
+                check_in_time: targetLog.timestamp,
+                member_id: targetLog.memberId,
+                customer_name: targetLog.customerName,
+                customer_type: targetLog.customerType,
+                plan_name: targetLog.categoryOrPlan,
+                entry_fee: targetLog.amountPaid,
                 deleted_at: deletedIso,
-                receipt_number: stagedLog.receiptNumber,
-                member_ids: stagedLog.memberIds,
-                card_fee: stagedLog.cardFee,
-                payment_method: stagedLog.paymentMethod,
+                receipt_number: targetLog.receiptNumber,
+                member_ids: targetLog.memberIds,
+                card_fee: targetLog.cardFee,
+                payment_method: targetLog.paymentMethod,
               },
-              ...cachedRecycle.filter((l: any) => String(l.id) !== String(id)),
+              ...cachedRecycle.filter((l: any) => String(l.id) !== strId),
             ];
             localStorage.setItem(
               'logbook_recycle_bin_cache',
@@ -1975,48 +1971,56 @@ export const LogbookPage: React.FC = () => {
             );
           } catch {}
 
+          removeLogFromLocalState(targetLog);
+          setVoidTargetLog(null);
           toast.info(
-            `Record for "${stagedLog.customerName}" moved to Recycle Bin offline (queued for sync).`
+            `Record for "${targetLog.customerName}" voided offline (queued for sync).`
           );
         } catch (vaultErr: any) {
           console.error('Failed to stage offline attendance delete:', vaultErr);
-          toast.error(`Offline delete failed: ${vaultErr.message}`);
+          toast.error(`Offline void failed: ${vaultErr.message}`);
         } finally {
-          setStagedDeletions((prev) =>
-            prev.filter((item) => String(item.id) !== String(id))
-          );
+          setIsVoidSubmitting(false);
         }
         return;
       }
 
       try {
-        const isCard = isCardRecord(stagedLog);
+        const isCard = isCardRecord(targetLog);
         let rawReceiptId =
-          stagedLog.receiptNumber ||
-          (stagedLog.id.startsWith('rcpt-')
-            ? stagedLog.id.replace(/^rcpt-/, '')
+          targetLog.receiptNumber ||
+          (targetLog.id.startsWith('rcpt-')
+            ? targetLog.id.replace(/^rcpt-/, '')
             : null);
 
-        if (isCard && !rawReceiptId && stagedLog.memberId) {
+        if (isCard && !rawReceiptId && targetLog.memberId) {
           const { data: cardRow } = await supabase
             .from('cards')
             .select('receipt_number')
-            .eq('member_id', stagedLog.memberId)
+            .eq('member_id', targetLog.memberId)
             .maybeSingle();
           if (cardRow?.receipt_number) {
             rawReceiptId = cardRow.receipt_number;
           }
         }
 
-        if (isCard && !rawReceiptId && (stagedLog.memberId || stagedLog.customerName)) {
-          const targetIds = stagedLog.memberId ? [stagedLog.memberId] : (stagedLog.memberIds || []);
+        if (
+          isCard &&
+          !rawReceiptId &&
+          (targetLog.memberId || targetLog.customerName)
+        ) {
+          const targetIds = targetLog.memberId
+            ? [targetLog.memberId]
+            : targetLog.memberIds || [];
           let rcptQ = supabase.from('receipts').select('id');
           if (targetIds.length > 0) {
             rcptQ = rcptQ.in('member_id', targetIds);
           } else {
-            rcptQ = rcptQ.eq('customer_name', stagedLog.customerName);
+            rcptQ = rcptQ.eq('customer_name', targetLog.customerName);
           }
-          const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+          const logMs = targetLog.timestamp
+            ? new Date(targetLog.timestamp).getTime()
+            : Date.now();
           const winStart = new Date(logMs - 1800000).toISOString();
           const winEnd = new Date(logMs + 1800000).toISOString();
           const { data: rMatches } = await rcptQ
@@ -2030,9 +2034,9 @@ export const LogbookPage: React.FC = () => {
         }
 
         const isSubscription = Boolean(
-          stagedLog.isSubscription ||
-          stagedLog.customerType === 'New Membership' ||
-          stagedLog.customerType === 'Membership Renewal'
+          targetLog.isSubscription ||
+            targetLog.customerType === 'New Membership' ||
+            targetLog.customerType === 'Membership Renewal'
         );
 
         if (isSubscription) {
@@ -2050,7 +2054,9 @@ export const LogbookPage: React.FC = () => {
             await supabase
               .from('attendance')
               .delete()
-              .or(`receipt_number.eq.${rawReceiptId},receipt_number.eq.rcpt-${rawReceiptId},id.eq.${stagedLog.id}`);
+              .or(
+                `receipt_number.eq.${rawReceiptId},receipt_number.eq.rcpt-${rawReceiptId},id.eq.${targetLog.id}`
+              );
 
             await supabase
               .from('subscriptions')
@@ -2059,15 +2065,15 @@ export const LogbookPage: React.FC = () => {
                 payment_status: 'Cancelled',
                 voided_at: new Date().toISOString(),
                 voided_by: user?.id || 'Admin Staff',
-                void_reason: 'Purged from Logbook',
+                void_reason: cleanReason,
                 updated_at: new Date().toISOString(),
               })
               .or(`receipt_number.eq.${rawReceiptId},id.eq.${rawReceiptId}`);
-          } else if (stagedLog.memberId) {
+          } else if (targetLog.memberId) {
             await supabase
               .from('receipts')
               .delete()
-              .eq('member_id', stagedLog.memberId)
+              .eq('member_id', targetLog.memberId)
               .eq('payment_status', 'Paid');
 
             await supabase
@@ -2077,72 +2083,86 @@ export const LogbookPage: React.FC = () => {
                 payment_status: 'Cancelled',
                 voided_at: new Date().toISOString(),
                 voided_by: user?.id || 'Admin Staff',
-                void_reason: 'Purged from Logbook',
+                void_reason: cleanReason,
                 updated_at: new Date().toISOString(),
               })
-              .eq('member_id', stagedLog.memberId)
+              .eq('member_id', targetLog.memberId)
               .eq('status', 'Active');
           }
         } else {
-          let deleteQuery = supabase.from('attendance').update({
-            deleted_at: new Date().toISOString(),
-            deleted_by: user?.id || null,
-          });
-
           if (isCard && rawReceiptId) {
-            deleteQuery = deleteQuery.or(
-              `receipt_number.eq.${rawReceiptId},id.eq.${stagedLog.id}`
+            const { data: receiptMatches } = await supabase
+              .from('attendance')
+              .select('id')
+              .is('deleted_at', null)
+              .or(`receipt_number.eq.${rawReceiptId},id.eq.${targetLog.id}`);
+            const targetIds = Array.from(
+              new Set([
+                strId,
+                ...(receiptMatches || []).map((r: any) => String(r.id)),
+              ])
             );
+            await softDeleteAttendanceIds(targetIds);
           } else {
-            deleteQuery = deleteQuery.eq('id', stagedLog.id);
+            await softDeleteAttendanceIds([strId]);
           }
 
-          const { error } = await deleteQuery;
-          if (error) throw error;
-
-          if (!isCard && !isSubscription && (stagedLog.memberId || stagedLog.customerName)) {
-            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+          if (
+            !isCard &&
+            !isSubscription &&
+            (targetLog.memberId || targetLog.customerName)
+          ) {
+            const logMs = targetLog.timestamp
+              ? new Date(targetLog.timestamp).getTime()
+              : Date.now();
             const winStart = new Date(logMs - 120000).toISOString();
             const winEnd = new Date(logMs + 120000).toISOString();
             let cloneQ = supabase
               .from('attendance')
-              .update({
-                deleted_at: new Date().toISOString(),
-                deleted_by: user?.id || null,
-              })
+              .select('id')
               .is('deleted_at', null)
               .gte('check_in_time', winStart)
               .lte('check_in_time', winEnd);
 
-            if (stagedLog.memberId) {
-              cloneQ = cloneQ.eq('member_id', stagedLog.memberId);
+            if (targetLog.memberId) {
+              cloneQ = cloneQ.eq('member_id', targetLog.memberId);
             } else {
-              cloneQ = cloneQ.eq('customer_name', stagedLog.customerName);
+              cloneQ = cloneQ.eq('customer_name', targetLog.customerName);
             }
-            await cloneQ;
+            const { data: cloneRows } = await cloneQ;
+            if (cloneRows && cloneRows.length > 0) {
+              await softDeleteAttendanceIds(
+                cloneRows.map((c: any) => String(c.id))
+              );
+            }
           }
         }
 
         if (isCard) {
           const targetMemberIds: string[] = [];
-          if (stagedLog.memberId) targetMemberIds.push(stagedLog.memberId);
-          if (Array.isArray(stagedLog.memberIds)) {
-            stagedLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
+          if (targetLog.memberId) targetMemberIds.push(targetLog.memberId);
+          if (Array.isArray(targetLog.memberIds)) {
+            targetLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
           }
           if (targetMemberIds.length > 0) {
-            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+            const logMs = targetLog.timestamp
+              ? new Date(targetLog.timestamp).getTime()
+              : Date.now();
             const winStart = new Date(logMs - 1800000).toISOString();
             const winEnd = new Date(logMs + 1800000).toISOString();
-            await supabase
+            const { data: cardAttRows } = await supabase
               .from('attendance')
-              .update({
-                deleted_at: new Date().toISOString(),
-                deleted_by: user?.id || null,
-              })
+              .select('id')
+              .is('deleted_at', null)
               .in('member_id', targetMemberIds)
               .or(`customer_type.eq.Card,plan_name.ilike.%card%`)
               .gte('check_in_time', winStart)
               .lte('check_in_time', winEnd);
+            if (cardAttRows && cardAttRows.length > 0) {
+              await softDeleteAttendanceIds(
+                cardAttRows.map((c: any) => String(c.id))
+              );
+            }
           }
         }
 
@@ -2155,12 +2175,14 @@ export const LogbookPage: React.FC = () => {
           }
 
           const targetMemberIds: string[] = [];
-          if (stagedLog.memberId) targetMemberIds.push(stagedLog.memberId);
-          if (Array.isArray(stagedLog.memberIds)) {
-            stagedLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
+          if (targetLog.memberId) targetMemberIds.push(targetLog.memberId);
+          if (Array.isArray(targetLog.memberIds)) {
+            targetLog.memberIds.forEach((mId) => targetMemberIds.push(mId));
           }
           if (targetMemberIds.length > 0) {
-            const logMs = stagedLog.timestamp ? new Date(stagedLog.timestamp).getTime() : Date.now();
+            const logMs = targetLog.timestamp
+              ? new Date(targetLog.timestamp).getTime()
+              : Date.now();
             const winStart = new Date(logMs - 1800000).toISOString();
             const winEnd = new Date(logMs + 1800000).toISOString();
             await supabase
@@ -2173,27 +2195,31 @@ export const LogbookPage: React.FC = () => {
           }
         }
 
-        await deactivateCardsForLogRecord(stagedLog);
+        await deactivateCardsForLogRecord(targetLog);
 
         try {
-          const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
-          const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+          const cachedRecycleRaw = localStorage.getItem(
+            'logbook_recycle_bin_cache'
+          );
+          const cachedRecycle = cachedRecycleRaw
+            ? JSON.parse(cachedRecycleRaw)
+            : [];
           const updatedRecycle = [
             {
-              id: stagedLog.id,
-              check_in_time: stagedLog.timestamp,
-              member_id: stagedLog.memberId,
-              customer_name: stagedLog.customerName,
-              customer_type: stagedLog.customerType,
-              plan_name: stagedLog.categoryOrPlan,
-              entry_fee: stagedLog.amountPaid,
+              id: targetLog.id,
+              check_in_time: targetLog.timestamp,
+              member_id: targetLog.memberId,
+              customer_name: targetLog.customerName,
+              customer_type: targetLog.customerType,
+              plan_name: targetLog.categoryOrPlan,
+              entry_fee: targetLog.amountPaid,
               deleted_at: new Date().toISOString(),
-              receipt_number: stagedLog.receiptNumber,
-              member_ids: stagedLog.memberIds,
-              card_fee: stagedLog.cardFee,
-              payment_method: stagedLog.paymentMethod,
+              receipt_number: targetLog.receiptNumber,
+              member_ids: targetLog.memberIds,
+              card_fee: targetLog.cardFee,
+              payment_method: targetLog.paymentMethod,
             },
-            ...cachedRecycle.filter((l: any) => String(l.id) !== String(id)),
+            ...cachedRecycle.filter((l: any) => String(l.id) !== strId),
           ];
           localStorage.setItem(
             'logbook_recycle_bin_cache',
@@ -2201,244 +2227,39 @@ export const LogbookPage: React.FC = () => {
           );
         } catch {}
 
-        toast.success(
-          `Record for "${stagedLog.customerName}" moved to Recycle Bin.`
-        );
+        removeLogFromLocalState(targetLog);
 
         await logAudit(
           'LOGBOOK_REMOVED',
-          `Moved check-in / card record for "${stagedLog.customerName}" (${stagedLog.customerType} - ${stagedLog.categoryOrPlan}, ₱${Number(stagedLog.amountPaid || 0).toFixed(2)}) to Recycle Bin.`,
-          stagedLog.id
+          `Voided check-in / card record for "${targetLog.customerName}" (${targetLog.customerType} - ${targetLog.categoryOrPlan}, ₱${Number(targetLog.amountPaid || 0).toFixed(2)}) to Recycle Bin — Reason: ${cleanReason}`,
+          targetLog.id
+        );
+
+        setVoidTargetLog(null);
+        toast.success(
+          `Record for "${targetLog.customerName}" voided and moved to Recycle Bin.`
         );
       } catch (err: any) {
         console.error('Failed to commit deletion to database:', err);
         toast.error(
           err.message || 'Failed to move check-in log to Recycle Bin.'
         );
-        setLogs((prev) => {
-          const updated: LogRecord[] = [
-            stagedLog,
-            ...prev.filter((item) => String(item.id) !== String(id)),
-          ].sort((a, b) => {
-            const dateA = a.timestamp || '';
-            const dateB = b.timestamp || '';
-            return dateB.localeCompare(dateA);
-          });
-          sessionStorage.setItem(
-            `logbook_sanitized_${dateStr}`,
-            JSON.stringify(updated)
-          );
-          return updated;
-        });
       } finally {
-        setStagedDeletions((prev) =>
-          prev.filter((item) => String(item.id) !== String(id))
-        );
+        setIsVoidSubmitting(false);
       }
     },
-    [user?.id, dateStr, role]
+    [
+      voidTargetLog,
+      user?.id,
+      profile?.username,
+      user?.email,
+      dateStr,
+      role,
+      removeLogFromLocalState,
+      softDeleteAttendanceIds,
+      deactivateCardsForLogRecord,
+    ]
   );
-
-  const handleUndoDelete = (id: string) => {
-    const stagedLog = stagedDeletionsRef.current.find(
-      (l) => String(l.id) === String(id)
-    );
-    if (!stagedLog) return;
-
-    setDeletingIds((prev) => prev.filter((item) => item !== String(id)));
-    setLogs((prev) => {
-      const updated: LogRecord[] = [
-        stagedLog,
-        ...prev.filter((item) => String(item.id) !== String(id)),
-      ].sort((a, b) => {
-        const dateA = a.timestamp || '';
-        const dateB = b.timestamp || '';
-        return dateB.localeCompare(dateA);
-      });
-      sessionStorage.setItem(
-        `logbook_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
-      return updated;
-    });
-
-    reactivateCardsForLogRecord(stagedLog);
-
-    setStagedDeletions((prev) =>
-      prev.filter((item) => String(item.id) !== String(id))
-    );
-    toast.info(`Restored check-in for "${stagedLog.customerName}".`);
-  };
-
-  const handleConfirmAll = async () => {
-    if (stagedDeletionsRef.current.length === 0) return;
-    const itemsToCommit = [...stagedDeletionsRef.current];
-    setStagedDeletions([]);
-    setDeletingIds([]);
-
-    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
-
-    if (!isOnline) {
-      for (const log of itemsToCommit) {
-        await handleConfirmDelete(String(log.id));
-      }
-      return;
-    }
-
-    try {
-      const deletedIso = new Date().toISOString();
-      const standardAttendanceIds: string[] = [];
-      const cardLogs: LogRecord[] = [];
-      const subscriptionLogs: LogRecord[] = [];
-
-      itemsToCommit.forEach((log) => {
-        const isCard = isCardRecord(log);
-        const isSub = Boolean(
-          log.isSubscription ||
-          log.customerType === 'New Membership' ||
-          log.customerType === 'Membership Renewal'
-        );
-
-        if (isCard) {
-          cardLogs.push(log);
-        } else if (isSub) {
-          subscriptionLogs.push(log);
-        } else if (!String(log.id).startsWith('rcpt-')) {
-          standardAttendanceIds.push(String(log.id));
-        }
-      });
-
-      if (standardAttendanceIds.length > 0) {
-        const { error: batchErr } = await supabase
-          .from('attendance')
-          .update({
-            deleted_at: deletedIso,
-            deleted_by: user?.id || null,
-          })
-          .in('id', standardAttendanceIds);
-
-        if (batchErr) throw batchErr;
-
-        const cloneSweeps = itemsToCommit
-          .filter((l) => !isCardRecord(l) && (l.memberId || l.customerName))
-          .map((l) => {
-            const logMs = l.timestamp ? new Date(l.timestamp).getTime() : Date.now();
-            const winStart = new Date(logMs - 120000).toISOString();
-            const winEnd = new Date(logMs + 120000).toISOString();
-            let sweepQ = supabase
-              .from('attendance')
-              .update({
-                deleted_at: deletedIso,
-                deleted_by: user?.id || null,
-              })
-              .is('deleted_at', null)
-              .gte('check_in_time', winStart)
-              .lte('check_in_time', winEnd);
-
-            if (l.memberId) {
-              sweepQ = sweepQ.eq('member_id', l.memberId);
-            } else {
-              sweepQ = sweepQ.eq('customer_name', l.customerName);
-            }
-            return sweepQ;
-          });
-
-        if (cloneSweeps.length > 0) {
-          await Promise.allSettled(cloneSweeps);
-        }
-      }
-
-      for (const cardLog of cardLogs) {
-        await handleConfirmDelete(String(cardLog.id));
-      }
-
-      for (const subLog of subscriptionLogs) {
-        await handleConfirmDelete(String(subLog.id));
-      }
-
-      try {
-        const cachedRecycleRaw = localStorage.getItem('logbook_recycle_bin_cache');
-        const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
-        const committedIds = new Set(itemsToCommit.map((l) => String(l.id)));
-        const newRecycleEntries = itemsToCommit.map((l) => ({
-          id: l.id,
-          check_in_time: l.timestamp,
-          member_id: l.memberId,
-          customer_name: l.customerName,
-          customer_type: l.customerType,
-          plan_name: l.categoryOrPlan,
-          entry_fee: l.amountPaid,
-          deleted_at: deletedIso,
-          receipt_number: l.receiptNumber,
-          member_ids: l.memberIds,
-          card_fee: l.cardFee,
-          payment_method: l.paymentMethod,
-        }));
-
-        const updatedRecycle = [
-          ...newRecycleEntries,
-          ...cachedRecycle.filter((item: any) => !committedIds.has(String(item.id))),
-        ];
-        localStorage.setItem(
-          'logbook_recycle_bin_cache',
-          JSON.stringify(updatedRecycle)
-        );
-      } catch {}
-
-      toast.success(
-        `Moved ${itemsToCommit.length} record(s) to Recycle Bin.`
-      );
-
-      await logAudit(
-        'LOGBOOK_REMOVED',
-        `Moved ${itemsToCommit.length} record(s) to Recycle Bin.`
-      );
-    } catch (err: any) {
-      console.error('Failed to batch commit deletion to database:', err);
-      toast.error(err.message || 'Failed to move check-in records to Recycle Bin.');
-      setLogs((prev) => {
-        const existingIds = new Set(prev.map((i) => String(i.id)));
-        const toRestore = itemsToCommit.filter((i) => !existingIds.has(String(i.id)));
-        const updated = [...toRestore, ...prev].sort((a, b) => {
-          const dateA = a.timestamp || '';
-          const dateB = b.timestamp || '';
-          return dateB.localeCompare(dateA);
-        });
-        sessionStorage.setItem(
-          `logbook_sanitized_${dateStr}`,
-          JSON.stringify(updated)
-        );
-        return updated;
-      });
-    }
-  };
-
-  const handleUndoAll = () => {
-    if (stagedDeletionsRef.current.length === 0) return;
-    const itemsToRestore = [...stagedDeletionsRef.current];
-    setDeletingIds([]);
-    setLogs((prev) => {
-      const existingIds = new Set(itemsToRestore.map((i) => String(i.id)));
-      const filtered = prev.filter((item) => !existingIds.has(String(item.id)));
-      const updated = [...itemsToRestore, ...filtered].sort((a, b) => {
-        const dateA = a.timestamp || '';
-        const dateB = b.timestamp || '';
-        return dateB.localeCompare(dateA);
-      });
-      sessionStorage.setItem(
-        `logbook_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
-      return updated;
-    });
-
-    itemsToRestore.forEach((log) => {
-      reactivateCardsForLogRecord(log);
-    });
-
-    setStagedDeletions([]);
-    toast.info(`Restored all ${itemsToRestore.length} records.`);
-  };
 
   const handleDeleteLog = async (log: LogRecord) => {
     if (isLocked) {
@@ -2454,103 +2275,8 @@ export const LogbookPage: React.FC = () => {
       return;
     }
 
-    const strId = String(log.id);
-    if (strId.startsWith('offline_tx_') || log.sync_status === 'pending' || log.sync_status === 'conflict') {
-      try {
-        await dropPendingTransaction(strId);
-        setLogs((prev) => prev.filter((item) => String(item.id) !== strId));
-        toast.info('Offline transaction cancelled and removed.');
-      } catch (e: any) {
-        toast.error(`Failed to drop offline transaction: ${e.message}`);
-      }
-      return;
-    }
-
-    if (deletingIds.includes(strId)) return;
-
-    setDeletingIds((prev) => [...prev, strId]);
-
-    setTimeout(() => {
-      setStagedDeletions((prev) => [...prev, log]);
-      setLogs((prev) => {
-        const isCard = isCardRecord(log);
-        const rNo =
-          log.receiptNumber ||
-          (strId.startsWith('rcpt-') ? strId.replace(/^rcpt-/, '') : null);
-        const mId = log.memberId;
-        const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
-        const cleanName = (log.customerName || '').trim().toLowerCase();
-        const cleanMemberId = (log.memberId || '').trim().toLowerCase();
-
-        const updated: LogRecord[] = prev.filter((item) => {
-          if (String(item.id) === strId) return false;
-          if (isCard) {
-            if (
-              rNo &&
-              (item.receiptNumber === rNo ||
-                item.id === rNo ||
-                item.id === `rcpt-${rNo}`)
-            ) {
-              return false;
-            }
-            if (mId && item.memberId === mId && isCardRecord(item)) {
-              return false;
-            }
-          }
-          const itemTime = item.timestamp ? new Date(item.timestamp).getTime() : 0;
-          const isSameMember =
-            (cleanMemberId && (item.memberId || '').trim().toLowerCase() === cleanMemberId) ||
-            (cleanName && (item.customerName || '').trim().toLowerCase() === cleanName);
-          if (
-            isSameMember &&
-            item.categoryOrPlan === log.categoryOrPlan &&
-            Math.abs(itemTime - logTime) < 120000
-          ) {
-            return false;
-          }
-          return true;
-        });
-        sessionStorage.setItem(
-          `logbook_sanitized_${dateStr}`,
-          JSON.stringify(updated)
-        );
-        return updated;
-      });
-      setDeletingIds((prev) => prev.filter((id) => id !== strId));
-    }, 380);
+    setVoidTargetLog(log);
   };
-
-  useEffect(() => {
-    return () => {
-      if (
-        stagedDeletionsRef.current.length > 0 &&
-        (typeof navigator === 'undefined' || navigator.onLine)
-      ) {
-        const deletedIso = new Date().toISOString();
-        stagedDeletionsRef.current.forEach((log) => {
-          const isSub = Boolean(
-            log.isSubscription ||
-              log.customerType === 'New Membership' ||
-              log.customerType === 'Membership Renewal'
-          );
-          if (isSub && !isAdminRef.current) return;
-
-          supabase
-            .from('attendance')
-            .update({
-              deleted_at: deletedIso,
-              deleted_by: user?.id || null,
-            })
-            .eq('id', log.id)
-            .then();
-
-          if (isAdminRef.current) {
-            deactivateCardsForLogRecord(log);
-          }
-        });
-      }
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     const canOperateSession =
@@ -2607,11 +2333,6 @@ export const LogbookPage: React.FC = () => {
                     'Recycle Bin is unavailable while the cash session is closed.'
                   );
                   return;
-                }
-                if (stagedDeletionsRef.current.length > 0) {
-                  stagedDeletionsRef.current.forEach((log) =>
-                    handleConfirmDelete(String(log.id))
-                  );
                 }
                 setIsRecycleBinOpen(true);
               }}
@@ -2753,7 +2474,6 @@ export const LogbookPage: React.FC = () => {
     role,
     setActions,
     activePage,
-    handleConfirmDelete,
     isSessionOpen,
     isLocked,
     getLockReason,
@@ -2791,20 +2511,6 @@ export const LogbookPage: React.FC = () => {
       handleDeleteLog(log);
     }
   };
-
-  const undoToastItems: UndoItem[] = useMemo(() => {
-    return stagedDeletions.map((log) => ({
-      id: String(log.id),
-      title: `${log.customerName} (${log.categoryOrPlan || 'Daily Pass'})`,
-      type: 'logbook',
-      customerName: log.customerName,
-      customerType: log.customerType,
-      categoryOrPlan: log.categoryOrPlan,
-      paymentMethod: log.paymentMethod,
-      amount: Number(log.amountPaid || 0),
-      timestamp: log.timestamp,
-    }));
-  }, [stagedDeletions]);
 
   return (
     <div className="relative min-h-[85vh] w-full animate-fade-in">
@@ -3089,7 +2795,6 @@ export const LogbookPage: React.FC = () => {
                 ) => {
                   const strId = String(log.id);
                   const isNew = strId === newlyAddedId;
-                  const isDeleting = deletingIds.includes(strId);
                   const isStaffReadOnlyClosed = isClosedSession && role === 'staff';
 
                   return (
@@ -3117,24 +2822,15 @@ export const LogbookPage: React.FC = () => {
                       }
                       animate={
                         isBatterySaver
-                          ? { opacity: isDeleting ? 0 : 1 }
-                          : isDeleting
-                            ? {
-                                opacity: 0,
-                                scale: 0.92,
-                                y: -5,
-                                boxShadow:
-                                  '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                filter: 'brightness(0.9)',
-                              }
-                            : {
-                                opacity: 1,
-                                y: 0,
-                                scale: 1,
-                                boxShadow: isNew
-                                  ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                  : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
-                              }
+                          ? { opacity: 1 }
+                          : {
+                              opacity: 1,
+                              y: 0,
+                              scale: 1,
+                              boxShadow: isNew
+                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                            }
                       }
                       transition={
                         isBatterySaver
@@ -3145,10 +2841,10 @@ export const LogbookPage: React.FC = () => {
                                 ease: [0.16, 1, 0.3, 1],
                               },
                               boxShadow: {
-                                duration: isDeleting ? 0.15 : isNew ? 1.5 : 0,
+                                duration: isNew ? 1.5 : 0,
                                 ease: 'easeOut',
                               },
-                              opacity: { duration: isDeleting ? 0.38 : 0.2 },
+                              opacity: { duration: 0.2 },
                             }
                       }
                       className="rounded-2xl transition-all overflow-hidden h-full"
@@ -3157,9 +2853,9 @@ export const LogbookPage: React.FC = () => {
                         mode="attendance"
                         data={log}
                         viewMode={viewMode}
-                        canDelete={isLogDeletable(log) && !isDeleting}
+                        canDelete={isLogDeletable(log)}
                         canTogglePayment={
-                          role === 'admin' && isLogDeletable(log) && !isDeleting
+                          role === 'admin' && isLogDeletable(log)
                         }
                         canPrint={!isStaffReadOnlyClosed}
                         printDisabledReason={
@@ -3647,14 +3343,28 @@ export const LogbookPage: React.FC = () => {
         />
       )}
 
-      {/* CONSOLIDATED STACKABLE UNDO TOAST */}
-      <UndoToast
-        items={undoToastItems}
-        duration={5}
-        onUndoItem={handleUndoDelete}
-        onConfirmItem={handleConfirmDelete}
-        onUndoAll={handleUndoAll}
-        onConfirmAll={handleConfirmAll}
+      {/* VOID / DELETE CONFIRMATION MODAL */}
+      <VoidConfirmationModal
+        isOpen={!!voidTargetLog}
+        onClose={() => {
+          if (!isVoidSubmitting) setVoidTargetLog(null);
+        }}
+        onConfirm={handleConfirmVoidLog}
+        title="Void & Remove Entry"
+        itemSummary={
+          voidTargetLog
+            ? `${voidTargetLog.customerName} (${voidTargetLog.categoryOrPlan || 'Daily Pass'})`
+            : ''
+        }
+        amount={voidTargetLog ? Number(voidTargetLog.amountPaid || 0) : undefined}
+        paymentMethod={voidTargetLog?.paymentMethod}
+        presetReasons={[
+          'Duplicate check-in',
+          'Wrong customer selected',
+          'Walk-in cancelled',
+          'Mistaken entry',
+        ]}
+        isSubmitting={isVoidSubmitting}
       />
 
       {/* MOBILE STICKY BOTTOM BAR FOR LOGBOOK */}
@@ -3706,11 +3416,6 @@ export const LogbookPage: React.FC = () => {
                         'Recycle Bin is unavailable while the cash session is closed.'
                       );
                       return;
-                    }
-                    if (stagedDeletionsRef.current.length > 0) {
-                      stagedDeletionsRef.current.forEach((log) =>
-                        handleConfirmDelete(String(log.id))
-                      );
                     }
                     setIsRecycleBinOpen(true);
                   }}

@@ -1,5 +1,6 @@
 // src/components/layouts/Sidebar.tsx
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu,
@@ -247,6 +248,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [mobileExpandedMenu, setMobileExpandedMenu] = useState<string | null>(
     null
   );
+  const [collapsedFlyout, setCollapsedFlyout] = useState<{
+    name: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
 
   // Logout Confirmation States
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
@@ -258,6 +265,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const mobileLogoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+
+  // Close collapsed rail flyout when sidebar expands or route changes
+  useEffect(() => {
+    setCollapsedFlyout(null);
+  }, [collapsed, location.pathname]);
+
+  useEffect(() => {
+    if (!collapsedFlyout) return;
+
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('[data-mini-rail-trigger]')) return;
+      if (flyoutRef.current && !flyoutRef.current.contains(target as Node)) {
+        setCollapsedFlyout(null);
+      }
+    };
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCollapsedFlyout(null);
+    };
+
+    const handleViewportChange = () => setCollapsedFlyout(null);
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    window.addEventListener('resize', handleViewportChange);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('resize', handleViewportChange);
+    };
+  }, [collapsedFlyout]);
 
   const isSettingsActive = useMemo(() => {
     const currentPath = location.pathname.toLowerCase();
@@ -374,10 +416,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [location.pathname, allowedMenu]);
 
-  const handleParentMenuClick = (item: MenuItem, isMobile = false) => {
+  const handleParentMenuClick = (
+    item: MenuItem,
+    isMobile = false,
+    e?: React.MouseEvent<HTMLButtonElement>
+  ) => {
     if (item.path && (!item.children || item.children.length === 0)) {
       navigate(item.path);
       if (isMobile) setMobileOpen(false);
+      setCollapsedFlyout(null);
       return;
     }
 
@@ -387,9 +434,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
 
     if (!isMobile && collapsed) {
-      if (activeChild) return;
-      if (visibleChildren[0]?.path) {
-        navigate(visibleChildren[0].path);
+      if (collapsedFlyout?.name === item.name) {
+        setCollapsedFlyout(null);
+        return;
+      }
+
+      if (e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const estimatedHeight = 64 + visibleChildren.length * 64;
+        const maxTop = Math.max(12, window.innerHeight - estimatedHeight - 16);
+        const clampedTop = Math.min(Math.max(12, rect.top), maxTop);
+        setCollapsedFlyout({
+          name: item.name,
+          top: clampedTop,
+          left: rect.right + 12,
+        });
       }
       return;
     }
@@ -773,13 +832,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   >
                     <button
-                      onClick={() => handleParentMenuClick(item, false)}
+                      type="button"
+                      data-mini-rail-trigger={collapsed ? item.name : undefined}
+                      onClick={(e) => handleParentMenuClick(item, false, e)}
+                      aria-expanded={
+                        collapsed ? collapsedFlyout?.name === item.name : isExpanded
+                      }
                       className={`flex items-center text-xs tracking-wider uppercase transition-all duration-200 relative cursor-pointer group outline-none focus:outline-none ${
                         collapsed
                           ? `w-11 h-11 mx-auto rounded-xl justify-center p-0 shrink-0 border ${
                               isChildActive
                                 ? 'bg-(--color-primary) text-white border-transparent shadow-md font-black'
-                                : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
+                                : collapsedFlyout?.name === item.name
+                                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/50 shadow-md ring-2 ring-blue-500/25'
+                                  : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-[#1e232d] shadow-xs'
                             }`
                           : `w-full h-[52px] px-4 justify-between border ${
                               isExpanded
@@ -1091,6 +1157,113 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       </aside>
 
+      {/* COLLAPSED MINI-RAIL FLYOUT SUBMENU */}
+      {collapsed &&
+        collapsedFlyout &&
+        typeof document !== 'undefined' &&
+        (() => {
+          const flyoutMenu = allowedMenu.find(
+            (m) => m.name === collapsedFlyout.name
+          );
+          if (!flyoutMenu?.children || flyoutMenu.children.length === 0) {
+            return null;
+          }
+
+          return createPortal(
+            <div
+              ref={flyoutRef}
+              style={{
+                top: collapsedFlyout.top,
+                left: collapsedFlyout.left,
+              }}
+              className="fixed z-[600] w-64 rounded-2xl bg-white dark:bg-[#141720] border border-slate-200/90 dark:border-white/15 shadow-2xl p-2 space-y-1.5 animate-fade-in hidden lg:block select-none"
+              role="menu"
+              aria-label={`${flyoutMenu.name} submenu`}
+            >
+              <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-slate-200/80 dark:border-white/10">
+                <span className="text-[10px] font-heading font-black uppercase tracking-widest text-slate-900 dark:text-white">
+                  {flyoutMenu.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCollapsedFlyout(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label="Close submenu"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                {flyoutMenu.children.map((child, cIdx) => {
+                  const isActive = isPathActive(child.path);
+                  return (
+                    <Link
+                      key={cIdx}
+                      to={child.path}
+                      onClick={() => setCollapsedFlyout(null)}
+                      role="menuitem"
+                      className={`block p-2.5 rounded-xl transition-all border ${
+                        isActive
+                          ? 'bg-blue-600/10 dark:bg-white/10 border-blue-500/30 dark:border-white/20 shadow-xs'
+                          : 'hover:bg-slate-100 dark:hover:bg-white/5 border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isActive
+                                ? 'bg-blue-600 dark:bg-white scale-125'
+                                : 'bg-slate-400 dark:bg-slate-600'
+                            }`}
+                          />
+                          <span
+                            className={`text-[11px] font-heading tracking-wider uppercase truncate ${
+                              isActive
+                                ? 'text-blue-700 dark:text-white font-black'
+                                : 'text-slate-800 dark:text-slate-200 font-bold'
+                            }`}
+                          >
+                            {child.name}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {child.notificationCount !== undefined &&
+                            child.notificationCount > 0 && (
+                              <span
+                                className={`min-w-[19px] h-[19px] px-1.5 rounded-full text-[9px] font-heading font-black flex items-center justify-center shadow-xs ${
+                                  child.notificationColor === 'amber'
+                                    ? 'bg-amber-500 text-white'
+                                    : 'bg-red-600 text-white animate-pulse'
+                                }`}
+                              >
+                                {formatBadgeCount(child.notificationCount)}
+                              </span>
+                            )}
+                          {child.badge && (
+                            <span className="text-[7px] font-heading font-black tracking-widest px-1.5 py-0.5 bg-blue-500/15 text-blue-600 dark:text-blue-300 border border-blue-500/25 rounded-md">
+                              {child.badge}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {child.description && (
+                        <p className="font-sans text-[10.5px] mt-0.5 pl-4 leading-snug text-slate-500 dark:text-slate-400">
+                          {child.description}
+                        </p>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body
+          );
+        })()}
+
       {/* ─── MOBILE DRAWER ─── */}
       <div
         className={`fixed inset-0 z-[500] lg:hidden ${
@@ -1105,7 +1278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
 
         <aside
-          className={`fixed top-0 right-0 bottom-0 w-85 max-w-full bg-slate-100 dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
+          className={`fixed top-0 right-0 bottom-0 w-[84vw] max-w-[300px] sm:max-w-[320px] bg-slate-100 dark:bg-[#0c0e12] border-l border-slate-200/80 dark:border-white/5 flex flex-col transition-transform duration-300 ease-out shadow-2xl overflow-hidden ${
             mobileOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
@@ -1119,8 +1292,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="flex flex-col h-full relative z-10 min-h-0">
             {/* MOBILE HEADER */}
-            <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-5 shadow-xs backdrop-blur-md">
-              <div className="absolute top-0 right-0 w-36 h-20 pointer-events-none overflow-hidden select-none z-0">
+            <div className="relative bg-white/80 dark:bg-neutral-900/80 border-b border-slate-200/80 dark:border-white/10 p-4 shadow-xs backdrop-blur-md">
+              <div className="absolute top-0 left-0 -scale-x-100 w-28 h-16 pointer-events-none overflow-hidden select-none z-0">
                 <svg
                   viewBox="0 0 160 80"
                   className="w-full h-full"
@@ -1133,7 +1306,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </svg>
               </div>
 
-              <div className="relative z-10 space-y-3">
+              <div className="relative z-10 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-slate-900 dark:bg-black p-1 flex items-center justify-center border border-slate-700/60 shadow-xs shrink-0">
@@ -1238,7 +1411,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* MOBILE NAV ITEMS */}
-            <nav className="flex-1 min-h-0 overflow-y-auto space-y-2.5 p-5 pt-3 pb-8 font-heading">
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-2 p-3.5 pt-3 pb-6 font-heading">
               {allowedMenu.map((item, idx) => {
                 const visibleChildren = item.children || [];
                 const isSingleItem = Boolean(
@@ -1266,7 +1439,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <Link
                         to={item.path}
                         onClick={() => setMobileOpen(false)}
-                        className={`w-full h-[52px] px-4 rounded-[16px] flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
+                        className={`w-full min-h-[44px] py-2.5 px-3.5 rounded-xl flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer ${
                           isSingleActive
                             ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
                             : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs'
@@ -1304,10 +1477,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       >
                         <button
                           onClick={() => handleParentMenuClick(item, true)}
-                          className={`w-full h-[52px] px-4 flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer outline-none focus:outline-none ${
+                          className={`w-full min-h-[44px] py-2.5 px-3.5 flex items-center justify-between text-xs tracking-wider uppercase transition-all duration-200 border cursor-pointer outline-none focus:outline-none ${
                             isMobileExpanded
-                              ? 'rounded-t-[16px] rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
-                              : 'rounded-[16px] ' +
+                              ? 'rounded-t-xl rounded-b-none border-transparent bg-transparent text-slate-900 dark:text-white font-black'
+                              : 'rounded-xl ' +
                                 (isChildActive
                                   ? 'bg-[#123c73]/10 text-[#123c73] dark:bg-white/10 dark:text-white border-[#123c73]/30 dark:border-white/20 font-black shadow-xs'
                                   : 'bg-white text-slate-800 dark:bg-[#161920] dark:text-slate-200 border-slate-200/90 dark:border-white/5 shadow-xs')
@@ -1437,9 +1610,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </nav>
 
             {/* MOBILE FOOTER ACTIONS */}
-            <div className="border-t border-slate-200/80 dark:border-white/5 p-5 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] mt-auto shrink-0 bg-slate-100 dark:bg-[#0c0e12]">
+            <div className="border-t border-slate-200/80 dark:border-white/5 p-3.5 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] mt-auto shrink-0 bg-slate-100 dark:bg-[#0c0e12]">
               {showMobileLogoutConfirm ? (
-                <div className="w-full flex items-center justify-between p-2.5 rounded-[16px] bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
+                <div className="w-full flex items-center justify-between p-2 rounded-xl bg-red-500/15 border border-red-500/35 text-red-500 font-heading text-[10px] tracking-widest font-black transition-all">
                   <span className="text-[9px]">
                     {isLoggingOut ? 'PROCESSING...' : 'ARE YOU SURE?'}
                   </span>
@@ -1447,14 +1620,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       disabled={isLoggingOut}
                       onClick={cancelMobileConfirm}
-                      className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]"
+                      className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-neutral-800 text-slate-700 dark:text-slate-300 font-bold text-[10px]"
                     >
                       NO
                     </button>
                     <button
                       disabled={isLoggingOut}
                       onClick={handleLogout}
-                      className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] flex items-center gap-1.5"
                     >
                       {isLoggingOut ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1469,7 +1642,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Link
                     to="/settings"
                     onClick={() => setMobileOpen(false)}
-                    className={`flex-1 h-[50px] rounded-[16px] border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
+                    className={`flex-1 h-11 rounded-xl border transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer ${
                       isSettingsActive
                         ? 'bg-(--color-primary) text-white border-transparent shadow-md'
                         : 'bg-white dark:bg-[#161920] text-[#123c73] dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-[#1e232d]'
@@ -1491,14 +1664,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={guideTitle}
                     title={guideTitle}
-                    className="w-[50px] h-[50px] shrink-0 rounded-[16px] bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center shadow-xs cursor-pointer active:scale-95 transition-all"
+                    className="w-11 h-11 shrink-0 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center shadow-xs cursor-pointer active:scale-95 transition-all"
                   >
                     <HelpCircle className="w-4 h-4" />
                   </button>
 
                   <button
                     onClick={triggerMobileConfirm}
-                    className="flex-1 h-[50px] rounded-[16px] bg-red-500/10 dark:bg-[#161a22] text-red-600 dark:text-white border border-red-500/20 dark:border-red-600/80 hover:bg-red-500/20 dark:hover:bg-[#1f2430] dark:hover:border-red-500 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
+                    className="flex-1 h-11 rounded-xl bg-red-500/10 dark:bg-[#161a22] text-red-600 dark:text-white border border-red-500/20 dark:border-red-600/80 hover:bg-red-500/20 dark:hover:bg-[#1f2430] dark:hover:border-red-500 transition-all flex items-center justify-center gap-1.5 font-heading text-[11px] tracking-widest font-black shadow-xs cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
                     <span>LOGOUT</span>

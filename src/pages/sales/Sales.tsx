@@ -49,11 +49,12 @@ import { IndicationGuideBanner } from '../../components/guide/IndicationGuideBan
 import {
   stagePendingTransaction,
   getDecryptedPendingTransactions,
+  dropPendingTransaction,
 } from '../../lib/offlineVault';
 
 // UI Helpers
 import { Button } from '../../components/ui/Button';
-import { UndoToast, type UndoItem } from '../../components/ui/UndoToast';
+import { VoidConfirmationModal } from '../../components/ui/VoidConfirmationModal';
 import { TabLoader } from '../../components/ui/TabLoader';
 import { TimelineBar } from '../../components/ui/TimelineBar';
 import { HeaderActionsContext } from '../../routes';
@@ -388,9 +389,8 @@ export const Sales: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any | null>(null);
 
-  const [stagedDeletions, setStagedDeletions] = useState<any[]>([]);
-  const stagedDeletionsRef = useRef<any[]>([]);
-  stagedDeletionsRef.current = stagedDeletions;
+  const [voidTargetTx, setVoidTargetTx] = useState<any | null>(null);
+  const [isVoidSubmitting, setIsVoidSubmitting] = useState(false);
 
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
   const salesRecycleBinCount = useNotificationStore(
@@ -407,7 +407,6 @@ export const Sales: React.FC = () => {
   }, [location.state, location.pathname, navigate, role]);
 
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
-  const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [hasAttemptedEmptyRefresh, setHasAttemptedEmptyRefresh] =
     useState(false);
   const [isRefreshingEmpty, setIsRefreshingEmpty] = useState(false);
@@ -1267,31 +1266,48 @@ export const Sales: React.FC = () => {
       return;
     }
 
-    const strId = String(tx.id);
-    if (deletingIds.includes(strId)) return;
-
-    setDeletingIds((prev) => [...prev, strId]);
-
-    setTimeout(() => {
-      setStagedDeletions((prev) => [...prev, tx]);
-      setTransactions((prev) => {
-        const updated = prev.filter((t) => String(t.id) !== strId);
-        sessionStorage.setItem(
-          `sales_sanitized_${dateStr}`,
-          JSON.stringify(updated)
-        );
-        return updated;
-      });
-      setDeletingIds((prev) => prev.filter((id) => id !== strId));
-    }, 380);
+    setVoidTargetTx(tx);
   };
 
-  const handleConfirmDelete = useCallback(
-    async (id: string) => {
-      const stagedTx = stagedDeletionsRef.current.find(
-        (t) => String(t.id) === String(id)
-      );
-      if (!stagedTx) return;
+  const handleConfirmVoidSale = useCallback(
+    async (voidReason: string) => {
+      const targetTx = voidTargetTx;
+      const cleanReason = voidReason.trim();
+      if (!targetTx || !cleanReason) return;
+
+      const strId = String(targetTx.id);
+      setIsVoidSubmitting(true);
+
+      const removeFromLocalList = () => {
+        setTransactions((prev) => {
+          const updated = prev.filter((t) => String(t.id) !== strId);
+          sessionStorage.setItem(
+            `sales_sanitized_${dateStr}`,
+            JSON.stringify(updated)
+          );
+          return updated;
+        });
+      };
+
+      const isOfflinePending =
+        strId.startsWith('offline_tx_') ||
+        targetTx.sync_status === 'pending' ||
+        targetTx.sync_status === 'conflict';
+
+      if (isOfflinePending) {
+        try {
+          await dropPendingTransaction(strId);
+          removeFromLocalList();
+          useCashSessionStore.getState().recalculateMetrics();
+          setVoidTargetTx(null);
+          toast.info(`Offline sale voided and removed (${cleanReason}).`);
+        } catch (err: any) {
+          toast.error(`Failed to void offline sale: ${err.message}`);
+        } finally {
+          setIsVoidSubmitting(false);
+        }
+        return;
+      }
 
       const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
@@ -1299,7 +1315,10 @@ export const Sales: React.FC = () => {
         try {
           const auth = useAuthStore.getState();
           const sessionState = useCashSessionStore.getState();
-          const sessionId = sessionState.activeSession?.id || sessionState.getLastKnownSessionId() || '';
+          const sessionId =
+            sessionState.activeSession?.id ||
+            sessionState.getLastKnownSessionId() ||
+            '';
           const deletedIso = new Date().toISOString();
 
           await stagePendingTransaction({
@@ -1308,28 +1327,39 @@ export const Sales: React.FC = () => {
             userId: auth.user?.id || 'offline_cashier',
             userName: auth.profile?.username || auth.user?.email || 'Cashier',
             payload: {
-              saleId: stagedTx.id,
+              saleId: targetTx.id,
               deletedAt: deletedIso,
               deletedBy: auth.user?.id || null,
-              items: stagedTx.items || [],
+              items: targetTx.items || [],
+              voidReason: cleanReason,
             },
           });
 
           // Return inventory stock locally so product availability updates immediately
-          if (stagedTx.items && Array.isArray(stagedTx.items)) {
+          if (targetTx.items && Array.isArray(targetTx.items)) {
             setProducts((prev) => {
               const updated = prev.map((p) => {
-                const item = stagedTx.items.find(
+                const item = targetTx.items.find(
                   (i: any) => (i.productId || i.product_id || i.id) === p.id
                 );
                 if (item && p.has_stock_limit) {
-                  return { ...p, stock_quantity: (p.stock_quantity ?? 0) + Number(item.quantity || 1) };
+                  return {
+                    ...p,
+                    stock_quantity:
+                      (p.stock_quantity ?? 0) + Number(item.quantity || 1),
+                  };
                 }
                 return p;
               });
               try {
-                localStorage.setItem('products_sanitized_list', JSON.stringify(updated));
-                sessionStorage.setItem('products_sanitized_list', JSON.stringify(updated));
+                localStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(updated)
+                );
+                sessionStorage.setItem(
+                  'products_sanitized_list',
+                  JSON.stringify(updated)
+                );
               } catch {}
               return updated;
             });
@@ -1337,171 +1367,110 @@ export const Sales: React.FC = () => {
 
           // Cache deleted sale for offline Recycle Bin display
           try {
-            const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
-            const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+            const cachedRecycleRaw = localStorage.getItem(
+              'sales_recycle_bin_cache'
+            );
+            const cachedRecycle = cachedRecycleRaw
+              ? JSON.parse(cachedRecycleRaw)
+              : [];
             const updatedRecycle = [
-              { ...stagedTx, deleted_at: deletedIso },
-              ...cachedRecycle.filter((t: any) => String(t.id) !== String(id)),
+              { ...targetTx, deleted_at: deletedIso },
+              ...cachedRecycle.filter((t: any) => String(t.id) !== strId),
             ];
-            localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(updatedRecycle));
+            localStorage.setItem(
+              'sales_recycle_bin_cache',
+              JSON.stringify(updatedRecycle)
+            );
           } catch {}
 
-          toast.info('Sale moved to Recycle Bin offline (queued for sync).');
+          removeFromLocalList();
+          useCashSessionStore.getState().recalculateMetrics();
+          setVoidTargetTx(null);
+          toast.info(
+            'Sale voided and moved to Recycle Bin offline (queued for sync).'
+          );
         } catch (vaultErr: any) {
           console.error('Failed to stage offline delete:', vaultErr);
-          toast.error(`Offline delete failed: ${vaultErr.message}`);
+          toast.error(`Offline void failed: ${vaultErr.message}`);
         } finally {
-          setStagedDeletions((prev) =>
-            prev.filter((t) => String(t.id) !== String(id))
-          );
-          useCashSessionStore.getState().recalculateMetrics();
+          setIsVoidSubmitting(false);
         }
         return;
       }
 
       try {
         const currentUserId = useAuthStore.getState().user?.id || null;
-        const { error } = await supabase
-          .from('sales')
-          .update({
-            deleted_at: new Date().toISOString(),
-            deleted_by: currentUserId,
-          })
-          .eq('id', stagedTx.id);
+        const { error: rpcError } = await supabase.rpc('soft_delete_sales', {
+          p_ids: [targetTx.id],
+          p_deleted_by: currentUserId,
+        });
 
-        if (error) throw error;
+        if (rpcError) {
+          const isMissingRpc =
+            rpcError.code === '42883' ||
+            rpcError.code === 'PGRST202' ||
+            String(rpcError.message || '')
+              .toLowerCase()
+              .includes('soft_delete_sales');
+          if (!isMissingRpc) throw rpcError;
+
+          const { error: fallbackErr } = await supabase
+            .from('sales')
+            .update({
+              deleted_at: new Date().toISOString(),
+              deleted_by: currentUserId,
+            })
+            .eq('id', targetTx.id);
+          if (fallbackErr) throw fallbackErr;
+        }
 
         // Cache soft-deleted record for instant Recycle Bin viewing
         try {
-          const cachedRecycleRaw = localStorage.getItem('sales_recycle_bin_cache');
-          const cachedRecycle = cachedRecycleRaw ? JSON.parse(cachedRecycleRaw) : [];
+          const cachedRecycleRaw = localStorage.getItem(
+            'sales_recycle_bin_cache'
+          );
+          const cachedRecycle = cachedRecycleRaw
+            ? JSON.parse(cachedRecycleRaw)
+            : [];
           const updatedRecycle = [
-            { ...stagedTx, deleted_at: new Date().toISOString() },
-            ...cachedRecycle.filter((t: any) => String(t.id) !== String(id)),
+            { ...targetTx, deleted_at: new Date().toISOString() },
+            ...cachedRecycle.filter((t: any) => String(t.id) !== strId),
           ];
-          localStorage.setItem('sales_recycle_bin_cache', JSON.stringify(updatedRecycle));
+          localStorage.setItem(
+            'sales_recycle_bin_cache',
+            JSON.stringify(updatedRecycle)
+          );
         } catch {}
 
+        removeFromLocalList();
         useCashSessionStore.getState().recalculateMetrics();
 
         const itemsList =
-          stagedTx.items
+          targetTx.items
             ?.map(
               (i: any) => `${i.productName || i.product_name} (${i.quantity}x)`
             )
-            .join(', ') || stagedTx.product_name;
-        const auditDetails = `Moved sale transaction (₱${Number(stagedTx.total_amount || stagedTx.totalAmount || 0).toFixed(2)} via ${stagedTx.payment_method || stagedTx.paymentMethod || 'Cash'}) to Recycle Bin — Items: ${itemsList}`;
+            .join(', ') || targetTx.product_name;
+        const auditDetails = `Voided sale transaction (₱${Number(targetTx.total_amount || targetTx.totalAmount || 0).toFixed(2)} via ${targetTx.payment_method || targetTx.paymentMethod || 'Cash'}) to Recycle Bin — Items: ${itemsList} — Reason: ${cleanReason}`;
 
-        await logAudit('SALE_REMOVED', auditDetails, stagedTx.id);
+        await logAudit('SALE_REMOVED', auditDetails, targetTx.id);
 
-        toast.success('Sale moved to Recycle Bin.');
+        setVoidTargetTx(null);
+        toast.success('Sale voided and moved to Recycle Bin.');
       } catch (err: any) {
         console.error('Failed to commit sale deletion to database:', err);
         toast.error(
           err.message ||
-            'There was a problem deleting this sale. Please try again.'
+            'There was a problem voiding this sale. Please try again.'
         );
-        setTransactions((prev) => {
-          const updated = [
-            stagedTx,
-            ...prev.filter((t) => String(t.id) !== String(id)),
-          ].sort((a, b) => {
-            const dateA = a.created_at || a.createdAt || '';
-            const dateB = b.created_at || b.createdAt || '';
-            return dateB.localeCompare(dateA);
-          });
-          sessionStorage.setItem(
-            `sales_sanitized_${dateStr}`,
-            JSON.stringify(updated)
-          );
-          return updated;
-        });
       } finally {
-        setStagedDeletions((prev) =>
-          prev.filter((t) => String(t.id) !== String(id))
-        );
+        setIsVoidSubmitting(false);
         fetchProducts();
         useCashSessionStore.getState().recalculateMetrics();
       }
     },
-    [dateStr, fetchProducts]
+    [voidTargetTx, dateStr, fetchProducts]
   );
-
-  const handleUndoDelete = (id: string) => {
-    const stagedTx = stagedDeletionsRef.current.find(
-      (t) => String(t.id) === String(id)
-    );
-    if (!stagedTx) return;
-
-    setDeletingIds((prev) => prev.filter((item) => item !== String(id)));
-    setTransactions((prev) => {
-      const updated = [
-        stagedTx,
-        ...prev.filter((t) => String(t.id) !== String(id)),
-      ].sort((a, b) => {
-        const dateA = a.created_at || a.createdAt || '';
-        const dateB = b.created_at || b.createdAt || '';
-        return dateB.localeCompare(dateA);
-      });
-      sessionStorage.setItem(
-        `sales_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
-      return updated;
-    });
-    setStagedDeletions((prev) =>
-      prev.filter((t) => String(t.id) !== String(id))
-    );
-    toast.info('Sale transaction restored.');
-    useCashSessionStore.getState().recalculateMetrics();
-  };
-
-  const handleConfirmAll = () => {
-    if (stagedDeletionsRef.current.length === 0) return;
-    const itemsToCommit = [...stagedDeletionsRef.current];
-    itemsToCommit.forEach((tx) => handleConfirmDelete(String(tx.id)));
-  };
-
-  const handleUndoAll = () => {
-    if (stagedDeletionsRef.current.length === 0) return;
-    const itemsToRestore = [...stagedDeletionsRef.current];
-    setDeletingIds([]);
-    setTransactions((prev) => {
-      const existingIds = new Set(itemsToRestore.map((i) => String(i.id)));
-      const filtered = prev.filter((item) => !existingIds.has(String(item.id)));
-      const updated = [...itemsToRestore, ...filtered].sort((a, b) => {
-        const dateA = a.created_at || a.createdAt || '';
-        const dateB = b.created_at || b.createdAt || '';
-        return dateB.localeCompare(dateA);
-      });
-      sessionStorage.setItem(
-        `sales_sanitized_${dateStr}`,
-        JSON.stringify(updated)
-      );
-      return updated;
-    });
-    setStagedDeletions([]);
-    toast.info(`Restored all ${itemsToRestore.length} sale transactions.`);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (
-        stagedDeletionsRef.current.length > 0 &&
-        (typeof navigator === 'undefined' || navigator.onLine)
-      ) {
-        const deletedIso = new Date().toISOString();
-        const currentUserId = useAuthStore.getState().user?.id || null;
-        stagedDeletionsRef.current.forEach((tx) => {
-          supabase
-            .from('sales')
-            .update({ deleted_at: deletedIso, deleted_by: currentUserId })
-            .eq('id', tx.id)
-            .then();
-        });
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const handleSyncUpdated = () => {
@@ -1556,11 +1525,6 @@ export const Sales: React.FC = () => {
                     'Recycle Bin is unavailable while the cash session is closed.'
                   );
                   return;
-                }
-                if (stagedDeletionsRef.current.length > 0) {
-                  stagedDeletionsRef.current.forEach((tx) =>
-                    handleConfirmDelete(String(tx.id))
-                  );
                 }
                 setIsRecycleBinOpen(true);
               }}
@@ -1688,42 +1652,11 @@ export const Sales: React.FC = () => {
     ratesConfig,
     selectedProductsCount,
     setActions,
-    handleConfirmDelete,
     isSessionOpen,
     isLocked,
     getLockReason,
     salesRecycleBinCount,
   ]);
-
-  const undoToastItems: UndoItem[] = useMemo(() => {
-    return stagedDeletions.map((tx) => {
-      const parsedItems =
-        tx.items && Array.isArray(tx.items) && tx.items.length > 0
-          ? tx.items.map((i: any) => ({
-              name: i.productName || i.product_name || 'Item',
-              qty: Number(i.quantity) || 1,
-              price: Number(i.price) || 0,
-            }))
-          : [
-              {
-                name: tx.product_name || 'Item',
-                qty: Number(tx.quantity) || 1,
-                price: Number(tx.total_amount) || 0,
-              },
-            ];
-
-      return {
-        id: String(tx.id),
-        title: formatSalesToastTitle(tx),
-        type: 'sale',
-        items: parsedItems,
-        paymentMethod: tx.payment_method || tx.paymentMethod || 'Cash',
-        amount: Number(tx.total_amount || 0),
-        timestamp: tx.created_at || tx.createdAt,
-        referenceNumber: tx.reference_number || tx.referenceNumber,
-      };
-    });
-  }, [stagedDeletions]);
 
   return (
     <div className="relative min-h-[85vh] w-full">
@@ -2013,7 +1946,6 @@ export const Sales: React.FC = () => {
                 ) => {
                   const strId = String(tx.id);
                   const isNew = strId === newlyAddedId;
-                  const isDeleting = deletingIds.includes(strId);
                   const isStaffReadOnlyClosed = isClosedSession && role === 'staff';
 
                   return (
@@ -2041,24 +1973,15 @@ export const Sales: React.FC = () => {
                       }
                       animate={
                         isBatterySaver
-                          ? { opacity: isDeleting ? 0 : 1 }
-                          : isDeleting
-                            ? {
-                                opacity: 0,
-                                scale: 0.92,
-                                y: -5,
-                                boxShadow:
-                                  '0 0 0 2px rgba(244, 63, 94, 0.9), 0 0 25px rgba(244, 63, 94, 0.6)',
-                                filter: 'brightness(0.9)',
-                              }
-                            : {
-                                opacity: 1,
-                                y: 0,
-                                scale: 1,
-                                boxShadow: isNew
-                                  ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
-                                  : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
-                              }
+                          ? { opacity: 1 }
+                          : {
+                              opacity: 1,
+                              y: 0,
+                              scale: 1,
+                              boxShadow: isNew
+                                ? '0 0 0 2px rgba(16, 185, 129, 0.9), 0 0 20px rgba(16, 185, 129, 0.4)'
+                                : '0 0 0 0px rgba(0,0,0,0), 0 0 0px rgba(0,0,0,0)',
+                            }
                       }
                       exit={
                         isBatterySaver
@@ -2080,10 +2003,10 @@ export const Sales: React.FC = () => {
                                 ease: [0.16, 1, 0.3, 1],
                               },
                               boxShadow: {
-                                duration: isDeleting ? 0.15 : isNew ? 1.5 : 0,
+                                duration: isNew ? 1.5 : 0,
                                 ease: 'easeOut',
                               },
-                              opacity: { duration: isDeleting ? 0.38 : 0.2 },
+                              opacity: { duration: 0.2 },
                             }
                       }
                       className="rounded-2xl transition-all overflow-hidden"
@@ -2092,7 +2015,7 @@ export const Sales: React.FC = () => {
                         mode="sale"
                         data={tx}
                         viewMode={viewMode}
-                        canDelete={isTransactionDeletable(tx) && !isDeleting}
+                        canDelete={isTransactionDeletable(tx)}
                         canPrint={!isStaffReadOnlyClosed}
                         printDisabledReason={
                           isStaffReadOnlyClosed
@@ -2497,14 +2420,32 @@ export const Sales: React.FC = () => {
         />
       )}
 
-      {/* CONSOLIDATED STACKABLE UNDO TOAST */}
-      <UndoToast
-        items={undoToastItems}
-        duration={5}
-        onUndoItem={handleUndoDelete}
-        onConfirmItem={handleConfirmDelete}
-        onUndoAll={handleUndoAll}
-        onConfirmAll={handleConfirmAll}
+      {/* VOID / DELETE CONFIRMATION MODAL */}
+      <VoidConfirmationModal
+        isOpen={!!voidTargetTx}
+        onClose={() => {
+          if (!isVoidSubmitting) setVoidTargetTx(null);
+        }}
+        onConfirm={handleConfirmVoidSale}
+        title="Void & Remove Sale"
+        itemSummary={voidTargetTx ? formatSalesToastTitle(voidTargetTx) : ''}
+        amount={
+          voidTargetTx
+            ? Number(voidTargetTx.total_amount ?? voidTargetTx.totalAmount ?? 0)
+            : undefined
+        }
+        paymentMethod={
+          voidTargetTx
+            ? voidTargetTx.payment_method || voidTargetTx.paymentMethod || 'Cash'
+            : undefined
+        }
+        presetReasons={[
+          'Wrong item or quantity',
+          'Duplicate entry',
+          'Customer cancelled order',
+          'Incorrect payment method',
+        ]}
+        isSubmitting={isVoidSubmitting}
       />
 
       {/* MOBILE STICKY BOTTOM BAR FOR CASHIER REGISTER */}
@@ -2546,11 +2487,6 @@ export const Sales: React.FC = () => {
                         'Recycle Bin is unavailable while the cash session is closed.'
                       );
                       return;
-                    }
-                    if (stagedDeletionsRef.current.length > 0) {
-                      stagedDeletionsRef.current.forEach((tx) =>
-                        handleConfirmDelete(String(tx.id))
-                      );
                     }
                     setIsRecycleBinOpen(true);
                   }}

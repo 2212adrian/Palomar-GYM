@@ -22,7 +22,6 @@ import type {
   ExpiringMemberItem,
   LowStockProductItem,
   ActivityFeedItem,
-  BirReportItem,
   SubscriptionPlanBreakdown,
 } from './types';
 import { fetchDashboardData } from './dashboardService';
@@ -103,7 +102,6 @@ export const Dashboard: React.FC = () => {
   >([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockProductItem[]>([]);
   const [activityItems, setActivityItems] = useState<ActivityFeedItem[]>([]);
-  const [birReportItems, setBirReportItems] = useState<BirReportItem[]>([]);
   const [subscriptionBreakdown, setSubscriptionBreakdown] = useState<
     SubscriptionPlanBreakdown | undefined
   >(undefined);
@@ -120,7 +118,6 @@ export const Dashboard: React.FC = () => {
       setExpiringSoonList(data.expiringSoonList);
       setLowStockItems(data.lowStockItems);
       setActivityItems(data.activityItems);
-      setBirReportItems(data.birReportItems);
       setSubscriptionBreakdown(data.subscriptionBreakdown);
 } catch (error) {
       console.error('Failed to load dashboard data:', error);
@@ -294,12 +291,12 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
             )}
 
             <button
-              id="btn-open-bir-reports"
+              id="btn-open-reports-export"
               onClick={() => setIsReportsModalOpen(true)}
               className="flex-1 sm:flex-none justify-center bg-white dark:bg-[#1e232d] hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs flex items-center gap-2 active:scale-95 cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Export & BIR</span>
+              <span>Export Reports</span>
             </button>
 
             <button
@@ -385,7 +382,6 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
           revenueTimeline={revenueTimeline}
           topProducts={topProducts}
           attendanceHourly={attendanceHourly}
-          birReportItems={birReportItems}
           subscriptionBreakdown={subscriptionBreakdown}
           activeTab={activeTab}
           onTabChange={setActiveTab}
@@ -433,8 +429,7 @@ const currentDateFormatted = format(new Date(), 'EEEE, MMMM dd, yyyy');
         <ReportsExportModal
           isOpen={isReportsModalOpen}
           onClose={() => setIsReportsModalOpen(false)}
-          initialType="bir"
-          birData={birReportItems}
+          initialType="cash"
           topProducts={topProducts}
           revenueTimeline={revenueTimeline}
         />

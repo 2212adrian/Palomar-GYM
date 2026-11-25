@@ -118,6 +118,10 @@ export async function requestNotificationPermission(): Promise<PermissionState> 
  * Send a notification (Cross-platform)
  */
 export async function sendNotification(title: string, body: string): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    return;
+  }
+
   if (Capacitor.isNativePlatform()) {
     await LocalNotifications.schedule({
       notifications: [
