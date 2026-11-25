@@ -32,3 +32,4 @@ scripts
 scripts/publish-update.mjs
 scripts/release-runner.mjs
 documents
+public-schema.sql
