@@ -92,7 +92,6 @@ const SEGMENT_MAP: Record<string, string> = {
   products: 'PRODUCT LIST',
   reports: 'REPORTS',
   'cash-management': 'CASH MANAGEMENT',
-  bir: 'BIR RECORDS',
   settings: 'SETTINGS',
   'personal-account': 'PERSONAL ACCOUNT',
   'audit-logs': 'AUDIT LOGS',

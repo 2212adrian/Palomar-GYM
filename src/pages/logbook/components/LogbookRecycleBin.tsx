@@ -15,7 +15,6 @@ import {
   Layers,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Modal } from '../../../components/ui/Modal';
 import { supabase } from '../../../lib/supabase/client';
 import { useCashSessionStore } from '../../../stores/useCashSessionStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -956,28 +955,33 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
   if (!isOpen || !isAdmin) return null;
 
   return createPortal(
-    <Modal
-      isOpen={isOpen && isAdmin}
-      onClose={onClose}
-      title="Logbook Recycle Bin"
-      className="max-w-md p-6 overflow-y-auto max-h-[85vh] font-body text-xs text-left relative z-[9999]"
-    >
-      {countdown && (
-        <span className="absolute top-6 right-13 text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md">
-          Shift Active
-        </span>
-      )}
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in font-body text-xs text-left">
+      <div onClick={onClose} className="absolute inset-0" />
+      <div className="relative bg-slate-50 dark:bg-[#17191c] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-md shadow-2xl z-10 flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden">
+        {/* Pinned Header */}
+        <div className="p-5 pb-3 border-b border-(--border-color) flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2 pr-2 min-w-0">
+            <h3 className="font-heading tracking-widest uppercase text-base text-slate-900 dark:text-white truncate">
+              Logbook Recycle Bin
+            </h3>
+            {countdown && (
+              <span className="text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                Shift Active
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-(--bg-page) border border-(--border-color) text-slate-400 hover:text-(--color-text) cursor-pointer shrink-0"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
 
-      <button
-        type="button"
-        disabled={loading}
-        onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-[var(--color-text)] hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer z-50"
-      >
-        <X className="w-4.5 h-4.5" />
-      </button>
-
-      <div className="space-y-4 pt-2">
+        {/* Scrollable Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 pt-3 space-y-4 min-h-0">
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-start gap-2.5 text-[11px] leading-relaxed text-rose-700 dark:text-rose-300 font-medium">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
           <span>
@@ -1345,25 +1349,36 @@ export const LogbookRecycleBin: React.FC<LogbookRecycleBinProps> = ({
             </button>
           </div>
         )}
+        </div>
 
+        {/* Pinned Bottom Action Footer */}
         {isSelectionActive && (
-          <div className="pt-2 border-t border-(--border-color) flex gap-2 w-full">
+          <div className="p-4 sm:px-5 pt-3 border-t border-(--border-color) bg-slate-50 dark:bg-[#17191c] flex gap-2 w-full shrink-0">
             <button
+              type="button"
+              disabled={loading}
+              onClick={() => setSelectedIds([])}
+              className="flex-1 py-2.5 border border-(--border-color) bg-(--bg-card) text-slate-500 rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors font-black disabled:opacity-50"
+            >
+              Deselect All
+            </button>
+            <button
+              type="button"
               disabled={loading}
               onClick={() =>
                 handleBulkRestore(
                   deletedLogs.filter((l) => selectedIds.includes(l.id))
                 )
               }
-              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 font-black disabled:opacity-50"
+              className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-heading tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 font-black disabled:opacity-50 shadow-md"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4 shrink-0" />
               <span>Restore Selected ({selectedIds.length})</span>
             </button>
           </div>
         )}
       </div>
-    </Modal>,
+    </div>,
     document.body
   );
 };

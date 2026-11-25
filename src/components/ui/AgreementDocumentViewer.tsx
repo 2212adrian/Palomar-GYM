@@ -11,11 +11,12 @@ import {
   Phone,
   Scale,
   ShieldCheck,
+  Users,
   X,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 
-export type AgreementDocument = 'agreement' | 'terms' | 'privacy';
+export type AgreementDocument = 'agreement' | 'terms' | 'privacy' | 'roles';
 
 interface AgreementDocumentViewerProps {
   isOpen: boolean;
@@ -207,7 +208,7 @@ export const AgreementDocumentViewer: React.FC<
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[90vh] flex flex-col animate-scale-up">
+      <div className="relative bg-slate-50 dark:bg-[#161920] border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-6xl shadow-2xl overflow-hidden font-body text-xs text-(--color-text) max-h-[90vh] flex flex-col animate-scale-up">
         {/* Header */}
         <header className="sticky top-0 z-10 bg-slate-50 dark:bg-[#161920] border-b border-slate-200 dark:border-white/10 px-5 sm:px-6 pt-5 shrink-0">
           <div className="flex items-start justify-between gap-4 mb-4">
@@ -220,6 +221,8 @@ export const AgreementDocumentViewer: React.FC<
                   ? 'Terms & Conditions'
                   : activeDocument === 'privacy'
                   ? 'Privacy Policy'
+                  : activeDocument === 'roles'
+                  ? 'Roles, Rights & Gym Rules'
                   : hideUserAgreement
                   ? 'Terms & Conditions'
                   : 'Legal & User Agreement'}
@@ -285,6 +288,18 @@ export const AgreementDocumentViewer: React.FC<
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Privacy Policy</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveDocument('roles')}
+              className={`px-3 sm:px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-t-xl transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                activeDocument === 'roles'
+                  ? 'bg-(--color-primary) text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 shrink-0" />
+              <span>Roles &amp; Gym Rules</span>
+            </button>
           </div>
         </header>
 
@@ -294,6 +309,8 @@ export const AgreementDocumentViewer: React.FC<
             <TermsContent profile={gymProfile} />
           ) : activeDocument === 'privacy' ? (
             <PrivacyContent profile={gymProfile} />
+          ) : activeDocument === 'roles' ? (
+            <RolesAndRulesContent profile={gymProfile} />
           ) : hideUserAgreement ? (
             <TermsContent profile={gymProfile} />
           ) : (
@@ -336,21 +353,31 @@ const UserAgreementContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     </div>
 
     <Highlight>
-      <strong>Binding Operational &amp; Legal Policies:</strong> (1) All fees and memberships are 100% non-refundable and strictly non-transferable to any other person; (2) Running memberships cannot be frozen or paused for personal reasons, but early renewals stay queued and paused until the current membership ends; (3) Disciplinary suspensions do not pause or extend membership duration; and (4) Members are required to use all equipment responsibly and return items to their proper places after use.
+      <strong>Binding Operational &amp; Legal Policies:</strong> (1) Submitting a registration to become a member (online or at the front desk) constitutes a binding agreement to obey all {profile.gymName} rules, staff safety directives, and conduct policies; (2) Customers, walk-in guests, pre-registration applicants, and member customers are <strong>Non-Account Users</strong> without software login accounts; (3) All fees and memberships are 100% non-refundable and strictly non-transferable; (4) Running memberships cannot be frozen or paused for personal reasons, while early renewals remain queued until the active plan ends; (5) Disciplinary suspensions do not pause or extend membership duration; and (6) Members must use all equipment responsibly and return weights/accessories to their proper places after use.
     </Highlight>
 
-    <Section title="1. Covered Platforms & System Users">
-      <p>
-        This agreement applies to all users interacting with the{' '}
-        {profile.gymName} ecosystem: (a){' '}
-        <strong>Members &amp; Walk-In Guests</strong> using physical access
-        cards or digital passes; (b){' '}
-        <strong>Pre-Registration Applicants &amp; Legal Guardians</strong>{' '}
-        submitting enrollment forms online; and (c){' '}
-        <strong>Authorized Staff, Administrators &amp; Superadmin</strong>{' '}
-        operating the management console, barcode/QR scanner, sales register,
-        and live cash drawer sessions.
-      </p>
+    <Section title="1. Covered Users, Non-Account Customers & System Roles">
+      <div className="space-y-2">
+        <p>
+          This agreement applies to both gym customers and authorized system personnel at{' '}
+          {profile.gymName}:
+        </p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>
+            <strong>Non-Account Users (Walk-In Customers, Pre-Registration Applicants &amp; Member Customers):</strong>{' '}
+            Gym customers and members do <strong>not</strong> receive or maintain software login accounts (usernames or passwords). When you register online or at the counter to become a member or check in as a walk-in guest, authorized personnel verify your identity, create your member record on your behalf, and issue your QR or physical access pass. By registering to become a member, you expressly agree to obey all facility rules, safety standards, and gym policies.
+          </li>
+          <li>
+            <strong>Staff (Front-Desk Operators):</strong> Authorized gym staff who hold system accounts strictly for counter operations—recording daily member and walk-in check-ins, ringing up POS retail sales, importing verified pre-registration tickets, processing subscription renewals during open cash drawer shifts, and submitting incident reports.
+          </li>
+          <li>
+            <strong>Admin (Administrators / Management):</strong> Authorized management accounts supervising daily gym operations, member enrollment and edits, QR card issuance/revocation, opening/closing and balancing cash drawer sessions, retail inventory and restocking, reviewing or archiving incident reports, financial reporting, and Recycle Bin recovery.
+          </li>
+          <li>
+            <strong>SuperAdmin (System Owner &amp; Highest Authority):</strong> The primary owner-level administrator with full authority over global gym configuration, security/network rules, Admin and Staff account privileges, audit oversight, and remote terminal session revocation.
+          </li>
+        </ul>
+      </div>
     </Section>
 
     <Section title="2. Online Pre-Registration, Queue Tickets & Minors">
@@ -439,7 +466,7 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     <div className="flex gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
       <Scale className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
       <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        These rules govern access and safety at {profile.gymName}. By registering, paying, or entering the facility, you accept these terms in full.
+        These rules govern membership, access, and safety at {profile.gymName}. By submitting a registration to become a member, paying a pass fee, or entering the facility, you agree to obey all terms, house rules, and staff instructions in full.
       </p>
     </div>
 
@@ -494,15 +521,21 @@ const TermsContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
       </p>
     </Section>
 
-    <Section title="6. Staff and administrator responsibilities">
-      <p>
-        Staff must actively monitor customers in the facility, guide safe
-        equipment use, and promptly return equipment not placed properly. They
-        must teach members who are unfamiliar with equipment or gym rules, help
-        prevent theft or loss, report incidents, keep logbook check-ins
-        accurate, and record sales correctly. Administrators supervise these
-        duties, review records and incidents, and support fair enforcement.
-      </p>
+    <Section title="6. Registration Agreement, Non-Account Users & System Roles (Staff, Admin, SuperAdmin)">
+      <div className="space-y-2">
+        <p>
+          <strong>Agreement to Obey Upon Membership Registration:</strong> Completing pre-registration online or registering at the front desk to become a member is a formal commitment to obey all {profile.gymName} rules, safety guidelines, equipment care standards, and lawful instructions issued by on-duty personnel.
+        </p>
+        <p>
+          <strong>Non-Account Users (Customers &amp; Member Customers):</strong> Walk-in customers, pre-registration applicants, and registered gym members are Non-Account Users—you do not receive personal system login credentials. Your membership profile, access card, attendance logs, and subscription renewals are recorded and maintained inside the gym system solely by authorized personnel when you register or visit.
+        </p>
+        <p>
+          <strong>Staff, Admin &amp; SuperAdmin Responsibilities:</strong>{' '}
+          <strong>Staff</strong> monitor the floor, guide safe equipment use, return misplaced weights, assist unfamiliar members, prevent theft or loss, file incident reports, and accurately record check-ins, renewals, and POS sales during active cash shifts.{' '}
+          <strong>Admins</strong> supervise staff operations, verify new member registrations, issue or revoke access cards, open/close and reconcile cash drawers, manage retail inventory, review or archive incident reports, and enforce gym policies fairly.{' '}
+          <strong>SuperAdmin</strong> serves as the highest system owner, overseeing terminal security rules, managing Admin and Staff permissions, auditing system logs, and maintaining overall governance.
+        </p>
+      </div>
     </Section>
 
     <Section title="7. Respect, safety, and legal compliance">
@@ -621,3 +654,163 @@ const PrivacyContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
     </p>
   </div>
 );
+
+const RolesAndRulesContent: React.FC<{ profile: LiveGymLegalProfile }> = ({
+  profile,
+}) => (
+  <div className="space-y-4 text-left">
+    <div className="flex gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+      <Users className="w-5 h-5 shrink-0 text-blue-600 dark:text-blue-400" />
+      <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+        This section explains in plain language the <strong>obligations (duties)</strong>,{' '}
+        <strong>rights</strong>, <strong>system access</strong>, and{' '}
+        <strong>gym rules to obey</strong> for every person at{' '}
+        <strong>{profile.gymName}</strong>—including customers without accounts and
+        authorized system operators.
+      </p>
+    </div>
+
+    <Section title="1. Walk-In Customers (Non-Account Users)">
+      <div className="space-y-1.5">
+        <p>
+          <strong>System Access:</strong> Walk-in customers do <strong>not</strong>{' '}
+          have a login account in this software. Your check-in name, walk-in type
+          (Regular or Student), and daily payment are logged at the front desk by
+          Staff or Admin.
+        </p>
+        <p>
+          <strong>What You Must Obey (Gym Rules):</strong> Pay the daily walk-in
+          rate before using equipment; present a valid School ID for student
+          rates; use weights and machines safely without dropping or slamming;
+          return all dumbbells, plates, and gear to their racks after use; treat
+          everyone with respect; and never film or photograph other gym users
+          without permission (Safe Spaces Act RA 11313).
+        </p>
+        <p>
+          <strong>Your Rights:</strong> Fair access to working gym equipment for
+          your paid session, a clean and safe training area, clear pricing, an
+          official receipt upon request, and privacy over your logged visit
+          details (Data Privacy Act RA 10173).
+        </p>
+      </div>
+    </Section>
+
+    <Section title="2. Member Customers (Non-Account Users)">
+      <div className="space-y-1.5">
+        <p>
+          <strong>System Access:</strong> Gym members do <strong>not</strong>{' '}
+          receive software login usernames or passwords. Your profile, emergency
+          contact, membership dates, and QR/physical card are stored and managed
+          by authorized gym personnel on your behalf.
+        </p>
+        <p>
+          <strong>What You Must Obey (Gym Rules):</strong> Completing online or
+          front-desk registration to become a member is your agreement to obey all{' '}
+          {profile.gymName} rules and safety instructions. You must scan or show
+          your own QR/card on every visit; never lend, share, or transfer your
+          card or plan to anyone else; respect that all payments are final and
+          non-refundable and running memberships cannot be paused/frozen; note
+          that early renewals stay queued until your current plan expires; follow
+          all safety &amp; equipment-return rules (disciplinary suspension does
+          not pause your membership days); and ensure parent/guardian consent is
+          submitted if aged 12–17.
+        </p>
+        <p>
+          <strong>Your Rights:</strong> Unlimited ₱0 daily check-ins (Monthly
+          plan) or discounted daily check-in rate (Yearly plan) while active,
+          protection of queued renewal days so paid days are never lost, accurate
+          receipts, and the right under RA 10173 to inspect or correct your
+          stored personal information and emergency contacts.
+        </p>
+      </div>
+    </Section>
+
+    <Section title="3. Staff (Front-Desk Operators)">
+      <div className="space-y-1.5">
+        <p>
+          <strong>Given System Access:</strong> Staff accounts have access{' '}
+          <strong>only</strong> to front-desk counter modules: Cash Management
+          view &amp; cash request submission (cannot open or close drawer shifts),
+          Sales Register (ring up items and void current-shift mistakes with an
+          audit-logged reason), Logbook Check-Ins &amp; Walk-Ins, Membership Plans
+          (scan online registration QR/codes or register walk-in customers with no
+          phone), Camera Scanner, and Incident Reports (submit reports and
+          edit/delete only own Unread reports). Staff cannot access Member List
+          directory editing, Product inventory/pricing, Dashboard Revenue Summary,
+          User Management, Audit Logs, Recycle Bin restoration, or SuperAdmin
+          database tools.
+        </p>
+        <p>
+          <strong>Obligations:</strong> Only process counter payments when an
+          Admin has opened the cash drawer; verify customer identities, photos,
+          and school IDs accurately; keep the gym floor orderly, return misplaced
+          weights, and assist members safely; file truthful incident reports and
+          void reasons; and keep login passwords and 2FA codes private.
+        </p>
+        <p>
+          <strong>Rights:</strong> A respectful and safe workplace (RA 11058 &amp;
+          RA 11313), clear access boundaries so staff are never blamed for
+          Admin-only cash or database actions, and reliable system guides.
+        </p>
+      </div>
+    </Section>
+
+    <Section title="4. Admin (Administrators / Management)">
+      <div className="space-y-1.5">
+        <p>
+          <strong>Given System Access:</strong> Admins have full operational
+          control over Cash Drawer Sessions (open with starting float, approve or
+          reject staff cash requests, count and close shifts), Product inventory &amp;
+          restocking, Member Directory management &amp; QR card issuance/revocation,
+          Dashboard Revenue Summary &amp; Goals, Official Reports Export Hub,
+          Incident Report review/archiving (including 30-day retention tracking),
+          User Management (Staff accounts), Audit Logs, and Recycle Bin recovery.
+          Admins cannot access SuperAdmin-only Database Backup, Database Manager,
+          or Data Migration tools.
+        </p>
+        <p>
+          <strong>Obligations:</strong> Open and close cash shifts accurately and
+          resolve discrepancies honestly; review staff incident reports and cash
+          requests promptly; protect customer personal data and photos under RA
+          10173; and enforce gym rules and suspensions fairly without tampering
+          with audit history.
+        </p>
+        <p>
+          <strong>Rights:</strong> Authority to supervise staff operations, revoke
+          or suspend rule-breaking memberships, inspect audit trails and void
+          reasons, and escalate technical/database tasks to the SuperAdmin.
+        </p>
+      </div>
+    </Section>
+
+    <Section title="5. SuperAdmin (System Owner & Highest Authority)">
+      <div className="space-y-1.5">
+        <p>
+          <strong>Given System Access:</strong> Full unrestricted access across
+          all operational, financial, and reporting features, plus exclusive access
+          to Database Backup &amp; Restore, Database Manager (storage cleanup),
+          Data Migration, global Gym Profile/Rates/Security settings, Admin and
+          Staff account privilege control, and remote Force Sign-Out of any
+          active terminal.
+        </p>
+        <p>
+          <strong>Obligations:</strong> Safeguard master backups and member data
+          privacy (RA 10173), keep rates and legal policies transparent and accurate,
+          audit security logs regularly, and uphold fair treatment of all Admins,
+          Staff, and Customers.
+        </p>
+        <p>
+          <strong>Rights:</strong> Full ownership control over software rules, role
+          permissions, security policies, emergency session revocation, and final
+          operational or dispute decisions.
+        </p>
+      </div>
+    </Section>
+
+    <p className="text-[10px] text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-white/10 pt-3">
+      Summary of facility roles and legal obligations at {profile.gymName}. Read
+      together with the User Agreement, Terms &amp; Conditions, and Privacy Policy.
+    </p>
+  </div>
+);
+

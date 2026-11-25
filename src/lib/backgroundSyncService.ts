@@ -437,6 +437,23 @@ async function runOfflineSyncInternal(): Promise<SyncResult> {
 
           if (delErr) {
             console.warn(`[Sync] Could not apply soft delete to sale ${targetSaleId}:`, delErr);
+          } else {
+            try {
+              const validUid =
+                item.userId && /^[0-9a-f-]{36}$/i.test(item.userId)
+                  ? item.userId
+                  : null;
+              const reasonText = payload.voidReason
+                ? ` — Reason: ${String(payload.voidReason).trim()}`
+                : '';
+              await supabase.rpc('log_audit_entry', {
+                p_user_id: validUid,
+                p_actor_username: item.userName || 'Staff',
+                p_action: 'SALE_REMOVED',
+                p_target_id: targetSaleId,
+                p_details: `Moved sale transaction to Recycle Bin via offline sync by ${item.userName}${reasonText}`,
+              });
+            } catch {}
           }
         }
 
@@ -517,6 +534,23 @@ async function runOfflineSyncInternal(): Promise<SyncResult> {
 
           if (delErr) {
             console.warn(`[Sync] Could not soft delete attendance ${targetAttendanceId}:`, delErr);
+          } else {
+            try {
+              const validUid =
+                item.userId && /^[0-9a-f-]{36}$/i.test(item.userId)
+                  ? item.userId
+                  : null;
+              const reasonText = payload.voidReason
+                ? ` — Reason: ${String(payload.voidReason).trim()}`
+                : '';
+              await supabase.rpc('log_audit_entry', {
+                p_user_id: validUid,
+                p_actor_username: item.userName || 'Staff',
+                p_action: 'LOGBOOK_REMOVED',
+                p_target_id: targetAttendanceId,
+                p_details: `Moved check-in / card record for "${payload.customerName || 'Guest'}" (${payload.customerType || 'Walk-In'} - ${payload.planName || 'Daily Pass'}) to Recycle Bin via offline sync by ${item.userName}${reasonText}`,
+              });
+            } catch {}
           }
 
           if (payload.receiptNumber && isSyncAdmin) {

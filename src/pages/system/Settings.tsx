@@ -566,7 +566,7 @@ export default function Settings() {
             System Settings
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-            Update your account, customize desktop &amp; projector text size,
+            Update your account, customize tablet, desktop &amp; projector text size,
             and manage gym settings.
           </p>
         </div>
@@ -660,6 +660,9 @@ export default function Settings() {
             mobileView === 'menu' ? 'block animate-slide-up' : 'hidden'
           } xl:hidden w-full shrink-0 pb-16`}
         >
+          <div className="hidden md:flex mb-4">
+            <DisplayScaleSelector className="w-full" />
+          </div>
           <div className="flex items-center justify-between gap-3 px-2 sm:px-0 mb-4">
             <div className="min-w-0">
               <h1 className="text-base font-heading tracking-widest text-slate-900 dark:text-slate-100 uppercase truncate">

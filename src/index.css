@@ -943,17 +943,17 @@ html.is-capacitor [contenteditable='true'] {
 }
 
 /* ==========================================================
-   DESKTOP & SCREEN PROJECTOR READABILITY + SMOOTH SCROLLING
-   Makes tiny 8px-11px desktop labels comfortable to read on
-   monitors and room projectors while keeping mobile untouched.
+   TABLET, DESKTOP & PROJECTOR READABILITY + SMOOTH SCROLLING
+   Makes tiny 8px-11px labels comfortable to read on tablets,
+   monitors, and projectors while keeping phones untouched.
    ========================================================== */
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   html {
     font-size: var(--desktop-root-size, 16px);
   }
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   /* Standard readable desktop baseline (applied unless Compact is chosen) */
   html:not(.display-scale-compact) .text-\[8px\],
   html:not(.display-scale-compact) .text-\[8\.5px\],

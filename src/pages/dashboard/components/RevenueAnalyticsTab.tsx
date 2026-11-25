@@ -46,7 +46,6 @@ import type {
   RevenueTimelinePoint,
   TopProductMetric,
   AttendanceHourData,
-  BirReportItem,
   DashboardMetrics,
   SubscriptionPlanBreakdown,
 } from '../types';
@@ -62,7 +61,6 @@ interface RevenueAnalyticsTabProps {
   revenueTimeline: RevenueTimelinePoint[];
   topProducts: TopProductMetric[];
   attendanceHourly: AttendanceHourData[];
-  birReportItems: BirReportItem[];
   subscriptionBreakdown?: SubscriptionPlanBreakdown;
   activeTab: DashboardTab;
   onTabChange: (tab: DashboardTab) => void;
@@ -98,7 +96,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   revenueTimeline,
   topProducts,
   attendanceHourly,
-  birReportItems,
   subscriptionBreakdown,
   activeTab,
   onTabChange,
@@ -108,7 +105,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
   const navigate = useNavigate();
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] =
-    useState<ReportCategoryType>('bir');
+    useState<ReportCategoryType>('cash');
   const [salesChartView, setSalesChartView] = useState<'pie' | 'bar'>('pie');
   const [logbookViewMode, setLogbookViewMode] = useState<
     'traffic' | 'subscriptions'
@@ -295,7 +292,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             )}
           </button>
 
-          {/* TAB 5: REPORTS & BIR */}
+          {/* TAB 5: REPORTS & EXPORT */}
           <button
             id="tab-btn-reports"
             onClick={() => onTabChange('reports')}
@@ -306,7 +303,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
             }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Reports & BIR</span>
+            <span>Reports & Export</span>
             <span className="text-[9px] sm:text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold px-1.5 py-0.2 rounded-md">
               CSV/PDF
             </span>
@@ -1560,28 +1557,27 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
         )}
 
         {/* =========================================================
-            TAB 5: EXPORTABLE REPORTS & BIR COMPLIANCE HUB
+            TAB 5: EXPORTABLE REPORTS & OPERATIONS EXPORT HUB
             ========================================================= */}
         {activeTab === 'reports' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase font-heading flex items-center gap-2">
-                  Official Reports & Compliance Center
+                  Official Reports & Operations Export Center
                   <span className="text-[10px] bg-blue-100 text-[#123c73] dark:bg-blue-900/60 dark:text-blue-300 px-2 py-0.5 rounded-full font-extrabold">
-                    Audit Ready
+                    5 Formats Ready
                   </span>
                 </h3>
                 <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Generate official sales journals, cash balancing logs, and
-                  subscription reports for BIR compliance and internal audits.
+                  Generate cash balancing logs, retail sales journals, attendance registers, and membership contract exports for internal operations and audits.
                 </p>
               </div>
 
               <button
                 id="btn-open-export-hub"
                 onClick={() => {
-                  setSelectedReportType('bir');
+                  setSelectedReportType('cash');
                   setIsExportModalOpen(true);
                 }}
                 className="bg-(--color-primary) hover:bg-(--color-primary-hover) text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
@@ -1593,35 +1589,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
 
             {/* Quick Report Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-              {/* 1. BIR REPORT */}
-              <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded">
-                      BIR Tax Compliance
-                    </span>
-                    <FileText className="w-4 h-4 text-slate-400" />
-                  </div>
-                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                    Official Sales & Receipts Journal
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                    OR Numbers, Gross Sales, and VAT-Exempt entries for BIR.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedReportType('bir');
-                    setIsExportModalOpen(true);
-                  }}
-                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Generate BIR Journal</span>
-                </button>
-              </div>
-
-              {/* 2. CASH SESSIONS REPORT */}
+              {/* 1. CASH SESSIONS REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-amber-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1650,7 +1618,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </button>
               </div>
 
-              {/* 3. SALES REPORT */}
+              {/* 2. SALES REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1678,7 +1646,7 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                 </button>
               </div>
 
-              {/* 4. LOGBOOK REPORT */}
+              {/* 3. LOGBOOK REPORT */}
               <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1706,6 +1674,35 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
                   <span>Generate Access Log</span>
                 </button>
               </div>
+
+              {/* 4. MEMBERSHIP SUBSCRIPTIONS REPORT */}
+              <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#161920] hover:border-[#123c73] dark:hover:border-blue-500 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] uppercase font-bold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded">
+                      Memberships
+                    </span>
+                    <FileText className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                    Membership Contracts & Plans
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Active subscriptions, renewals, plan rates, and payment
+                    references.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedReportType('subscriptions');
+                    setIsExportModalOpen(true);
+                  }}
+                  className="mt-4 w-full py-2 bg-slate-100 dark:bg-[#1e232d] hover:bg-(--color-primary) hover:text-white text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Generate Contracts</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1716,7 +1713,6 @@ export const RevenueAnalyticsTab: React.FC<RevenueAnalyticsTabProps> = ({
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         initialType={selectedReportType}
-        birData={birReportItems}
         topProducts={topProducts}
         revenueTimeline={revenueTimeline}
       />

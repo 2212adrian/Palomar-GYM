@@ -1071,8 +1071,13 @@ export const IncidentReports: React.FC = () => {
       toast.error('Cannot erase report: No internet connection.');
       return;
     }
-    if (!isAdmin && (report.status !== 'Unread' || report.is_archived)) {
-      toast.error('Reviewed or archived incidents cannot be erased.');
+    if (
+      !isAdmin &&
+      (report.is_archived ||
+        report.status !== 'Unread' ||
+        (report.created_by && user?.id && report.created_by !== user.id))
+    ) {
+      toast.error('Only unread, non-archived incident reports can be erased by staff.');
       return;
     }
 
@@ -1089,10 +1094,7 @@ export const IncidentReports: React.FC = () => {
     return () => {
       if (stagedDeletionsRef.current.length > 0 && navigator.onLine) {
         stagedDeletionsRef.current.forEach((report) => {
-          if (
-            !isAdminRef.current &&
-            (report.status !== 'Unread' || report.is_archived)
-          ) {
+          if (!isAdminRef.current && (report.is_archived || report.status !== 'Unread')) {
             return;
           }
           supabase.from('incident_reports').delete().eq('id', report.id).then();
@@ -1152,6 +1154,10 @@ const handleBulkAction = async (
     try {
       setLoading(true);
       if (action === 'Delete') {
+        if (!isAdmin && targetReports.some((r) => r.is_archived || r.status !== 'Unread')) {
+          toast.error('Reviewed or archived incident reports cannot be erased by staff.');
+          return;
+        }
         const { error } = await supabase
           .from('incident_reports')
           .delete()
@@ -1360,8 +1366,8 @@ const handleBulkAction = async (
           </p>
         </div>
 
-        {/* 30-Day Auto-Erase Notice if marked as Read */}
-        {report.status === 'Read' && !report.is_archived && (
+        {/* 30-Day Auto-Erase Notice if marked as Read (Admin Only) */}
+        {isAdmin && report.status === 'Read' && !report.is_archived && (
           <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
             <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
             <div className="space-y-0.5 min-w-0">
@@ -1475,7 +1481,7 @@ const handleBulkAction = async (
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Staff Actions
               </h4>
-              {report.status === 'Unread' && !report.is_archived ? (
+              {!report.is_archived && report.status === 'Unread' ? (
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -1512,8 +1518,9 @@ const handleBulkAction = async (
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/40 dark:border-white/5 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
                   <span>
-                    This incident report has been reviewed or archived by gym
-                    management and is now locked from further edits or erase operations. Note that reviewed reports will be automatically erased after 30 days unless archived.
+                    {report.is_archived
+                      ? 'This incident report has been archived by gym management and is locked from edits or erase operations.'
+                      : 'This incident report has been reviewed by gym management and is now locked from edits or erase operations.'}
                   </span>
                 </div>
               )}
@@ -1556,6 +1563,16 @@ const handleBulkAction = async (
               <span>
                 Queue Alert: You have {stats.unread} unread incident reports
                 requiring admin review.
+              </span>
+            </div>
+          )}
+
+          {/* Admin-Only 30-Day Retention Policy Note */}
+          {isAdmin && (
+            <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-slate-600 dark:text-slate-300 text-[11px] flex items-start gap-2 font-medium">
+              <Clock className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <span>
+                Admin Retention Policy: Reports marked as Read (Reviewed) are automatically and permanently deleted after 30 days unless moved to Archive.
               </span>
             </div>
           )}
@@ -1860,7 +1877,9 @@ const handleBulkAction = async (
                                   ? 'Archived'
                                   : report.status === 'Unread'
                                     ? 'New'
-                                    : `Reviewed (${getDaysUntilAutoErase(report.read_at)}d left)`}
+                                    : isAdmin
+                                      ? `Reviewed (${getDaysUntilAutoErase(report.read_at)}d left)`
+                                      : 'Reviewed'}
                               </span>
                             </div>
 

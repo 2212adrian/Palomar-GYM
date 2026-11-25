@@ -52,6 +52,7 @@ import {
   type AgreementDocument,
 } from '../../../components/ui/AgreementDocumentViewer';
 import { AppFooter } from '../../../components/layouts/AppFooter';
+import { generateOfflineQrDataUrl } from '../../../components/ui/OfficialReceipt';
 
 import gymLogoDark from '../../../assets/landscape-logo-dark.webp';
 import gymLogoLight from '../../../assets/landscape-logo-light.webp';
@@ -1425,24 +1426,28 @@ export const OnlineRegistrationPage: React.FC = () => {
   };
 
   const handleDownloadQR = (targetTicket: StoredRegistration) => {
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(targetTicket.qrData)}`;
+    const offlineQrUrl = generateOfflineQrDataUrl(targetTicket.qrData, 380);
     const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = qrUrl;
+    img.src =
+      offlineQrUrl ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(targetTicket.qrData)}`;
+    if (!offlineQrUrl) {
+      img.crossOrigin = 'anonymous';
+    }
 
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = 600;
-      canvas.height = 800;
+      canvas.height = 820;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 600, 800);
+      ctx.fillRect(0, 0, 600, 820);
 
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#123c73';
-      ctx.strokeRect(20, 20, 560, 760);
+      ctx.strokeRect(20, 20, 560, 780);
 
       ctx.fillStyle = '#1d4ed8';
       ctx.fillRect(20, 20, 560, 12);
@@ -1450,21 +1455,21 @@ export const OnlineRegistrationPage: React.FC = () => {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#123c73';
       ctx.font = '900 26px sans-serif';
-      ctx.fillText('WOLF PALOMAR FITNESS', 300, 75);
+      ctx.fillText('WOLF PALOMAR GYM', 300, 75);
 
       ctx.fillStyle = '#64748b';
       ctx.font = '600 13px sans-serif';
-      ctx.fillText('OFFICIAL PRE-REGISTRATION TICKET', 300, 100);
+      ctx.fillText('ONLINE REGISTRATION QR TICKET', 300, 100);
 
-      ctx.drawImage(img, 125, 140, 350, 350);
+      ctx.drawImage(img, 125, 135, 350, 350);
 
       ctx.fillStyle = '#0f172a';
       ctx.font = '900 28px monospace';
-      ctx.fillText(targetTicket.registrationId, 300, 535);
+      ctx.fillText(targetTicket.registrationId, 300, 525);
 
       ctx.fillStyle = '#123c73';
       ctx.font = '700 18px sans-serif';
-      ctx.fillText(targetTicket.fullName, 300, 575);
+      ctx.fillText(targetTicket.fullName, 300, 565);
 
       const expDate = new Date(targetTicket.expiresAt).toLocaleString('en-US', {
         dateStyle: 'medium',
@@ -1473,25 +1478,32 @@ export const OnlineRegistrationPage: React.FC = () => {
       });
       ctx.fillStyle = '#b45309';
       ctx.font = '600 13px sans-serif';
-      ctx.fillText(`Expires: ${expDate} (Manila Time)`, 300, 620);
+      ctx.fillText(`Valid until: ${expDate} (Manila Time)`, 300, 610);
 
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(50, 650, 500, 90);
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(50, 650, 500, 90);
+      ctx.fillStyle = '#eff6ff';
+      ctx.fillRect(50, 640, 500, 110);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#93c5fd';
+      ctx.strokeRect(50, 640, 500, 110);
 
-      ctx.fillStyle = '#475569';
+      ctx.fillStyle = '#1e3a8a';
+      ctx.font = '700 13px sans-serif';
+      ctx.fillText(
+        'SHOW THIS SCREENSHOT OR CODE TO THE FRONTDESK STAFF',
+        300,
+        680
+      );
+      ctx.fillStyle = '#334155';
       ctx.font = '500 12px sans-serif';
       ctx.fillText(
-        'Present this QR code or Registration Code to the desk staff',
-        300,
-        685
-      );
-      ctx.fillText(
-        'upon arrival at Wolf Palomar Gym to activate membership.',
+        'at Wolf Palomar Gym facility to complete your payment',
         300,
         705
+      );
+      ctx.fillText(
+        'and activate your gym membership.',
+        300,
+        725
       );
 
       const link = document.createElement('a');
@@ -1753,22 +1765,35 @@ export const OnlineRegistrationPage: React.FC = () => {
               <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12" />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 inline-block mb-1">
-                Active Registration Ticket
+                Registration Ready!
               </span>
               <h2 className="font-heading text-lg sm:text-xl uppercase tracking-wider text-slate-900 dark:text-white font-black">
                 {selectedTicket.fullName}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Please present the QR code below or registration ID to reception
-                desk staff to activate your subscription.
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto font-medium">
+                <strong>Screenshot this QR code</strong> or tap{' '}
+                <strong>Download QR</strong> below, then show it to the frontdesk
+                staff at Wolf Palomar Gym facility.
+              </p>
+            </div>
+
+            <div className="max-w-sm mx-auto rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-left flex items-start gap-2.5">
+              <Ticket className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] font-semibold text-blue-900 dark:text-blue-200 leading-snug">
+                Screenshot this page or download the QR image now and show it at
+                the gym frontdesk counter so staff can scan your code and
+                activate your membership.
               </p>
             </div>
 
             <div className="p-4 sm:p-5 bg-white rounded-2xl max-w-xs mx-auto border border-slate-200 shadow-inner space-y-3">
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`}
+                src={
+                  generateOfflineQrDataUrl(selectedTicket.qrData, 260) ||
+                  `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(selectedTicket.qrData)}`
+                }
                 alt="Registration QR Code"
                 className="w-48 h-48 sm:w-56 sm:h-56 mx-auto block object-contain"
               />
@@ -1807,9 +1832,9 @@ export const OnlineRegistrationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleDownloadQR(selectedTicket)}
-                className="py-2.5 sm:py-3 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/10 border-none"
+                className="py-2.5 sm:py-3 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-heading text-[10px] tracking-wider uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-600/20 border-none"
               >
-                <Download className="w-3.5 h-3.5" /> Download
+                <Download className="w-3.5 h-3.5" /> Download QR
               </button>
 
               <button
@@ -1825,7 +1850,7 @@ export const OnlineRegistrationPage: React.FC = () => {
                 <span>
                   {copiedId === selectedTicket.registrationId
                     ? 'Copied!'
-                    : 'Copy'}
+                    : 'Copy Code'}
                 </span>
               </button>
 

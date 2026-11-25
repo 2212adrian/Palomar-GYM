@@ -306,78 +306,77 @@ export const GUIDE_TOPICS: GuideTopic[] = [
 
   {
     id: 'plans',
-    title: 'Subscription Plans & Renewals',
-    shortLabel: 'Subscription Plans Guide',
+    title: 'Membership Plans & Registration',
+    shortLabel: 'Membership Plans Guide',
     icon: Award,
     targetRole: 'staff_and_admin',
     priorityOrder: 4,
     summary:
-      'How staff process membership packages, import online pre-registrations, renew existing clients, and collect plan fees.',
+      'How to register or renew a customer by scanning their online registration QR/code or registering them directly at the counter when they have no phone.',
     timeEstimate: '2 mins read',
     keywords: [
       'plans',
       'subscription',
       'membership',
       'renew',
-      'student',
       'monthly',
-      'annual',
-      'discount',
+      'yearly',
+      'no phone',
+      'qr',
       'fees',
     ],
     staffPermissions: [
-      'Import prospective members by scanning their Online Pre-Registration QR ticket',
-      'Search existing members and renew Monthly, Student, Promo, or Yearly memberships',
-      'Collect subscription fees via Cash or GCash and activate passes',
-      'Print and hand over new membership QR cards upon plan activation',
+      'Scan a customer\'s Online Registration QR code or type their registration code',
+      'Tap "Register Here (No Phone)" to open the Monthly or Yearly plan choices (with a Back button)',
+      'Search existing members to renew their Monthly or Yearly plan',
+      'Collect plan fees via Cash or GCash and print/download their official receipt',
     ],
     adminExclusives: [
-      'Manually enrolling a brand new member from scratch without an online pre-registration ticket',
       'Voiding, canceling, or refunding an active membership contract',
-      'Creating new subscription package types or changing membership pricing (Rates & Payments)',
-      'Freezing, pausing, or granting complimentary membership duration extensions',
+      'Editing membership prices (Rates & Payments in Settings)',
+      'Suspended account reinstatement or manual member profile deletion',
     ],
     steps: [
       {
         number: 1,
-        title: 'Import Pre-Registration or Search Member',
+        title: 'Pick How the Customer Registers',
         description:
-          '• For New Members: Ask them to scan the desk QR code to complete the Online Pre-Registration on their phone, then scan their pending ticket in "Import" mode.\n• For Renewals: Type the member\'s name or scan their existing QR card.',
-        tip: 'Staff operate in Import mode. Creating brand-new members from scratch without online registration is Admin Exclusive.',
+          '• Scan QR or Enter Code: Tap if the customer already filled up the online form on their phone. (Use "Show Reg QR" if they want to scan and register on their phone first.)\n• Register Here (No Phone): Tap if they do not have a phone—this opens the Monthly and Yearly plan screen (tap Back anytime to return).',
+        tip: 'If the customer has no phone number, check "Customer has no phone number" under Phone Number so you can save without typing digits.',
         badge: 'Step 1',
       },
       {
         number: 2,
-        title: 'Select Desired Plan Package',
+        title: 'Check Details & Agreement',
         description:
-          'Choose the package requested by the client (e.g. 1-Month Regular, Student Discount, 3-Month Promo, or 1-Year VIP). The system automatically displays the price and duration.',
-        tip: 'For Student rates, always ask to view a current, valid school ID before selecting.',
+          'Verify their name, birthday, and emergency/guardian details (if 12–17 years old, parent signature is required). Confirm they agree to the User Agreement, Terms, Privacy Policy, and Gym Rules.',
+        tip: 'If they already have an old record, tap "Existing Member (Renew)" instead of creating a duplicate name.',
         badge: 'Step 2',
       },
       {
         number: 3,
-        title: 'Collect Payment & Activate',
+        title: 'Collect Payment & Finish',
         description:
-          'Select Cash or GCash, enter the payment details, and click "Confirm Subscription". The membership activates immediately and their QR pass is ready for check-in.',
-        tip: 'Renewing before the current expiry date automatically appends duration to the end, so members never lose remaining days!',
+          'Select Cash or GCash (plus Physical Card if they want a printed card), confirm the payment amount, and complete the registration. Their pass activates right away.',
+        tip: 'Renewing early automatically adds the new days after their current plan ends—no days are wasted!',
         badge: 'Step 3',
       },
     ],
     rules: [
       'All gym subscriptions are non-refundable once paid at the counter (Consumer Act RA 7394 notice).',
-      'Discounted student rates strictly require inspecting a valid school ID.',
-      'Staff cannot void active contracts. If a plan was selected by mistake, inform an Administrator immediately.',
+      'Minors aged 12–17 require a parent or legal guardian signature before registration can proceed.',
+      'Staff cannot void active contracts. If a plan was selected by mistake, notify an Admin immediately.',
     ],
     faqs: [
       {
-        question: 'Can staff create a member from scratch without the online form?',
+        question: 'What if the customer does not own a phone or cannot scan the QR?',
         answer:
-          'Staff workflow is streamlined through "Import" (online pre-registration queue tickets) to keep the counter line moving fast. If a client needs direct manual enrollment, an Administrator can assist.',
+          'Tap "Register Here (No Phone)", choose Monthly or Yearly, pick New Member or Existing Member, and fill out their details at the counter. Check "Customer has no phone number" if they do not have a number.',
       },
       {
         question: 'Can staff cancel or refund a membership after payment?',
         answer:
-          'No. Voiding contracts and issuing refunds is Admin Exclusive. All payments are final unless approved by an Administrator.',
+          'No. Voiding contracts and issuing refunds is Admin Exclusive. All payments are final unless approved by an Admin.',
       },
     ],
   },
@@ -451,9 +450,9 @@ export const GUIDE_TOPICS: GuideTopic[] = [
           'Administrators and the Gym Owner review filed reports, coordinate maintenance technicians, and mark reports as Resolved once completed.',
       },
       {
-        question: 'Can staff edit a report after submission?',
+        question: 'Can staff edit or delete a report after submission?',
         answer:
-          'Staff can update or add notes to reports that they personally created, but cannot alter reports filed by other coworkers.',
+          'Staff can edit or erase their own reports while they are still marked as Unread. Once an Administrator marks a report as Read (Reviewed) or moves it to Archive, it is locked and can no longer be edited or erased by staff.',
       },
     ],
   },
